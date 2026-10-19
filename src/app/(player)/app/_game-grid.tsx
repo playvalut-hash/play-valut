@@ -2,43 +2,73 @@
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
-import { CheckIcon, SearchIcon, SparklesIcon } from "@/components/icons";
+import { SearchIcon, SparklesIcon } from "@/components/icons";
 import { BrandMark, BrandName, brandLogoUrl, type Branding } from "../../_branding";
 import { gameGradient } from "./_types";
 import type { TileData } from "./page";
 
-function GameTile({ tile }: { tile: TileData }) {
-  const { game, accountStatus, bonusText } = tile;
+function money(n: number | null | undefined): string {
+  if (n == null) return "$0";
+  return `$${Number(n).toLocaleString()}`;
+}
+
+function GameTile({ tile, isPaid }: { tile: TileData; isPaid: boolean }) {
+  const { game, accountStatus } = tile;
   const [c1, c2] = gameGradient(game.id);
+  const paidRegular = accountStatus === "active" && isPaid;
+  const badgePct = paidRegular ? game.reg_bonus_pct : game.first_bonus_pct;
+
   return (
     <Link
       href={`/app/game/${game.id}`}
-      className="gtile group block overflow-hidden rounded-2xl border border-line bg-card p-0 text-left text-ink transition active:scale-[0.97]"
+      className="gtile block w-full p-0 text-center text-ink transition active:scale-[0.97]"
       aria-label={`${game.name} — ${accountStatus ? "account ready" : "get an account"}`}
     >
-      <div
-        className="relative grid h-[82px] place-items-center"
-        style={{ background: `linear-gradient(135deg, ${c1}, ${c2})` }}
+      <span
+        className="gtile-art relative block overflow-hidden"
+        style={{
+          background: `linear-gradient(135deg, ${c1}, ${c2})`,
+          borderRadius: "16px",
+          aspectRatio: "1 / 1",
+          maxHeight: "82px",
+        }}
       >
+        {game.icon_path ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={game.icon_path}
+            alt={`${game.name} official game artwork`}
+            loading="lazy"
+            className="absolute inset-0 block h-full w-full object-cover"
+          />
+        ) : null}
         {accountStatus ? (
-          <span className="absolute left-1.5 top-1.5 rounded-full bg-green px-[7px] py-[2px] text-[10px] font-extrabold text-[#03231a]">
-            Account ready
+          <span className="own absolute left-1.5 top-1.5 rounded-full bg-green px-[7px] py-[2px] text-[10px] font-extrabold text-[#03231a]">
+            {accountStatus === "active" ? "Account ready" : "Activating…"}
           </span>
         ) : null}
-        {bonusText ? (
-          <span className="absolute right-1.5 top-1.5 rounded-full bg-black/55 px-[7px] py-[2px] text-[10px] font-extrabold text-gold-2">
-            Bonus
+        {badgePct ? (
+          <span className="badge absolute right-1.5 top-1.5 rounded-full bg-black/55 px-[7px] py-[2px] text-[10px] font-extrabold text-gold-2">
+            +{badgePct}%
           </span>
         ) : null}
-      </div>
-      <p className="px-2.5 pb-[3px] pt-2 text-[13.5px] font-extrabold leading-tight">
+      </span>
+      <span className="gtile-name block px-0.5 pt-2 text-[14px] font-extrabold leading-tight text-white">
         {game.name}
-      </p>
-      {bonusText ? (
-        <p className="flex flex-wrap gap-x-2 gap-y-0.5 px-2.5 pb-2.5 text-[11px] font-extrabold text-gold-2">
-          {bonusText}
-        </p>
-      ) : null}
+      </span>
+      <span className="gtile-sub block px-0.5 pb-0.5 text-[11px] font-semibold text-ink-3">
+        {game.category ?? "Sweeps"} · Load {money(game.min_load)}–{money(game.max_load)}
+      </span>
+      <span className="gtile-bonuses flex flex-wrap justify-center gap-x-2 gap-y-0.5 px-0.5 text-[11px] font-extrabold text-gold-2">
+        {paidRegular ? (
+          <span>Reload +{game.reg_bonus_pct}%</span>
+        ) : (
+          <>
+            <span>Signup +{game.first_bonus_pct}%</span>
+            <span>Reload +{game.reg_bonus_pct}%</span>
+          </>
+        )}
+      </span>
     </Link>
   );
 }
@@ -46,9 +76,11 @@ function GameTile({ tile }: { tile: TileData }) {
 export default function GameGrid({
   branding,
   tiles,
+  isPaid,
 }: {
   branding: Branding;
   tiles: TileData[];
+  isPaid: boolean;
 }) {
   const [query, setQuery] = useState("");
   const logoUrl = brandLogoUrl(branding.logo_path);
@@ -126,7 +158,7 @@ export default function GameGrid({
         </span>
       </Link>
 
-      {/* Games grid */}
+      {/* Games grid — v2: 3-col, no card chrome */}
       <section id="games" aria-label="Games" className="scroll-mt-4">
         <h2 className="mt-6 text-base font-bold text-text-primary">
           All games
@@ -141,7 +173,7 @@ export default function GameGrid({
         ) : (
           <div className="mt-3 grid grid-cols-3 gap-[11px] pb-6">
             {filtered.map((tile) => (
-              <GameTile key={tile.game.id} tile={tile} />
+              <GameTile key={tile.game.id} tile={tile} isPaid={isPaid} />
             ))}
           </div>
         )}
