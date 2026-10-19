@@ -1,0 +1,131 @@
+/**
+ * Chat intent matcher (PRD F8, F12, F13, Changes 3, 4, 9, 10, 13, 27).
+ *
+ * Handles typos + Roman Urdu. IMPORTANT guard: an exact game name
+ * (e.g. "Game Vault") is ALWAYS an account request — never the games list.
+ *
+ * R5: unmatched messages → 'silent' (admin is still notified server-side).
+ * R6: 'cashout' → no auto-flow; the message goes to the admin inbox for
+ * manual handling.
+ */
+
+export type ChatIntent =
+  | "games_list"
+  | "account_request"
+  | "deposit"
+  | "thanks"
+  | "greeting"
+  | "cashout"
+  | "silent";
+
+/** Normalize: lowercase, trim, collapse 3+ repeated letters (typo tolerance). */
+function normalize(text: string): string {
+  return text
+    .toLowerCase()
+    .trim()
+    .replace(/(.)\1{2,}/g, "$1");
+}
+
+function matchesAny(text: string, patterns: RegExp[]): boolean {
+  return patterns.some((p) => p.test(text));
+}
+
+const THANKS_PATTERNS: RegExp[] = [
+  /\bthank(s| you)?\b/,
+  /\bthx\b/,
+  /shukriya/,
+  /shukria/,
+  /mehrbani/,
+  /jazakallah/,
+];
+
+const GREETING_PATTERNS: RegExp[] = [
+  /\bassalam/,
+  /\bsalam\b/,
+  /\baoa\b/,
+  /\bhello\b/,
+  /\bhey\b/,
+  /\bhi\b/,
+  /\badaab\b/,
+  /\bsup\b/,
+];
+
+const CASHOUT_PATTERNS: RegExp[] = [
+  /cash\s?out/,
+  /withdraw/,
+  /paisa\s+nikal/,
+  /pese\s+nikal/,
+  /paise\s+nikal/,
+  /nikalwana/,
+  /\bredeem\b/,
+  /payout/,
+];
+
+const DEPOSIT_PATTERNS: RegExp[] = [
+  /\bdeposit\b/,
+  /depos[ie]t/,
+  /pese\s+jama/,
+  /paise\s+jama/,
+  /paisa\s+jama/,
+  /jama\s+kar/,
+  /\bload\s+kar/,
+  /recharge/,
+  /add\s+(money|cash)/,
+];
+
+const ACCOUNT_PATTERNS: RegExp[] = [
+  /ac+ount/,
+  /\bid\b.*bana/,
+  /bana\s?do/,
+  /banao/,
+  /naya\s+(account|id)/,
+  /nayi\s+id/,
+  /new\s+(account|id)/,
+  /create.*account/,
+  /account.*(chahiye|create|open)/,
+  /game\s+chahiye/,
+  /mujhe\s+game/,
+  /open\s+(my\s+)?account/,
+  /get\s+(a\s+|my\s+)?game\s+account/,
+];
+
+const GAMES_LIST_PATTERNS: RegExp[] = [
+  /game\s*list/,
+  /\bgames\b/,
+  /\bkhel\b/,
+  /sari\s+games?/,
+  /saray\s+games?/,
+  /all\s+games?/,
+  /show.*games?/,
+  /games?\s+dikhao/,
+  /free\s?play/,
+  /^play\b/,
+  /\bplay\b.*list/,
+];
+
+/**
+ * Match a player chat message to an intent.
+ *
+ * @param message   raw player message
+ * @param gameNames canonical game names from the games table (e.g. "Game Vault")
+ */
+export function matchChatIntent(
+  message: string,
+  gameNames: string[],
+): ChatIntent {
+  const text = normalize(message);
+  if (!text) return "silent";
+
+  // IMPORTANT guard: exact game name → account request (never the games list).
+  const loweredNames = gameNames.map((n) => normalize(n));
+  if (loweredNames.includes(text)) return "account_request";
+
+  if (matchesAny(text, THANKS_PATTERNS)) return "thanks";
+  if (matchesAny(text, CASHOUT_PATTERNS)) return "cashout";
+  if (matchesAny(text, DEPOSIT_PATTERNS)) return "deposit";
+  if (matchesAny(text, GREETING_PATTERNS)) return "greeting";
+  if (matchesAny(text, ACCOUNT_PATTERNS)) return "account_request";
+  if (matchesAny(text, GAMES_LIST_PATTERNS)) return "games_list";
+
+  return "silent";
+}
