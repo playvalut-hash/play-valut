@@ -22,19 +22,29 @@ export default async function InboxPage({
   if (!session) redirect("/admin/login");
 
   const { player: playerParam } = await searchParams;
-  const overview = await getInboxOverview();
+
+  // Overview + games + methods in parallel (were sequential).
+  const [overview, games, methods] = await Promise.all([
+    getInboxOverview(),
+    getGames(),
+    getPaymentMethods(),
+  ]);
+
   const selected = playerParam
     ? (overview.find((p) => p.id === playerParam) ?? null)
     : null;
 
-  const thread: ChatMessageView[] = selected ? await getThread(selected.id) : [];
-  const detail = selected ? await getPlayerDetail(selected.id) : null;
+  // Thread + detail in parallel (were sequential).
+  const [thread, detail] = selected
+    ? await Promise.all([getThread(selected.id), getPlayerDetail(selected.id)])
+    : [[], null] as [ChatMessageView[], null];
+
   if (selected) {
     // Opening the thread clears its unread state for this admin.
-    await markThreadRead(session.id, selected.id);
+    // Fire-and-forget: don't block page render.
+    markThreadRead(session.id, selected.id).catch(() => {});
   }
 
-  const [games, methods] = await Promise.all([getGames(), getPaymentMethods()]);
   const tagOptions = [...new Set(overview.flatMap((p) => p.tags))].sort();
 
   return (
