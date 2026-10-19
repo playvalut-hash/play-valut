@@ -67,31 +67,31 @@ export default function LoginForm({
   }
 
   return (
-    <div className="flex min-h-dvh flex-col px-[26px] pb-10 pt-[52px]" style={{ background: "#0b0e14" }}>
-      {/* Logo */}
-      <div
-        className="mx-auto mb-[14px] grid h-[84px] w-[84px] place-items-center rounded-[22px] text-gold"
-        style={{
-          background: "linear-gradient(145deg, #123524, #0a2317)",
-          border: "1px solid rgba(212, 175, 55, 0.45)",
-        }}
-        aria-hidden
-      >
-        <svg width="44" height="44" viewBox="0 0 24 24" fill="none">
-          <path d="M12 2 21 12 12 22 3 12 12 2Z" stroke="currentColor" strokeWidth="1.6" />
-          <path d="M12 7.5 16.5 12 12 16.5 7.5 12 12 7.5Z" fill="currentColor" />
-        </svg>
-      </div>
-      <div
-        className="text-center text-[26px] font-extrabold tracking-[0.06em]"
-        style={{ fontFamily: "var(--font-display)", color: "#eef2f7" }}
-      >
-        PLAY<span className="text-gold">VAULT</span>
-      </div>
+    <div className="flex min-h-dvh flex-col items-center px-6 pb-10 pt-12" style={{ background: "#0c1424" }}>
+      <div className="w-full max-w-[400px]">
+        {/* Logo */}
+        <div
+          className="mx-auto grid h-[84px] w-[84px] place-items-center rounded-[22px] text-gold"
+          style={{
+            background: "linear-gradient(145deg, #123524, #0a2317)",
+            border: "1px solid rgba(212, 175, 55, 0.45)",
+          }}
+          aria-hidden
+        >
+          <svg width="46" height="46" viewBox="0 0 24 24" fill="none">
+            <path d="M12 2 21 12 12 22 3 12 12 2Z" stroke="currentColor" strokeWidth="1.6" />
+            <path d="M12 7.5 16.5 12 12 16.5 7.5 12 12 7.5Z" fill="currentColor" />
+          </svg>
+        </div>
+        <div
+          className="mt-3 text-center text-[26px] font-extrabold tracking-wide"
+          style={{ fontFamily: "var(--font-display)", color: "#eef2f7" }}
+        >
+          <span>Play</span><span className="text-gold">Vault</span>
+        </div>
 
-      <div className="mx-auto mt-8 w-full max-w-[400px]">
         <h1
-          className="text-[28px] font-extrabold"
+          className="mt-8 text-[28px] font-extrabold"
           style={{ fontFamily: "var(--font-display)", color: "#eef2f7" }}
         >
           {branding.signin_heading || "Welcome Back"}
@@ -100,78 +100,96 @@ export default function LoginForm({
           {branding.signin_subtext || "Sign in to continue your lobby journey"}
         </p>
 
-        {notice ? (
-          <div className="mt-4 rounded-lg border border-gold/40 bg-gold/10 px-4 py-3 text-sm text-gold">
+        {notice && (
+          <div className="mt-4 rounded-xl border border-gold/40 bg-gold/10 px-4 py-3 text-sm text-gold">
             {notice}
           </div>
-        ) : null}
-        {error ? (
-          <div className="mt-4 rounded-lg border border-[#ff6b5e]/40 bg-[#ff6b5e]/10 px-4 py-3 text-sm text-[#ff6b5e]">
+        )}
+        {error && (
+          <div className="mt-4 rounded-xl border border-[#ff6b5e]/40 bg-[#ff6b5e]/10 px-4 py-3 text-sm text-[#ff6b5e]">
             {error}
           </div>
-        ) : null}
+        )}
 
-        <form onSubmit={handleSignIn} className="mt-6">
-          <div className="mb-[14px] flex flex-col gap-[6px]">
-            <label htmlFor="loginEmail" className="text-[13px] font-semibold" style={{ color: "#a7b2c3" }}>
-              Email
-            </label>
+        <form onSubmit={handleSignIn} className="mt-6 space-y-3.5">
+          {/* Email with icon */}
+          <div
+            className="flex items-center gap-3 rounded-2xl border px-4 py-3.5"
+            style={{ background: "#151a26", borderColor: "#232c3e" }}
+          >
+            <span className="shrink-0" style={{ color: "#6d7a8f" }} aria-hidden>
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="12" cy="8" r="4" />
+                <path d="M4 21c0-4 3.6-6.5 8-6.5s8 2.5 8 6.5" />
+              </svg>
+            </span>
             <input
-              id="loginEmail"
               type="email"
-              autoComplete="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              placeholder="you@example.com"
-              className="rounded-[12px] border px-4 py-3 text-[15px] outline-none transition focus:border-gold"
-              style={{
-                background: "#151a26",
-                borderColor: "#232c3e",
-                color: "#eef2f7",
-              }}
+              placeholder="Email"
+              aria-label="Email"
+              autoComplete="email"
+              className="w-full bg-transparent text-[15px] outline-none placeholder:text-[#6d7a8f]"
+              style={{ color: "#eef2f7" }}
             />
           </div>
 
-          <div className="mb-[14px] flex flex-col gap-[6px]">
-            <label htmlFor="loginPass" className="text-[13px] font-semibold" style={{ color: "#a7b2c3" }}>
-              Password
-            </label>
-            <div className="relative">
-              <input
-                id="loginPass"
-                type={showPassword ? "text" : "password"}
-                autoComplete="current-password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                placeholder="••••••••"
-                className="w-full rounded-[12px] border px-4 py-3 pr-12 text-[15px] outline-none transition focus:border-gold"
-                style={{
-                  background: "#151a26",
-                  borderColor: "#232c3e",
-                  color: "#eef2f7",
-                }}
-              />
-              <button
-                type="button"
-                onClick={() => setShowPassword((v) => !v)}
-                aria-label={showPassword ? "Hide password" : "Show password"}
-                className="absolute right-3 top-1/2 -translate-y-1/2 p-1"
-                style={{ color: "#6d7a8f" }}
-              >
-                {showPassword ? <EyeOffIcon className="h-5 w-5" /> : <EyeIcon className="h-5 w-5" />}
-              </button>
-            </div>
+          {/* Password with icon */}
+          <div
+            className="flex items-center gap-3 rounded-2xl border px-4 py-3.5"
+            style={{ background: "#151a26", borderColor: "#232c3e" }}
+          >
+            <span className="shrink-0" style={{ color: "#6d7a8f" }} aria-hidden>
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <rect x="4" y="11" width="16" height="10" rx="2" />
+                <path d="M8 11V7a4 4 0 0 1 8 0v4" />
+              </svg>
+            </span>
+            <input
+              type={showPassword ? "text" : "password"}
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              placeholder="Password"
+              aria-label="Password"
+              autoComplete="current-password"
+              className="w-full bg-transparent text-[15px] outline-none placeholder:text-[#6d7a8f]"
+              style={{ color: "#eef2f7" }}
+            />
+            <button
+              type="button"
+              onClick={() => setShowPassword((v) => !v)}
+              aria-label={showPassword ? "Hide password" : "Show password"}
+              className="shrink-0 p-1"
+              style={{ color: "#6d7a8f" }}
+            >
+              {showPassword ? <EyeOffIcon className="h-5 w-5" /> : <EyeIcon className="h-5 w-5" />}
+            </button>
           </div>
 
+          {/* Sign In with arrow */}
           <button
             type="submit"
             disabled={loading}
-            className="mt-2 w-full rounded-[12px] py-[14px] text-[16px] font-bold transition hover:brightness-110 active:scale-[0.99] disabled:opacity-60"
+            className="flex w-full items-center justify-center gap-2 rounded-2xl py-4 text-[16px] font-bold transition hover:brightness-110 active:scale-[0.99] disabled:opacity-60"
             style={{ background: "#d4af37", color: "#241a02" }}
           >
-            {loading ? "Signing in…" : "Sign In"}
+            {loading ? "Signing in…" : (
+              <>
+                Sign In
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                  <path d="M4 12h15M13 5l7 7-7 7" />
+                </svg>
+              </>
+            )}
           </button>
         </form>
+
+        <div className="mt-3 text-center">
+          <Link href="/forgot" className="text-[13px] text-text-muted hover:text-gold">
+            Forgot password?
+          </Link>
+        </div>
 
         <div className="my-5 flex items-center gap-3" aria-hidden>
           <span className="h-px flex-1" style={{ background: "#232c3e" }} />
@@ -182,12 +200,8 @@ export default function LoginForm({
         <button
           type="button"
           onClick={handleGoogle}
-          className="flex w-full items-center justify-center gap-3 rounded-[12px] border py-3 text-[15px] font-semibold transition"
-          style={{
-            borderColor: "#232c3e",
-            background: "#151a26",
-            color: "#eef2f7",
-          }}
+          className="flex w-full items-center justify-center gap-3 rounded-2xl border py-3.5 text-[15px] font-semibold transition hover:border-gold/50"
+          style={{ borderColor: "#232c3e", background: "#151a26", color: "#eef2f7" }}
         >
           <svg width="20" height="20" viewBox="0 0 24 24" role="img" aria-label="Google">
             <path fill="#4285F4" d="M23.5 12.27c0-.85-.08-1.66-.22-2.45H12v4.64h6.45a5.52 5.52 0 0 1-2.39 3.62v3h3.87c2.26-2.09 3.57-5.16 3.57-8.81z" />
