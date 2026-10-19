@@ -250,15 +250,25 @@ export async function adminSignIn(
 ): Promise<{ ok: true }> {
   const { email, password } = signInSchema.parse(input);
   const supabase = await createClient();
+
+  // Check if email exists (for specific error message)
+  const { data: users } = await svc().auth.admin.listUsers();
+  const emailExists = users?.users?.some(
+    (u) => u.email?.toLowerCase() === email.toLowerCase(),
+  );
+
   const { error: signInError } = await supabase.auth.signInWithPassword({
     email,
     password,
   });
-  if (signInError) throw new Error("Invalid email or password");
+  if (signInError) {
+    if (!emailExists) throw new Error("No account found with this email");
+    throw new Error("Incorrect password — please try again");
+  }
   const {
     data: { user },
   } = await supabase.auth.getUser();
-  if (!user) throw new Error("Invalid email or password");
+  if (!user) throw new Error("Sign in failed — please try again");
 
   const { data: adminRow } = await svc()
     .from("admin_users")
@@ -268,7 +278,7 @@ export async function adminSignIn(
 
   if (!adminRow || adminRow.is_active !== true) {
     await supabase.auth.signOut();
-    throw new Error("Not authorized");
+    throw new Error("This account is not authorized for admin access");
   }
   audit(user.id, "admin.sign_in");
   return { ok: true };
