@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { XIcon } from "@/components/icons";
 import type { AdminInfo } from "../../_actions";
 import { AdminProvider } from "./admin-context";
@@ -24,6 +24,13 @@ export default function AdminShell({
   children: React.ReactNode;
 }) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
+
+  // Listen for sidebar open requests from mobile inbox
+  useEffect(() => {
+    const handler = () => setSidebarOpen(true);
+    window.addEventListener("open-admin-sidebar", handler);
+    return () => window.removeEventListener("open-admin-sidebar", handler);
+  }, []);
 
   return (
     <AdminProvider value={session}>
