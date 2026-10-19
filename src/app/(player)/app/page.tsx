@@ -13,36 +13,32 @@ export interface TileData {
 
 /** Home lobby: games grid, search, account-ready tags, bonus lines (F3, F4). */
 export default async function HomePage() {
-  const branding = await getBranding();
   const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
 
-  const { data: gamesData } = await supabase
-    .from("games")
-    .select(
-      "id, name, category, icon_path, link, web_link, access, first_bonus_pct, reg_bonus_pct, min_load, max_load, redeem_info, sort_order",
-    )
-    .eq("is_active", true)
-    .order("sort_order", { ascending: true });
+  // Branding + session + games in parallel (were sequential).
+  const [branding, { data: { user } }, { data: gamesData }] = await Promise.all([
+    getBranding(),
+    supabase.auth.getUser(),
+    supabase
+      .from("games")
+      .select(
+        "id, name, category, icon_path, link, web_link, access, first_bonus_pct, reg_bonus_pct, min_load, max_load, redeem_info, sort_order",
+      )
+      .eq("is_active", true)
+      .order("sort_order", { ascending: true }),
+  ]);
   const games = (gamesData ?? []) as unknown as Game[];
 
   let accounts: Array<{ game_id: string; status: "creating" | "active" }> = [];
   let isPaid = false;
   if (user) {
-    const { data: accData } = await supabase
-      .from("game_accounts")
-      .select("game_id, status")
-      .eq("player_id", user.id);
-    accounts = (accData ?? []) as unknown as typeof accounts;
-
-    // Tags are admin-only data: read via the service client (never in the browser).
+    // Accounts + tags in parallel (were sequential).
     const service = createServiceClient();
-    const { data: tagData } = await service
-      .from("player_tags")
-      .select("tag")
-      .eq("player_id", user.id);
+    const [{ data: accData }, { data: tagData }] = await Promise.all([
+      supabase.from("game_accounts").select("game_id, status").eq("player_id", user.id),
+      service.from("player_tags").select("tag").eq("player_id", user.id),
+    ]);
+    accounts = (accData ?? []) as unknown as typeof accounts;
     isPaid = ((tagData ?? []) as Array<{ tag: string }>).some(
       (t) => t.tag === "paid",
     );
