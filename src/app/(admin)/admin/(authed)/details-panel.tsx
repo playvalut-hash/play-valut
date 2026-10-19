@@ -8,18 +8,20 @@ import {
   addPlayerNote,
   addPlayerTag,
   approveDeposit,
+  createGameAccountForPlayer,
   decryptAccountPassword,
   deleteGameAccount,
   deletePlayerNote,
   editGameAccount,
+  getGames,
   markAccountActive,
   rejectDeposit,
   removePlayerTag,
 } from "../../_actions";
-import { cn } from "@/lib/utils";
-import { normalizeTag } from "@/lib/utils";
+import { cn, normalizeTag } from "@/lib/utils";
 import {
   CheckIcon,
+  ChevronDownIcon,
   CopyIcon,
   EditIcon,
   EyeIcon,
@@ -33,26 +35,58 @@ import { StatusChip, TagChip, fullDateTime, timeAgo } from "./ui-bits";
 
 const TAG_PRESETS = [
   "VIP",
+  "Paid",
   "High roller",
-  "New player",
   "Follow-up",
   "Bonus hunter",
   "At risk",
-  "Paid",
+  "New player",
 ];
 
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
+/* ── Collapsible section (matches reference screenshots) ── */
+
+function Collapsible({
+  title,
+  count,
+  defaultOpen = false,
+  children,
+}: {
+  title: string;
+  count?: number;
+  defaultOpen?: boolean;
+  children: React.ReactNode;
+}) {
+  const [open, setOpen] = useState(defaultOpen);
   return (
-    <section className="border-b border-surface-border px-3.5 py-3">
-      <h3 className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-text-muted">
-        {title}
-      </h3>
-      {children}
-    </section>
+    <div className="rounded-xl border border-surface-border bg-surface-card">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="flex w-full items-center justify-between px-3.5 py-3 text-left"
+      >
+        <span className="text-[11px] font-bold uppercase tracking-wider text-text-muted">
+          {title}
+        </span>
+        <span className="flex items-center gap-2">
+          {typeof count === "number" && (
+            <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-surface-elevated px-1.5 text-[11px] font-bold text-text-secondary">
+              {count}
+            </span>
+          )}
+          <ChevronDownIcon
+            className={cn(
+              "h-4 w-4 text-text-muted transition-transform",
+              open && "rotate-180",
+            )}
+          />
+        </span>
+      </button>
+      {open && <div className="border-t border-surface-border px-3.5 py-3">{children}</div>}
+    </div>
   );
 }
 
-/* ── Password show/copy (R7: explicit action only) ─────────────────────── */
+/* ── Password show/copy ── */
 
 function PasswordCell({ admin, accountId }: { admin: AdminInfo; accountId: string }) {
   const [revealed, setRevealed] = useState(false);
@@ -74,8 +108,13 @@ function PasswordCell({ admin, accountId }: { admin: AdminInfo; accountId: strin
   }
 
   return (
-    <span className="flex items-center gap-1 font-mono text-text-primary">
-      {revealed && password ? password : "••••••••"}
+    <span className="flex items-center gap-1.5 font-mono text-[13px] text-text-primary">
+      <span className="text-text-muted">Pass:</span>
+      {revealed && password ? (
+        <span className="select-all">{password}</span>
+      ) : (
+        <span>••••••••</span>
+      )}
       <button
         type="button"
         disabled={busy}
@@ -88,9 +127,9 @@ function PasswordCell({ admin, accountId }: { admin: AdminInfo; accountId: strin
           if (pw) setRevealed(true);
         }}
         aria-label={revealed ? "Hide password" : "Show password"}
-        className="admin-focus rounded p-0.5 text-text-muted hover:text-gold disabled:opacity-40"
+        className="rounded p-0.5 text-text-muted hover:text-gold disabled:opacity-40"
       >
-        {revealed ? <EyeOffIcon className="h-3.5 w-3.5" /> : <EyeIcon className="h-3.5 w-3.5" />}
+        {revealed ? <EyeOffIcon className="h-4 w-4" /> : <EyeIcon className="h-4 w-4" />}
       </button>
       <button
         type="button"
@@ -105,17 +144,17 @@ function PasswordCell({ admin, accountId }: { admin: AdminInfo; accountId: strin
           }
         }}
         aria-label="Copy password"
-        className="admin-focus rounded p-0.5 text-text-muted hover:text-gold"
+        className="rounded p-0.5 text-text-muted hover:text-gold"
       >
-        <CopyIcon className="h-3.5 w-3.5" />
+        <CopyIcon className="h-4 w-4" />
       </button>
     </span>
   );
 }
 
-/* ── Game account row ──────────────────────────────────────────────────── */
+/* ── Game account card (matches screenshot) ── */
 
-function AccountRow({
+function AccountCard({
   admin,
   account,
   onBusy,
@@ -125,11 +164,11 @@ function AccountRow({
   onBusy: (b: boolean) => void;
 }) {
   const router = useRouter();
+  const [expanded, setExpanded] = useState(false);
   const [editing, setEditing] = useState(false);
   const [username, setUsername] = useState(account.username);
   const [newPassword, setNewPassword] = useState("");
   const [confirmDelete, setConfirmDelete] = useState(false);
-  const [activating, setActivating] = useState(false);
 
   async function saveEdit() {
     if (!username.trim()) return;
@@ -158,251 +197,141 @@ function AccountRow({
     }
   }
 
-  async function activate() {
-    setActivating(true);
-    try {
-      await markAccountActive(admin.id, account.id);
-      router.refresh();
-    } finally {
-      setActivating(false);
-    }
-  }
-
   return (
-    <div className="rounded-md border border-surface-border bg-surface-card p-2.5">
-      <div className="flex items-center justify-between gap-2">
-        <span className="text-xs font-semibold text-text-primary">{account.gameName}</span>
-        <StatusChip status={account.status} />
-      </div>
-      {!editing ? (
-        <div className="mt-1.5 space-y-1 text-xs">
-          <div className="flex items-center justify-between gap-2">
-            <span className="text-text-muted">Username</span>
-            <span className="font-mono text-text-primary">{account.username}</span>
-          </div>
-          <div className="flex items-center justify-between gap-2">
-            <span className="text-text-muted">Password</span>
-            <PasswordCell admin={admin} accountId={account.id} />
-          </div>
-          <div className="flex items-center justify-between gap-2 pt-1">
-            <span className="text-[10px] text-text-muted">
-              Created {timeAgo(account.createdAt)}
-            </span>
-            <span className="flex items-center gap-1">
-              <button
-                type="button"
-                onClick={() => {
-                  setUsername(account.username);
-                  setEditing(true);
-                }}
-                aria-label={`Edit ${account.gameName} account`}
-                className="admin-focus rounded p-1 text-text-muted hover:text-gold"
-              >
-                <EditIcon className="h-3.5 w-3.5" />
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  if (confirmDelete) void doDelete();
-                  else {
-                    setConfirmDelete(true);
-                    setTimeout(() => setConfirmDelete(false), 3000);
-                  }
-                }}
-                aria-label={confirmDelete ? "Confirm delete" : `Delete ${account.gameName} account`}
-                className={cn(
-                  "admin-focus rounded px-1.5 py-1 text-[11px] font-medium",
-                  confirmDelete
-                    ? "bg-danger/15 text-danger"
-                    : "text-text-muted hover:text-danger",
+    <div className="rounded-xl border border-surface-border bg-navy p-3">
+      <button
+        type="button"
+        onClick={() => setExpanded((v) => !v)}
+        className="flex w-full items-center justify-between text-left"
+      >
+        <span className="flex items-center gap-2">
+          <span className="text-[14px] font-bold text-text-primary">{account.gameName}</span>
+          <StatusChip status={account.status} />
+        </span>
+        <ChevronDownIcon
+          className={cn("h-4 w-4 text-text-muted transition-transform", expanded && "rotate-180")}
+        />
+      </button>
+      {expanded && (
+        <div className="mt-2.5 space-y-1.5 border-t border-surface-border pt-2.5">
+          {!editing ? (
+            <>
+              <div className="flex items-center gap-2 text-[13px]">
+                <span className="text-text-muted">User:</span>
+                <span className="font-mono text-text-primary">{account.username}</span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    try {
+                      void navigator.clipboard.writeText(account.username);
+                    } catch {
+                      // noop
+                    }
+                  }}
+                  className="rounded p-0.5 text-text-muted hover:text-gold"
+                  aria-label="Copy username"
+                >
+                  <CopyIcon className="h-3.5 w-3.5" />
+                </button>
+              </div>
+              <PasswordCell admin={admin} accountId={account.id} />
+              <div className="flex gap-2 pt-1">
+                <button
+                  type="button"
+                  onClick={() => setEditing(true)}
+                  className="rounded-lg border border-surface-border px-3 py-1.5 text-xs font-semibold text-text-secondary hover:border-gold/50 hover:text-gold"
+                >
+                  Edit
+                </button>
+                {!confirmDelete ? (
+                  <button
+                    type="button"
+                    onClick={() => setConfirmDelete(true)}
+                    className="rounded-lg border border-danger/50 px-3 py-1.5 text-xs font-semibold text-danger hover:bg-danger/10"
+                  >
+                    Delete
+                  </button>
+                ) : (
+                  <>
+                    <button
+                      type="button"
+                      onClick={doDelete}
+                      className="rounded-lg bg-danger px-3 py-1.5 text-xs font-bold text-white hover:opacity-90"
+                    >
+                      Confirm
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setConfirmDelete(false)}
+                      className="rounded-lg border border-surface-border px-3 py-1.5 text-xs text-text-muted"
+                    >
+                      Cancel
+                    </button>
+                  </>
                 )}
-              >
-                {confirmDelete ? "Confirm?" : <TrashIcon className="h-3.5 w-3.5" />}
-              </button>
-            </span>
-          </div>
-          {account.status === "creating" && (
-            <button
-              type="button"
-              onClick={activate}
-              disabled={activating}
-              className="admin-focus mt-1.5 w-full rounded-md bg-gold px-2 py-1.5 text-xs font-semibold text-navy transition-opacity hover:opacity-90 disabled:opacity-50"
-            >
-              {activating ? "Activating…" : "Mark as active"}
-            </button>
+              </div>
+            </>
+          ) : (
+            <div className="space-y-2">
+              <input
+                value={username}
+                onChange={(e) => setUsername(e.target.value)}
+                placeholder="Username"
+                className="w-full rounded-lg border border-surface-border bg-surface-input px-3 py-2 text-sm text-text-primary"
+              />
+              <input
+                value={newPassword}
+                onChange={(e) => setNewPassword(e.target.value)}
+                placeholder="New password (optional)"
+                type="password"
+                className="w-full rounded-lg border border-surface-border bg-surface-input px-3 py-2 text-sm text-text-primary"
+              />
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={saveEdit}
+                  className="rounded-lg bg-gold px-3 py-1.5 text-xs font-bold text-navy"
+                >
+                  Save
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setEditing(false);
+                    setUsername(account.username);
+                    setNewPassword("");
+                  }}
+                  className="rounded-lg border border-surface-border px-3 py-1.5 text-xs text-text-muted"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
           )}
         </div>
-      ) : (
-        <div className="mt-1.5 space-y-1.5">
-          <input
-            value={username}
-            onChange={(e) => setUsername(e.target.value)}
-            aria-label="Username"
-            className="admin-focus w-full rounded-md border border-surface-border bg-surface-input px-2 py-1.5 font-mono text-xs text-text-primary"
-          />
-          <input
-            value={newPassword}
-            onChange={(e) => setNewPassword(e.target.value)}
-            placeholder="New password (optional)"
-            aria-label="New password"
-            className="admin-focus w-full rounded-md border border-surface-border bg-surface-input px-2 py-1.5 font-mono text-xs text-text-primary placeholder:text-text-muted"
-          />
-          <div className="flex gap-1.5">
-            <button
-              type="button"
-              onClick={saveEdit}
-              className="admin-focus flex-1 rounded-md bg-gold px-2 py-1.5 text-xs font-semibold text-navy hover:opacity-90"
-            >
-              Save
-            </button>
-            <button
-              type="button"
-              onClick={() => setEditing(false)}
-              className="admin-focus flex-1 rounded-md border border-surface-border px-2 py-1.5 text-xs text-text-secondary hover:text-text-primary"
-            >
-              Cancel
-            </button>
-          </div>
-        </div>
       )}
     </div>
   );
 }
 
-/* ── Pending deposit row ───────────────────────────────────────────────── */
-
-function DepositRow({
-  admin,
-  deposit,
-  onView,
-}: {
-  admin: AdminInfo;
-  deposit: PlayerDetailView["pendingDeposits"][number];
-  onView: (src: string, caption: string) => void;
-}) {
-  const router = useRouter();
-  const [busy, setBusy] = useState(false);
-  const [rejecting, setRejecting] = useState(false);
-  const [note, setNote] = useState("");
-
-  async function approve() {
-    setBusy(true);
-    try {
-      await approveDeposit(admin.id, deposit.id);
-      router.refresh();
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function reject() {
-    setBusy(true);
-    try {
-      await rejectDeposit(admin.id, { depositId: deposit.id, note: note.trim() });
-      router.refresh();
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  return (
-    <div className="rounded-md border border-gold/30 bg-surface-card p-2.5">
-      <div className="flex gap-2.5">
-        {deposit.screenshotUrl ? (
-          <button
-            type="button"
-            onClick={() => onView(deposit.screenshotUrl!, `$${deposit.amount} · ${deposit.methodName}`)}
-            className="admin-focus shrink-0 overflow-hidden rounded border border-surface-border"
-            aria-label="Open screenshot full screen"
-          >
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src={deposit.screenshotUrl}
-              alt="Deposit screenshot"
-              className="h-16 w-16 object-cover"
-            />
-          </button>
-        ) : (
-          <span className="flex h-16 w-16 shrink-0 items-center justify-center rounded border border-surface-border text-[10px] text-text-muted">
-            No shot
-          </span>
-        )}
-        <div className="min-w-0 flex-1">
-          <p className="text-sm font-semibold text-text-primary">${deposit.amount}</p>
-          <p className="truncate text-[11px] text-text-secondary">{deposit.methodName}</p>
-          <p className="text-[10px] text-text-muted" title={fullDateTime(deposit.createdAt)}>
-            {timeAgo(deposit.createdAt)} ago
-          </p>
-        </div>
-      </div>
-      {!rejecting ? (
-        <div className="mt-2 flex gap-1.5">
-          <button
-            type="button"
-            onClick={approve}
-            disabled={busy}
-            className="admin-focus flex-1 rounded-md bg-success px-2 py-1.5 text-xs font-semibold text-navy transition-opacity hover:opacity-90 disabled:opacity-50"
-          >
-            {busy ? "…" : "Approve"}
-          </button>
-          <button
-            type="button"
-            onClick={() => setRejecting(true)}
-            disabled={busy}
-            className="admin-focus flex-1 rounded-md bg-danger/15 px-2 py-1.5 text-xs font-semibold text-danger transition-colors hover:bg-danger/25 disabled:opacity-50"
-          >
-            Reject
-          </button>
-        </div>
-      ) : (
-        <div className="mt-2 space-y-1.5">
-          <input
-            value={note}
-            onChange={(e) => setNote(e.target.value)}
-            placeholder="Rejection reason (optional)"
-            aria-label="Rejection reason"
-            className="admin-focus w-full rounded-md border border-surface-border bg-surface-input px-2 py-1.5 text-xs text-text-primary placeholder:text-text-muted"
-          />
-          <div className="flex gap-1.5">
-            <button
-              type="button"
-              onClick={reject}
-              disabled={busy}
-              className="admin-focus flex-1 rounded-md bg-danger px-2 py-1.5 text-xs font-semibold text-navy disabled:opacity-50"
-            >
-              Confirm reject
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setRejecting(false);
-                setNote("");
-              }}
-              className="admin-focus flex-1 rounded-md border border-surface-border px-2 py-1.5 text-xs text-text-secondary hover:text-text-primary"
-            >
-              Cancel
-            </button>
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
-
-/* ── Details panel ─────────────────────────────────────────────────────── */
+/* ── Main details panel ── */
 
 export default function DetailsPanel({
   admin,
   detail,
+  games,
 }: {
   admin: AdminInfo;
   detail: PlayerDetailView;
+  games: Array<{ id: string; name: string }>;
 }) {
   const router = useRouter();
   const [newTag, setNewTag] = useState("");
   const [noteBody, setNoteBody] = useState("");
   const [busy, setBusy] = useState(false);
   const [viewer, setViewer] = useState<{ src: string; caption: string } | null>(null);
+  const [selectedGame, setSelectedGame] = useState(games[0]?.id ?? "");
+  const [creating, setCreating] = useState(false);
 
   async function run(fn: () => Promise<void>) {
     setBusy(true);
@@ -414,91 +343,81 @@ export default function DetailsPanel({
     }
   }
 
-  const addCustomTag = () =>
-    run(async () => {
-      const t = normalizeTag(newTag);
-      if (!t) return;
-      await addPlayerTag(admin.id, { playerId: detail.player.id, tag: t });
-      setNewTag("");
-    });
-
-  const addNote = () =>
-    run(async () => {
-      const body = noteBody.trim();
-      if (!body) return;
-      await addPlayerNote(admin.id, { playerId: detail.player.id, body });
-      setNoteBody("");
-    });
-
-  const actionNeeded =
-    detail.pendingDeposits.length > 0 ||
-    detail.accounts.some((a) => a.status === "creating");
+  const initials = (detail.player.displayName || "P")
+    .split(" ")
+    .map((w) => w[0])
+    .join("")
+    .slice(0, 2)
+    .toUpperCase();
 
   return (
-    <div className="admin-thin-scroll h-full overflow-y-auto bg-navy">
+    <div className="flex h-full flex-col gap-3 overflow-y-auto bg-navy p-3.5">
       {/* Player header */}
-      <div className="border-b border-surface-border px-3.5 py-3">
-        <p className="text-sm font-semibold text-text-primary">
+      <div className="flex flex-col items-center pt-2 text-center">
+        <span className="flex h-14 w-14 items-center justify-center rounded-full bg-gradient-to-br from-amber-600 to-orange-800 text-lg font-extrabold text-white">
+          {initials}
+        </span>
+        <p className="mt-2 text-[16px] font-bold text-text-primary">
           {detail.player.displayName}
         </p>
-        <p className="mt-0.5 truncate text-[11px] text-text-muted">
-          {detail.player.email ?? "No email"}
+        <p className="text-[12px] text-text-muted">
+          @{detail.player.displayName.toLowerCase().replace(/\s+/g, "")} ·{" "}
+          {detail.tags.includes("vip") ? "Gold VIP" : detail.tags.includes("new player") ? "Silver VIP" : "Player"}
         </p>
       </div>
 
-      {/* Needs your action */}
-      {actionNeeded && (
-        <Section title="Needs your action">
-          <div className="space-y-2">
-            {detail.pendingDeposits.map((d) => (
-              <DepositRow
-                key={d.id}
-                admin={admin}
-                deposit={d}
-                onView={(src, caption) => setViewer({ src, caption })}
-              />
-            ))}
-            {detail.accounts
-              .filter((a) => a.status === "creating")
-              .map((a) => (
-                <p key={a.id} className="rounded-md bg-gold/10 px-2.5 py-2 text-[11px] text-gold">
-                  {a.gameName} account waiting — use “Mark as active” below.
-                </p>
-              ))}
+      {/* Wallet */}
+      <div>
+        <p className="mb-1.5 px-1 text-[11px] font-bold uppercase tracking-wider text-text-muted">
+          Wallet
+        </p>
+        <div className="space-y-2 rounded-xl border border-surface-border bg-surface-card px-3.5 py-3 text-[13px]">
+          <div className="flex justify-between">
+            <span className="text-text-muted">Balance</span>
+            <span className="font-bold text-text-primary">$0.00</span>
           </div>
-        </Section>
-      )}
+          <div className="flex justify-between border-t border-surface-border pt-2">
+            <span className="text-text-muted">Status</span>
+            <span className="font-semibold text-text-primary">
+              {detail.player.isOnline ? "Active now" : "Offline"}
+            </span>
+          </div>
+          <div className="flex justify-between border-t border-surface-border pt-2">
+            <span className="text-text-muted">Game accounts</span>
+            <span className="font-bold text-text-primary">{detail.accounts.length}</span>
+          </div>
+        </div>
+      </div>
 
       {/* Tags */}
-      <Section title="Tags">
+      <Collapsible title="Tags" defaultOpen>
         <div className="flex flex-wrap gap-1.5">
-          {detail.tags.length === 0 && (
-            <span className="text-[11px] text-text-muted">No tags yet</span>
-          )}
           {detail.tags.map((tag) => (
-            <TagChip
+            <span
               key={tag}
-              tag={tag}
-              onRemove={() =>
-                run(() =>
-                  removePlayerTag(admin.id, { playerId: detail.player.id, tag }),
-                )
-              }
-            />
+              className="flex items-center gap-1 rounded-full border border-blue-500/50 bg-blue-500/10 px-2.5 py-1 text-[11px] font-semibold text-blue-400"
+            >
+              <span className="h-1.5 w-1.5 rounded-full bg-blue-400" />
+              {tag}
+              <button
+                type="button"
+                onClick={() => run(() => removePlayerTag(admin.id, { playerId: detail.player.id, tag }))}
+                className="ml-0.5 hover:text-blue-200"
+                aria-label={`Remove ${tag}`}
+              >
+                <XIcon className="h-3 w-3" />
+              </button>
+            </span>
           ))}
         </div>
         <div className="mt-2 flex flex-wrap gap-1.5">
-          {TAG_PRESETS.filter(
-            (p) => !detail.tags.includes(normalizeTag(p)),
-          ).map((p) => (
+          {TAG_PRESETS.filter((p) => !detail.tags.includes(normalizeTag(p))).map((p) => (
             <button
               key={p}
               type="button"
               disabled={busy}
-              onClick={() =>
-                run(() => addPlayerTag(admin.id, { playerId: detail.player.id, tag: p }))
-              }
-              className="admin-focus rounded-full border border-dashed border-surface-border px-2 py-0.5 text-[10px] text-text-muted transition-colors hover:border-gold/50 hover:text-gold disabled:opacity-40"
+              onClick={() => run(() => addPlayerTag(admin.id, { playerId: detail.player.id, tag: p }))}
+              className="rounded-full border border-dashed border-surface-border px-2.5 py-1 text-[11px] text-text-muted hover:border-gold/50 hover:text-gold disabled:opacity-40"
             >
               + {p}
             </button>
@@ -509,89 +428,134 @@ export default function DetailsPanel({
             value={newTag}
             onChange={(e) => setNewTag(e.target.value)}
             onKeyDown={(e) => {
-              if (e.key === "Enter") addCustomTag();
+              if (e.key === "Enter" && newTag.trim()) {
+                run(async () => {
+                  await addPlayerTag(admin.id, { playerId: detail.player.id, tag: newTag.trim() });
+                  setNewTag("");
+                });
+              }
             }}
-            placeholder="Custom tag…"
-            aria-label="Custom tag"
-            className="admin-focus min-w-0 flex-1 rounded-md border border-surface-border bg-surface-input px-2 py-1.5 text-xs text-text-primary placeholder:text-text-muted"
+            placeholder="Custom tag..."
+            className="min-w-0 flex-1 rounded-lg border border-surface-border bg-surface-input px-3 py-2 text-[13px] text-text-primary placeholder:text-text-muted"
           />
           <button
             type="button"
-            onClick={addCustomTag}
             disabled={busy || !newTag.trim()}
-            aria-label="Add tag"
-            className="admin-focus rounded-md bg-surface-elevated p-1.5 text-text-secondary hover:text-gold disabled:opacity-40"
+            onClick={() =>
+              run(async () => {
+                await addPlayerTag(admin.id, { playerId: detail.player.id, tag: newTag.trim() });
+                setNewTag("");
+              })
+            }
+            className="rounded-lg bg-surface-elevated px-4 py-2 text-[13px] font-semibold text-text-primary hover:text-gold disabled:opacity-40"
           >
-            <PlusIcon className="h-3.5 w-3.5" />
+            Add
           </button>
         </div>
-      </Section>
+      </Collapsible>
 
-      {/* Private notes */}
-      <Section title="Private notes">
-        <div className="space-y-1.5">
-          {detail.notes.length === 0 && (
-            <span className="text-[11px] text-text-muted">
-              No notes. Notes are admin-only — never shown to the player.
-            </span>
-          )}
+      {/* Notes */}
+      <Collapsible title="Notes" count={detail.notes.length}>
+        <div className="space-y-2">
           {detail.notes.map((n) => (
-            <div
-              key={n.id}
-              className="rounded-md border border-surface-border bg-surface-card p-2"
-            >
-              <p className="whitespace-pre-wrap text-xs text-text-primary">{n.body}</p>
-              <div className="mt-1 flex items-center justify-between">
+            <div key={n.id} className="rounded-lg border border-surface-border bg-navy p-2.5">
+              <p className="whitespace-pre-wrap text-[13px] text-text-primary">{n.body}</p>
+              <div className="mt-1.5 flex items-center justify-between">
                 <span className="text-[10px] text-text-muted">
                   {n.createdBy} · {timeAgo(n.createdAt)}
                 </span>
                 <button
                   type="button"
                   onClick={() => run(() => deletePlayerNote(admin.id, n.id))}
-                  disabled={busy}
+                  className="rounded p-1 text-text-muted hover:text-danger"
                   aria-label="Delete note"
-                  className="admin-focus rounded p-1 text-text-muted hover:text-danger disabled:opacity-40"
                 >
-                  <XIcon className="h-3.5 w-3.5" />
+                  <TrashIcon className="h-3.5 w-3.5" />
                 </button>
               </div>
             </div>
           ))}
+          <div className="flex gap-1.5">
+            <input
+              value={noteBody}
+              onChange={(e) => setNoteBody(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && noteBody.trim()) {
+                  run(async () => {
+                    await addPlayerNote(admin.id, { playerId: detail.player.id, body: noteBody.trim() });
+                    setNoteBody("");
+                  });
+                }
+              }}
+              placeholder="Add a note..."
+              className="min-w-0 flex-1 rounded-lg border border-surface-border bg-surface-input px-3 py-2 text-[13px] text-text-primary placeholder:text-text-muted"
+            />
+            <button
+              type="button"
+              disabled={busy || !noteBody.trim()}
+              onClick={() =>
+                run(async () => {
+                  await addPlayerNote(admin.id, { playerId: detail.player.id, body: noteBody.trim() });
+                  setNoteBody("");
+                })
+              }
+              className="rounded-lg bg-gold px-3 py-2 text-navy hover:opacity-90 disabled:opacity-40"
+              aria-label="Add note"
+            >
+              <CheckIcon className="h-4 w-4" />
+            </button>
+          </div>
         </div>
-        <div className="mt-2 flex gap-1.5">
-          <input
-            value={noteBody}
-            onChange={(e) => setNoteBody(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") addNote();
-            }}
-            placeholder="Add a private note…"
-            aria-label="Add a private note"
-            className="admin-focus min-w-0 flex-1 rounded-md border border-surface-border bg-surface-input px-2 py-1.5 text-xs text-text-primary placeholder:text-text-muted"
-          />
-          <button
-            type="button"
-            onClick={addNote}
-            disabled={busy || !noteBody.trim()}
-            aria-label="Add note"
-            className="admin-focus rounded-md bg-gold p-1.5 text-navy hover:opacity-90 disabled:opacity-40"
-          >
-            <CheckIcon className="h-3.5 w-3.5" />
-          </button>
-        </div>
-      </Section>
+      </Collapsible>
 
       {/* Game accounts */}
-      <Section title={`Game accounts (${detail.accounts.length})`}>
+      <Collapsible title="Game accounts" count={detail.accounts.length} defaultOpen={detail.accounts.length > 0}>
         <div className="space-y-2">
           {detail.accounts.length === 0 && (
-            <span className="text-[11px] text-text-muted">No accounts yet</span>
+            <p className="text-[12px] text-text-muted">No accounts yet</p>
           )}
           {detail.accounts.map((a) => (
-            <AccountRow key={a.id} admin={admin} account={a} onBusy={setBusy} />
+            <AccountCard key={a.id} admin={admin} account={a} onBusy={setBusy} />
           ))}
         </div>
-      </Section>
+      </Collapsible>
+
+      {/* Create game account */}
+      <Collapsible title="Create game account" defaultOpen>
+        <div className="flex gap-2">
+          <select
+            value={selectedGame}
+            onChange={(e) => setSelectedGame(e.target.value)}
+            className="min-w-0 flex-1 rounded-lg border border-surface-border bg-surface-input px-3 py-2.5 text-[14px] text-text-primary"
+          >
+            {games.map((g) => (
+              <option key={g.id} value={g.id}>
+                {g.name}
+              </option>
+            ))}
+          </select>
+          <button
+            type="button"
+            disabled={creating || !selectedGame}
+            onClick={async () => {
+              setCreating(true);
+              try {
+                await createGameAccountForPlayer(admin.id, detail.player.id, selectedGame);
+                router.refresh();
+              } finally {
+                setCreating(false);
+              }
+            }}
+            className="rounded-lg bg-gold px-5 py-2.5 text-[14px] font-bold text-navy hover:opacity-90 disabled:opacity-40"
+          >
+            {creating ? "…" : "Create"}
+          </button>
+        </div>
+        <p className="mt-2 text-[11px] leading-relaxed text-text-muted">
+          Generates the username &amp; password, adds it to the sheet log, and sends the login
+          to the player as a card in this chat.
+        </p>
+      </Collapsible>
 
       {viewer && (
         <ScreenshotViewer
