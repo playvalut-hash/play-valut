@@ -537,16 +537,16 @@ function MessageView({ message }: { message: ChatMessage }) {
   return (
     <div className={`flex ${mine ? "justify-end" : "justify-start"}`}>
       <div
-        className={`max-w-[80%] rounded-2xl px-4 py-2.5 ${
+        className={`max-w-[82%] rounded-2xl px-[13px] py-[9px] text-[14.5px] leading-[1.45] ${
           mine
-            ? "rounded-br-md bg-gold/20 text-text-primary"
-            : "rounded-bl-md border border-surface-border bg-surface-card text-text-primary"
+            ? "rounded-br-[5px] bg-gold font-semibold text-gold-ink"
+            : "rounded-bl-[5px] border border-line bg-card-2 text-ink"
         }`}
       >
-        <p className="whitespace-pre-wrap break-words text-sm">
+        <p className="whitespace-pre-line break-words">
           {str(message.body["text"])}
         </p>
-        <p className="mt-1 text-right text-[10px] text-text-muted">
+        <p className="mt-1 text-right text-[10px] text-ink-3">
           {formatTime(message.created_at)}
         </p>
       </div>
