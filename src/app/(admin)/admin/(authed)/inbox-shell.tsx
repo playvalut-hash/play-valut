@@ -9,6 +9,7 @@ import type {
   PlayerDetailView,
   PlayerOverview,
 } from "../../_actions";
+import { getPlayerDetail, getThread, markThreadRead } from "../../_actions";
 import { cn } from "@/lib/utils";
 import { ChatIcon, ChevronDownIcon, SearchIcon } from "@/components/icons";
 import ThreadView from "./thread";
@@ -84,9 +85,9 @@ function PlayerRow({
 export default function InboxShell({
   admin,
   overview,
-  selectedId,
-  thread,
-  detail,
+  selectedId: initialSelectedId,
+  thread: initialThread,
+  detail: initialDetail,
   games,
   gamesCount,
   methodsCount,
@@ -106,6 +107,38 @@ export default function InboxShell({
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<Filter>("all");
   const [tag, setTag] = useState<string>("");
+
+  // Client-side selection: instant, no page reload
+  const [selectedId, setSelectedId] = useState<string | null>(initialSelectedId);
+  const [thread, setThread] = useState<ChatMessageView[]>(initialThread);
+  const [detail, setDetail] = useState<PlayerDetailView | null>(initialDetail);
+  const [loadingThread, setLoadingThread] = useState(false);
+
+  async function selectPlayer(id: string | null) {
+    if (id === selectedId) {
+      setSelectedId(null);
+      setThread([]);
+      setDetail(null);
+      return;
+    }
+    setSelectedId(id);
+    setMobilePanel(null);
+    if (!id) {
+      setThread([]);
+      setDetail(null);
+      return;
+    }
+    setLoadingThread(true);
+    try {
+      const [t, d] = await Promise.all([getThread(id), getPlayerDetail(id)]);
+      setThread(t);
+      setDetail(d);
+      // Mark as read in background
+      markThreadRead(admin.id, id).catch(() => {});
+    } finally {
+      setLoadingThread(false);
+    }
+  }
 
   // Realtime: refresh on new messages/deposits without full polling.
   // (Polling every 8s caused flicker; realtime is instant.)
@@ -254,7 +287,7 @@ export default function InboxShell({
                 player={p}
                 selected={p.id === selectedId}
                 onSelect={() => {
-                  router.push(p.id === selectedId ? "/admin" : `/admin?player=${p.id}`);
+                  void selectPlayer(p.id === selectedId ? null : p.id);
                 }}
               />
             ))
@@ -290,7 +323,7 @@ export default function InboxShell({
               <button
                 type="button"
                 onClick={() => {
-                  router.push("/admin");
+                  void selectPlayer(null);
                 }}
                 className="flex items-center gap-1 rounded-lg px-2 py-1.5 text-sm text-gold"
               >
@@ -307,14 +340,23 @@ export default function InboxShell({
                 Details →
               </button>
             </div>
-            <ThreadView
-              admin={admin}
-              player={selected}
-              thread={thread}
-              games={games}
-              gamesCount={gamesCount}
-              methodsCount={methodsCount}
-            />
+            {loadingThread ? (
+              <div className="flex flex-1 items-center justify-center">
+                <div className="flex flex-col items-center gap-3">
+                  <div className="h-8 w-8 animate-spin rounded-full border-2 border-gold/30 border-t-gold" />
+                  <p className="text-sm text-text-muted">Loading conversation…</p>
+                </div>
+              </div>
+            ) : (
+              <ThreadView
+                admin={admin}
+                player={selected}
+                thread={thread}
+                games={games}
+                gamesCount={gamesCount}
+                methodsCount={methodsCount}
+              />
+            )}
           </>
         ) : (
           <div className="flex flex-1 flex-col items-center justify-center gap-3 text-center">
