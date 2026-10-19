@@ -1,0 +1,82 @@
+/**
+ * Admin back-office styles — kept inside the (admin) tree so the player
+ * app never loads them.
+ */
+
+/* Invisible chat scrollbars (PRD F31) — scrolling still works. */
+.admin-chat-scroll {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.admin-chat-scroll::-webkit-scrollbar {
+  display: none;
+}
+
+/* Thin, subtle scrollbars for panels/lists. */
+.admin-thin-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: #26314b transparent;
+}
+.admin-thin-scroll::-webkit-scrollbar {
+  width: 6px;
+}
+.admin-thin-scroll::-webkit-scrollbar-thumb {
+  background: #26314b;
+  border-radius: 9999px;
+}
+
+/* Compact admin focus ring. */
+.admin-focus:focus-visible {
+  outline: 2px solid #d4af37;
+  outline-offset: 1px;
+}
+
+/* Subtle message entrance (150–250ms ease, PRD §7). */
+@keyframes admin-msg-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.admin-msg-in {
+  animation: admin-msg-in 180ms ease-out;
+}
+
+/* Bell badge pulse on new notifications. */
+@keyframes admin-bell-pulse {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.15);
+  }
+}
+.admin-bell-pulse {
+  animation: admin-bell-pulse 1.6s ease-in-out infinite;
+}
+
+/* Hover lift for cards/rows (≤2px, PRD §7). */
+.admin-lift {
+  transition: transform 180ms ease, background-color 180ms ease, border-color 180ms ease;
+}
+.admin-lift:hover {
+  transform: translateY(-1px);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .admin-msg-in,
+  .admin-bell-pulse {
+    animation: none;
+  }
+  .admin-lift {
+    transition: none;
+  }
+  .admin-lift:hover {
+    transform: none;
+  }
+}
