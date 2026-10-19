@@ -1767,3 +1767,35 @@ export async function createGameAccountForPlayer(
   audit(adminId, "accounts.create", `${playerId}/${gameId}`);
   revalidateAdmin();
 }
+
+/** SEND bar: push a single game to the player's chat. */
+export async function sendSingleGame(
+  adminId: string,
+  playerId: string,
+  gameId: string,
+): Promise<void> {
+  await requireAdmin(adminId);
+  z.string().uuid().parse(playerId);
+  z.string().uuid().parse(gameId);
+  const { data: game } = await svc()
+    .from("games")
+    .select("id, name")
+    .eq("id", gameId)
+    .single();
+  if (!game) throw new Error("Game not found");
+  const { error } = await svc().from("chat_messages").insert({
+    player_id: playerId,
+    sender: "admin",
+    kind: "games_list",
+    body: {
+      title: `How about ${(game as { name: string }).name}? Tap to get your account`,
+      games: [{ id: (game as { id: string }).id, name: (game as { name: string }).name }],
+      picked: null,
+    },
+    is_read_by_player: false,
+    is_read_by_admin: true,
+  });
+  if (error) throw new Error("Could not send game");
+  audit(adminId, "chat.send_single_game", `${playerId}/${gameId}`);
+  revalidateAdmin();
+}
