@@ -289,6 +289,19 @@ export async function sendChatMessage(
 
   const games = await fetchActiveGames();
 
+  // Ensure players row exists (agents/admins don't have one; creates on demand).
+  await supabase.from("players").upsert(
+    {
+      id: user.id,
+      display_name:
+        (user.user_metadata?.display_name as string) ||
+        user.email?.split("@")[0] ||
+        "Player",
+      email: user.email ?? null,
+    },
+    { onConflict: "id" },
+  );
+
   // 1. The player's message (RLS: sender='player' only).
   const { error: msgError } = await supabase.from("chat_messages").insert({
     player_id: user.id,
