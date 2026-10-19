@@ -59,7 +59,7 @@ export default async function WalletPage() {
 
       <Link
         href="/app/deposit"
-        className="mt-4 flex min-h-[56px] items-center justify-center gap-2 rounded-xl bg-gold text-base font-bold text-text-ongold shadow-[0_4px_20px_rgba(212,175,55,0.25)] transition hover:brightness-110"
+        className="mt-4 flex min-h-[56px] items-center justify-center gap-2 rounded-xl bg-gold text-base font-bold text-text-ongold shadow-[0_4px_20px_rgba(139,92,246,0.25)] transition hover:brightness-110"
       >
         <PlusIcon className="h-5 w-5" />
         Deposit
