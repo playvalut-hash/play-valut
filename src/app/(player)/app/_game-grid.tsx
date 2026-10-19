@@ -13,32 +13,32 @@ function GameTile({ tile }: { tile: TileData }) {
   return (
     <Link
       href={`/app/game/${game.id}`}
-      className="group relative flex min-h-[132px] flex-col justify-end overflow-hidden rounded-xl border border-surface-border p-3 transition hover:-translate-y-0.5 hover:border-gold/50"
-      style={{ background: `linear-gradient(135deg, ${c1}, ${c2})` }}
+      className="gtile group block overflow-hidden rounded-2xl border border-line bg-card p-0 text-left text-ink transition active:scale-[0.97]"
       aria-label={`${game.name} — ${accountStatus ? "account ready" : "get an account"}`}
     >
       <div
-        aria-hidden
-        className="absolute inset-0 opacity-20"
-        style={{
-          background:
-            "radial-gradient(80% 60% at 80% 0%, rgba(255,255,255,0.5), transparent 60%)",
-        }}
-      />
-      {accountStatus ? (
-        <span className="absolute left-2 top-2 flex items-center gap-1 rounded-full bg-black/55 px-2 py-0.5 text-[10px] font-bold text-success backdrop-blur">
-          <CheckIcon className="h-3 w-3" />
-          Account ready
-        </span>
-      ) : null}
-      <div className="relative">
-        <p className="text-sm font-extrabold leading-tight text-white drop-shadow">
-          {game.name}
-        </p>
-        <p className="mt-1 text-[11px] font-semibold text-gold-light drop-shadow">
+        className="relative grid h-[82px] place-items-center"
+        style={{ background: `linear-gradient(135deg, ${c1}, ${c2})` }}
+      >
+        {accountStatus ? (
+          <span className="absolute left-1.5 top-1.5 rounded-full bg-green px-[7px] py-[2px] text-[10px] font-extrabold text-[#03231a]">
+            Account ready
+          </span>
+        ) : null}
+        {bonusText ? (
+          <span className="absolute right-1.5 top-1.5 rounded-full bg-black/55 px-[7px] py-[2px] text-[10px] font-extrabold text-gold-2">
+            Bonus
+          </span>
+        ) : null}
+      </div>
+      <p className="px-2.5 pb-[3px] pt-2 text-[13.5px] font-extrabold leading-tight">
+        {game.name}
+      </p>
+      {bonusText ? (
+        <p className="flex flex-wrap gap-x-2 gap-y-0.5 px-2.5 pb-2.5 text-[11px] font-extrabold text-gold-2">
           {bonusText}
         </p>
-      </div>
+      ) : null}
     </Link>
   );
 }
@@ -139,7 +139,7 @@ export default function GameGrid({
             No games match “{query}”.
           </p>
         ) : (
-          <div className="mt-3 grid grid-cols-2 gap-3 pb-6 sm:grid-cols-3">
+          <div className="mt-3 grid grid-cols-3 gap-[11px] pb-6">
             {filtered.map((tile) => (
               <GameTile key={tile.game.id} tile={tile} />
             ))}
