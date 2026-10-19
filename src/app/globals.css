@@ -1,37 +1,94 @@
 @import "tailwindcss";
+@import url("https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700;12..96,800&family=Manrope:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;700&display=swap");
 
 @theme {
-  --color-navy: #0c1424;
-  --color-near-black: #0b0e14;
+  /* ── Skeleton design tokens (EXACT match) ── */
+  --color-bg: #0b0e14;
+  --color-bg-2: #10141d;
+  --color-card: #151a26;
+  --color-card-2: #1b2231;
+  --color-line: #232c3e;
+  --color-line-2: #303c54;
+  --color-ink: #eef2f7;
+  --color-ink-2: #a7b2c3;
+  --color-ink-3: #6d7a8f;
   --color-gold: #d4af37;
-  --color-gold-light: #e8c96a;
-  --color-success: #22c55e;
-  --color-danger: #ef4444;
+  --color-gold-2: #f0cd6a;
+  --color-gold-ink: #241a02;
+  --color-gold-bg: rgba(212, 175, 55, 0.13);
+  --color-green: #10b981;
+  --color-green-bg: rgba(16, 185, 129, 0.14);
+  --color-red: #ff6b5e;
+  --color-red-bg: rgba(255, 107, 94, 0.13);
+  --color-amber: #f5b942;
+  --color-amber-bg: rgba(245, 185, 66, 0.14);
+  --color-chip: #1c2434;
+
+  /* ── Legacy aliases (map to skeleton tokens) ── */
+  --color-navy: #0b0e14;
+  --color-near-black: #04060a;
+  --color-gold-light: #f0cd6a;
+  --color-success: #10b981;
+  --color-danger: #ff6b5e;
   --color-teal: #2bb3a3;
 
-  --color-text-primary: #f4f1e8;
-  --color-text-secondary: #a8a29e;
-  --color-text-muted: #6b7280;
-  --color-text-ongold: #0c1424;
+  --color-text-primary: #eef2f7;
+  --color-text-secondary: #a7b2c3;
+  --color-text-muted: #6d7a8f;
+  --color-text-ongold: #241a02;
 
-  --color-surface-card: #141b2e;
-  --color-surface-elevated: #1a2338;
-  --color-surface-border: #26314b;
-  --color-surface-input: #0f1626;
+  --color-surface-card: #151a26;
+  --color-surface-elevated: #1b2231;
+  --color-surface-border: #232c3e;
+  --color-surface-input: #151a26;
 
-  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,
-    "Helvetica Neue", Arial, sans-serif;
+  --font-sans: "Manrope", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Bricolage Grotesque", "Manrope", sans-serif;
+  --font-mono: "JetBrains Mono", monospace;
 }
 
 html {
   color-scheme: dark;
+  -webkit-text-size-adjust: 100%;
 }
 
 body {
-  background-color: var(--color-navy);
-  color: var(--color-text-primary);
+  margin: 0;
+  background-color: #04060a;
+  color: var(--color-ink);
   font-family: var(--font-sans);
+  font-size: 15.5px;
+  line-height: 1.5;
   -webkit-font-smoothing: antialiased;
+}
+
+h1,
+h2,
+h3,
+.display {
+  font-family: var(--font-display);
+  letter-spacing: -0.01em;
+}
+
+button {
+  font: inherit;
+  cursor: pointer;
+}
+input,
+select,
+textarea {
+  font: inherit;
+  color: inherit;
+}
+a {
+  color: var(--color-gold-2);
+}
+.mono {
+  font-family: var(--font-mono);
+}
+:focus-visible {
+  outline: 2px solid var(--color-gold);
+  outline-offset: 2px;
 }
 
 /* Invisible scrollbars (chat threads, pickers) */
@@ -41,6 +98,8 @@ body {
 }
 .no-scrollbar::-webkit-scrollbar {
   display: none;
+  width: 0;
+  height: 0;
 }
 
 @keyframes fade-up {
