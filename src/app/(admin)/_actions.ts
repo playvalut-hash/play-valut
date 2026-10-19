@@ -408,16 +408,45 @@ export async function getInboxOverview(): Promise<PlayerOverview[]> {
     .from("players")
     .select("id, display_name, email, avatar_url, is_online, created_at")
     .order("created_at", { ascending: false })
-    .limit(500);
+    .limit(100);
   const playerList = (players ?? []) as DbPlayer[];
   if (playerList.length === 0) return [];
 
   const ids = playerList.map((p) => p.id);
 
-  const { data: tags } = await client
-    .from("player_tags")
-    .select("player_id, tag")
-    .in("player_id", ids);
+  // All independent queries in parallel (was 5 sequential round-trips).
+  const [tagsRes, unreadRes, pendingRes, creatingRes, recentRes] =
+    await Promise.all([
+      client.from("player_tags").select("player_id, tag").in("player_id", ids),
+      client
+        .from("chat_messages")
+        .select("player_id")
+        .in("player_id", ids)
+        .eq("sender", "player")
+        .eq("is_read_by_admin", false),
+      client
+        .from("deposits")
+        .select("player_id")
+        .in("player_id", ids)
+        .eq("status", "pending"),
+      client
+        .from("game_accounts")
+        .select("player_id")
+        .in("player_id", ids)
+        .eq("status", "creating"),
+      client
+        .from("chat_messages")
+        .select("player_id, kind, body, created_at")
+        .in("player_id", ids)
+        .order("created_at", { ascending: false })
+        .limit(500),
+    ]);
+
+  const { data: tags } = tagsRes;
+  const { data: unread } = unreadRes;
+  const { data: pendingDeposits } = pendingRes;
+  const { data: creating } = creatingRes;
+  const { data: recent } = recentRes;
   const tagMap = new Map<string, string[]>();
   for (const t of ((tags ?? []) as Array<{ player_id: string; tag: string }>)) {
     const arr = tagMap.get(t.player_id) ?? [];
@@ -425,44 +454,22 @@ export async function getInboxOverview(): Promise<PlayerOverview[]> {
     tagMap.set(t.player_id, arr);
   }
 
-  const { data: unread } = await client
-    .from("chat_messages")
-    .select("player_id")
-    .in("player_id", ids)
-    .eq("sender", "player")
-    .eq("is_read_by_admin", false);
   const unreadMap = new Map<string, number>();
   for (const m of ((unread ?? []) as Array<{ player_id: string }>)) {
     unreadMap.set(m.player_id, (unreadMap.get(m.player_id) ?? 0) + 1);
   }
 
-  const { data: pendingDeposits } = await client
-    .from("deposits")
-    .select("player_id")
-    .in("player_id", ids)
-    .eq("status", "pending");
   const pendingMap = new Map<string, number>();
   for (const d of ((pendingDeposits ?? []) as Array<{ player_id: string }>)) {
     pendingMap.set(d.player_id, (pendingMap.get(d.player_id) ?? 0) + 1);
   }
 
-  const { data: creating } = await client
-    .from("game_accounts")
-    .select("player_id")
-    .in("player_id", ids)
-    .eq("status", "creating");
   const creatingMap = new Map<string, number>();
   for (const a of ((creating ?? []) as Array<{ player_id: string }>)) {
     creatingMap.set(a.player_id, (creatingMap.get(a.player_id) ?? 0) + 1);
   }
 
   // Latest message per player (recent window, then take first per player).
-  const { data: recent } = await client
-    .from("chat_messages")
-    .select("player_id, kind, body, created_at")
-    .in("player_id", ids)
-    .order("created_at", { ascending: false })
-    .limit(2000);
   const lastMap = new Map<
     string,
     { kind: string; body: Record<string, unknown>; created_at: string }
@@ -1650,7 +1657,7 @@ export async function createAgent(
     email,
     password,
     email_confirm: true,
-    user_metadata: { display_name: displayName },
+    user_metadata: { display_name: displayName, is_staff: true },
   });
   if (createError || !created.user) {
     throw new Error(createError?.message ?? "Could not create agent account");
