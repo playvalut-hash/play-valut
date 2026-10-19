@@ -229,6 +229,7 @@ export default function InboxShell({
             admin={admin}
             player={selected}
             thread={thread}
+            games={games}
             gamesCount={gamesCount}
             methodsCount={methodsCount}
           />
