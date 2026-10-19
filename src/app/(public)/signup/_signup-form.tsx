@@ -4,10 +4,9 @@ import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
-import { EyeIcon, EyeOffIcon, ShieldIcon, UserIcon } from "@/components/icons";
-import { BrandMark, BrandName, brandLogoUrl, type Branding } from "../../_branding";
+import { EyeIcon, EyeOffIcon } from "@/components/icons";
 
-export default function SignupForm({ branding }: { branding: Branding }) {
+export default function SignupForm({ branding }: { branding: { brand_name: string } }) {
   const router = useRouter();
   const [displayName, setDisplayName] = useState("");
   const [email, setEmail] = useState("");
@@ -15,17 +14,12 @@ export default function SignupForm({ branding }: { branding: Branding }) {
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [verifySent, setVerifySent] = useState(false);
 
   async function handleSignup(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
-    if (!displayName.trim()) {
-      setError("Please enter your display name.");
-      return;
-    }
-    if (!email.trim() || !password) {
-      setError("Enter your email and a password.");
+    if (!displayName.trim() || !email.trim() || !password) {
+      setError("Please fill in all fields.");
       return;
     }
     if (password.length < 6) {
@@ -48,146 +42,83 @@ export default function SignupForm({ branding }: { branding: Branding }) {
         router.push("/app");
         router.refresh();
       } else {
-        // Email confirmation required: players row is created by the DB trigger.
-        setVerifySent(true);
+        router.push("/login");
       }
     } finally {
       setLoading(false);
     }
   }
 
-  const logoUrl = brandLogoUrl(branding.logo_path);
+  const fieldStyle = {
+    background: "#151a26",
+    borderColor: "#232c3e",
+    color: "#eef2f7",
+  } as const;
 
   return (
-    <div className="min-h-dvh bg-near-black flex items-center justify-center p-4 sm:p-8">
-      <div
-        aria-hidden
-        className="pointer-events-none fixed inset-0"
-        style={{
-          background:
-            "radial-gradient(60% 50% at 50% 0%, rgba(212,175,55,0.08), transparent 70%), radial-gradient(80% 60% at 50% 100%, rgba(12,20,36,0.9), transparent 70%)",
-        }}
-      />
-      <div className="relative w-full max-w-[560px]">
-        <div className="rounded-2xl border border-surface-border bg-navy/90 p-6 sm:p-10 shadow-[0_12px_48px_rgba(0,0,0,0.55)] backdrop-blur">
-          <div className="flex flex-col items-center text-center">
-            {logoUrl ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img
-                src={logoUrl}
-                alt={`${branding.brand_name} logo`}
-                className="h-14 w-14 rounded-xl object-contain"
-              />
-            ) : (
-              <BrandMark size={56} />
-            )}
-            <BrandName
-              name={branding.brand_name}
-              className="mt-4 text-3xl font-extrabold tracking-tight"
-            />
-            <h1 className="mt-6 text-xl font-bold text-text-primary">
-              Create your account
-            </h1>
-            <p className="mt-1 text-sm text-text-secondary">
-              One account for every game in the lobby.
-            </p>
+    <div className="flex min-h-dvh flex-col px-[26px] pb-10 pt-[52px]" style={{ background: "#0b0e14" }}>
+      <div className="mx-auto mb-[14px] grid h-[84px] w-[84px] place-items-center rounded-[22px] text-gold"
+        style={{ background: "linear-gradient(145deg, #123524, #0a2317)", border: "1px solid rgba(212, 175, 55, 0.45)" }} aria-hidden>
+        <svg width="44" height="44" viewBox="0 0 24 24" fill="none">
+          <path d="M12 2 21 12 12 22 3 12 12 2Z" stroke="currentColor" strokeWidth="1.6" />
+          <path d="M12 7.5 16.5 12 12 16.5 7.5 12 12 7.5Z" fill="currentColor" />
+        </svg>
+      </div>
+      <div className="text-center text-[26px] font-extrabold tracking-[0.06em]"
+        style={{ fontFamily: "var(--font-display)", color: "#eef2f7" }}>
+        PLAY<span className="text-gold">VAULT</span>
+      </div>
+
+      <div className="mx-auto mt-8 w-full max-w-[400px]">
+        <h1 className="text-[28px] font-extrabold" style={{ fontFamily: "var(--font-display)", color: "#eef2f7" }}>
+          Create Account
+        </h1>
+        <p className="mt-1 text-[15px]" style={{ color: "#a7b2c3" }}>
+          Join the lobby — it takes a minute
+        </p>
+
+        {error ? (
+          <div className="mt-4 rounded-lg border border-[#ff6b5e]/40 bg-[#ff6b5e]/10 px-4 py-3 text-sm text-[#ff6b5e]">
+            {error}
           </div>
+        ) : null}
 
-          {error ? (
-            <div
-              role="alert"
-              className="mt-6 rounded-lg border border-danger/40 bg-danger/10 px-4 py-3 text-sm text-danger"
-            >
-              {error}
+        <form onSubmit={handleSignup} className="mt-6">
+          {[
+            { id: "suName", label: "Full name", type: "text", value: displayName, set: setDisplayName, ph: "e.g. Alex Morgan" },
+            { id: "suEmail", label: "Email", type: "email", value: email, set: setEmail, ph: "you@example.com" },
+          ].map((f) => (
+            <div key={f.id} className="mb-[14px] flex flex-col gap-[6px]">
+              <label htmlFor={f.id} className="text-[13px] font-semibold" style={{ color: "#a7b2c3" }}>{f.label}</label>
+              <input id={f.id} type={f.type} value={f.value} onChange={(e) => f.set(e.target.value)}
+                placeholder={f.ph} style={fieldStyle}
+                className="rounded-[12px] border px-4 py-3 text-[15px] outline-none transition focus:border-gold" />
             </div>
-          ) : null}
-          {verifySent ? (
-            <div
-              role="status"
-              className="mt-6 rounded-lg border border-success/40 bg-success/10 px-4 py-3 text-sm text-success"
-            >
-              Account created! Check your inbox to verify your email, then sign
-              in.
+          ))}
+          <div className="mb-[14px] flex flex-col gap-[6px]">
+            <label htmlFor="suPass" className="text-[13px] font-semibold" style={{ color: "#a7b2c3" }}>Password</label>
+            <div className="relative">
+              <input id="suPass" type={showPassword ? "text" : "password"} value={password}
+                onChange={(e) => setPassword(e.target.value)} placeholder="Create a password" style={fieldStyle}
+                className="w-full rounded-[12px] border px-4 py-3 pr-12 text-[15px] outline-none transition focus:border-gold" />
+              <button type="button" onClick={() => setShowPassword((v) => !v)}
+                className="absolute right-3 top-1/2 -translate-y-1/2 p-1" style={{ color: "#6d7a8f" }}
+                aria-label={showPassword ? "Hide password" : "Show password"}>
+                {showPassword ? <EyeOffIcon className="h-5 w-5" /> : <EyeIcon className="h-5 w-5" />}
+              </button>
             </div>
-          ) : null}
+          </div>
+          <button type="submit" disabled={loading}
+            className="mt-2 w-full rounded-[12px] py-[14px] text-[16px] font-bold transition hover:brightness-110 active:scale-[0.99] disabled:opacity-60"
+            style={{ background: "#d4af37", color: "#241a02" }}>
+            {loading ? "Creating…" : "Create my account"}
+          </button>
+        </form>
 
-          <form onSubmit={handleSignup} className="mt-6 space-y-4">
-            <label className="block">
-              <span className="sr-only">Display name</span>
-              <span className="flex items-center gap-3 rounded-xl border border-gold/50 bg-surface-input px-4 py-3.5 focus-within:border-gold focus-within:ring-1 focus-within:ring-gold/50 transition">
-                <UserIcon className="h-5 w-5 shrink-0 text-gold" />
-                <input
-                  type="text"
-                  autoComplete="name"
-                  placeholder="Display name"
-                  value={displayName}
-                  onChange={(e) => setDisplayName(e.target.value)}
-                  className="w-full bg-transparent text-base text-text-primary placeholder:text-text-muted focus:outline-none"
-                />
-              </span>
-            </label>
-
-            <label className="block">
-              <span className="sr-only">Email</span>
-              <span className="flex items-center gap-3 rounded-xl border border-gold/50 bg-surface-input px-4 py-3.5 focus-within:border-gold focus-within:ring-1 focus-within:ring-gold/50 transition">
-                <UserIcon className="h-5 w-5 shrink-0 text-gold" />
-                <input
-                  type="email"
-                  autoComplete="email"
-                  placeholder="Email address"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  className="w-full bg-transparent text-base text-text-primary placeholder:text-text-muted focus:outline-none"
-                />
-              </span>
-            </label>
-
-            <label className="block">
-              <span className="sr-only">Password</span>
-              <span className="flex items-center gap-3 rounded-xl border border-gold/50 bg-surface-input px-4 py-3.5 focus-within:border-gold focus-within:ring-1 focus-within:ring-gold/50 transition">
-                <ShieldIcon className="h-5 w-5 shrink-0 text-gold" />
-                <input
-                  type={showPassword ? "text" : "password"}
-                  autoComplete="new-password"
-                  placeholder="Password (min. 6 characters)"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  className="w-full bg-transparent text-base text-text-primary placeholder:text-text-muted focus:outline-none"
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowPassword((v) => !v)}
-                  aria-label={showPassword ? "Hide password" : "Show password"}
-                  className="shrink-0 rounded p-1 text-text-secondary hover:text-gold transition"
-                >
-                  {showPassword ? (
-                    <EyeOffIcon className="h-5 w-5" />
-                  ) : (
-                    <EyeIcon className="h-5 w-5" />
-                  )}
-                </button>
-              </span>
-            </label>
-
-            <button
-              type="submit"
-              disabled={loading || verifySent}
-              className="w-full rounded-xl bg-gold py-4 text-base font-bold text-text-ongold shadow-[0_4px_20px_rgba(212,175,55,0.25)] transition hover:brightness-110 active:scale-[0.99] disabled:opacity-60 min-h-[56px]"
-            >
-              {loading ? "Creating…" : "Create account"}
-            </button>
-          </form>
-
-          <p className="mt-6 text-center text-sm text-text-secondary">
-            Already have an account?{" "}
-            <Link
-              href="/login"
-              className="font-semibold text-gold hover:text-gold-light transition"
-            >
-              Sign in
-            </Link>
-          </p>
-        </div>
+        <p className="mt-6 text-center text-[14px]" style={{ color: "#a7b2c3" }}>
+          Already have an account?{" "}
+          <Link href="/login" className="font-bold text-gold hover:underline">Sign in</Link>
+        </p>
       </div>
     </div>
   );
