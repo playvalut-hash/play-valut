@@ -326,12 +326,18 @@ export default function ThreadView({
     }
   }
 
-  async function sendOneGame(gameId: string) {
+  async function sendOneGame(gameId: string, gameName: string) {
     if (sendListBusy) return;
     setSendListBusy("single");
+    setGamesOpen(false); // Chips disappear immediately
     try {
+      // 1. Send "Sure! Let me set up your account" message
+      await sendAdminMessage(admin.id, {
+        playerId: player.id,
+        text: `Sure! Let me set up your ${gameName} account — one moment… 🎮`,
+      });
+      // 2. Send the single game
       await sendSingleGame(admin.id, player.id, gameId);
-      setGamesOpen(false);
       router.refresh();
     } finally {
       setSendListBusy(null);
@@ -401,7 +407,7 @@ export default function ThreadView({
               <button
                 key={g.id}
                 type="button"
-                onClick={() => sendOneGame(g.id)}
+                onClick={() => sendOneGame(g.id, g.name)}
                 disabled={sendListBusy !== null}
                 className="rounded-full border border-gold/40 px-3 py-1.5 text-[11px] font-semibold text-gold transition hover:bg-gold/10 disabled:opacity-40"
               >
