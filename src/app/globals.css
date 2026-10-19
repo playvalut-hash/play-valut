@@ -1,9 +1,9 @@
 @import "tailwindcss";
 
 @theme {
-  /* ── Skeleton design tokens (EXACT match) ── */
-  --color-bg: #0b0e14;
-  --color-bg-2: #10141d;
+  /* ── Skeleton v2 design tokens (EXACT match) ── */
+  --color-bg: #0c1424;
+  --color-bg-2: #111a2e;
   --color-card: #151a26;
   --color-card-2: #1b2231;
   --color-line: #232c3e;
