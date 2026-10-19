@@ -117,7 +117,7 @@ export default function GameGrid({
         </div>
         <a
           href="#games"
-          className="rounded-full bg-gold px-5 py-2 text-sm font-bold text-text-ongold shadow-[0_4px_20px_rgba(212,175,55,0.25)] transition hover:brightness-110"
+          className="rounded-full bg-gold px-5 py-2 text-sm font-bold text-text-ongold shadow-[0_4px_20px_rgba(139,92,246,0.25)] transition hover:brightness-110"
         >
           Play Now
         </a>
