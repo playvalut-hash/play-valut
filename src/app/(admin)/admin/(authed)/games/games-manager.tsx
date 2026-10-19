@@ -257,7 +257,7 @@ function GameForm({
             type="checkbox"
             checked={form.isActive}
             onChange={(e) => set("isActive", e.target.checked)}
-            className="h-4 w-4 accent-[#D4AF37]"
+            className="h-4 w-4 accent-[#8b5cf6]"
           />
           Visible to players
         </label>
