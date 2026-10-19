@@ -276,8 +276,21 @@ export default function InboxShell({
       >
         {selected ? (
           <>
-            {/* Mobile back button + details toggle */}
-            <div className="flex shrink-0 items-center gap-2 border-b border-surface-border bg-navy px-2 py-1.5 md:hidden">
+            {/* Mobile nav bar: hamburger + back + details */}
+            <div className="flex shrink-0 items-center gap-1 border-b border-surface-border bg-navy px-2 py-1.5 md:hidden">
+              <button
+                type="button"
+                onClick={() => {
+                  // Open the main sidebar via custom event
+                  window.dispatchEvent(new CustomEvent("open-admin-sidebar"));
+                }}
+                className="rounded-lg p-2 text-text-secondary hover:text-gold"
+                aria-label="Open menu"
+              >
+                <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                  <path d="M4 6h16M4 12h16M4 18h16" />
+                </svg>
+              </button>
               <button
                 type="button"
                 onClick={() => {
