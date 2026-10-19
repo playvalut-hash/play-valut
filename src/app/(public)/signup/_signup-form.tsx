@@ -58,7 +58,7 @@ export default function SignupForm({ branding }: { branding: { brand_name: strin
   return (
     <div className="flex min-h-dvh flex-col px-[26px] pb-10 pt-[52px]" style={{ background: "#0b0e14" }}>
       <div className="mx-auto mb-[14px] grid h-[84px] w-[84px] place-items-center rounded-[22px] text-gold"
-        style={{ background: "linear-gradient(145deg, #123524, #0a2317)", border: "1px solid rgba(212, 175, 55, 0.45)" }} aria-hidden>
+        style={{ background: "linear-gradient(145deg, #123524, #0a2317)", border: "1px solid rgba(139, 92, 246, 0.45)" }} aria-hidden>
         <svg width="44" height="44" viewBox="0 0 24 24" fill="none">
           <path d="M12 2 21 12 12 22 3 12 12 2Z" stroke="currentColor" strokeWidth="1.6" />
           <path d="M12 7.5 16.5 12 12 16.5 7.5 12 12 7.5Z" fill="currentColor" />
@@ -110,7 +110,7 @@ export default function SignupForm({ branding }: { branding: { brand_name: strin
           </div>
           <button type="submit" disabled={loading}
             className="mt-2 w-full rounded-[12px] py-[14px] text-[16px] font-bold transition hover:brightness-110 active:scale-[0.99] disabled:opacity-60"
-            style={{ background: "#d4af37", color: "#241a02" }}>
+            style={{ background: "#8b5cf6", color: "#ffffff" }}>
             {loading ? "Creating…" : "Create my account"}
           </button>
         </form>
