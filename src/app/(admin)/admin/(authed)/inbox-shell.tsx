@@ -77,12 +77,9 @@ function PlayerRow({
   );
 }
 
-const POLL_MS = 8000;
-
 /**
  * Business Inbox: 320px player list · flexible WhatsApp-style thread ·
- * 336px details panel. Polls (router.refresh) for realtime-ish updates —
- * swap for a Realtime channel once Phase 2 lands.
+ * 336px details panel. Uses Supabase Realtime for instant updates.
  */
 export default function InboxShell({
   admin,
@@ -110,12 +107,45 @@ export default function InboxShell({
   const [filter, setFilter] = useState<Filter>("all");
   const [tag, setTag] = useState<string>("");
 
-  // Poll for new messages / deposits / notifications while the tab is visible.
+  // Realtime: refresh on new messages/deposits without full polling.
+  // (Polling every 8s caused flicker; realtime is instant.)
   useEffect(() => {
-    const id = setInterval(() => {
-      if (!document.hidden) router.refresh();
-    }, POLL_MS);
-    return () => clearInterval(id);
+    let channel: { unsubscribe: () => void } | null = null;
+    let timer: ReturnType<typeof setInterval> | null = null;
+
+    async function setup() {
+      try {
+        const { createClient } = await import("@/lib/supabase/client");
+        const supabase = createClient();
+        channel = supabase
+          .channel("admin-inbox")
+          .on(
+            "postgres_changes",
+            { event: "*", schema: "public", table: "chat_messages" },
+            () => {
+              if (!document.hidden) router.refresh();
+            },
+          )
+          .on(
+            "postgres_changes",
+            { event: "*", schema: "public", table: "deposits" },
+            () => {
+              if (!document.hidden) router.refresh();
+            },
+          )
+          .subscribe() as unknown as { unsubscribe: () => void };
+      } catch {
+        // Fallback: slow poll if realtime fails
+        timer = setInterval(() => {
+          if (!document.hidden) router.refresh();
+        }, 30000);
+      }
+    }
+    void setup();
+    return () => {
+      channel?.unsubscribe();
+      if (timer) clearInterval(timer);
+    };
   }, [router]);
 
   const filtered = useMemo(() => {
