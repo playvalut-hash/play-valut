@@ -90,6 +90,7 @@ export default function InboxShell({
   selectedId,
   thread,
   detail,
+  games,
   gamesCount,
   methodsCount,
   tagOptions,
@@ -99,6 +100,7 @@ export default function InboxShell({
   selectedId: string | null;
   thread: ChatMessageView[];
   detail: PlayerDetailView | null;
+  games: Array<{ id: string; name: string }>;
   gamesCount: number;
   methodsCount: number;
   tagOptions: string[];
@@ -248,7 +250,7 @@ export default function InboxShell({
       {/* Details panel — fixed 336px */}
       {selected && detail && (
         <div className="w-[336px] shrink-0 border-l border-surface-border">
-          <DetailsPanel admin={admin} detail={detail} />
+          <DetailsPanel admin={admin} detail={detail} games={games} />
         </div>
       )}
     </div>
