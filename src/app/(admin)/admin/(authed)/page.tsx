@@ -44,6 +44,7 @@ export default async function InboxPage({
       selectedId={selected?.id ?? null}
       thread={thread}
       detail={detail}
+      games={games.filter((g) => g.isActive).map((g) => ({ id: g.id, name: g.name }))}
       gamesCount={games.filter((g) => g.isActive).length}
       methodsCount={methods.filter((m) => m.isActive).length}
       tagOptions={tagOptions}
