@@ -43,10 +43,12 @@ export async function proxy(request: NextRequest) {
   });
 
   // IMPORTANT: never trust session presence for authorization — always re-check
-  // the user server-side. getUser() validates the token with the auth server.
+  // the user server-side. getSession() reads from cookies (no network call);
+  // full token validation via getUser() happens in layouts/server components.
   const {
-    data: { user },
-  } = await supabase.auth.getUser();
+    data: { session },
+  } = await supabase.auth.getSession();
+  const user = session?.user ?? null;
 
   const pathname = request.nextUrl.pathname;
   const isAuthPage = pathname === "/login" || pathname === "/signup";
