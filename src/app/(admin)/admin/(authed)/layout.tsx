@@ -22,19 +22,11 @@ export default async function AuthedAdminLayout({
   const session = await getAdminSession();
   if (!session) redirect("/admin/login");
 
-  const [notifications, unreadCount] = await Promise.all([
-    getNotifications(),
-    getUnreadNotificationCount(),
-  ]);
-
+  // Notifications load lazily via client (was 2 blocking DB queries per page).
   return (
     <AdminProvider value={session}>
       <div className="flex h-dvh flex-col overflow-hidden bg-near-black">
-        <TopBar
-          admin={session}
-          notifications={notifications}
-          unreadCount={unreadCount}
-        />
+        <TopBar admin={session} notifications={[]} unreadCount={0} />
         <div className="flex min-h-0 flex-1">
           <aside className="w-52 shrink-0 border-r border-surface-border bg-navy">
             <SideNav role={session.role} />
