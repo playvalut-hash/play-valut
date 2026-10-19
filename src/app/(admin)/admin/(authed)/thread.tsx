@@ -1,0 +1,447 @@
+"use client";
+
+import { useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
+
+import type { AdminInfo, ChatMessageView, PlayerOverview } from "../../_actions";
+import {
+  decryptAccountPassword,
+  sendAdminMessage,
+  sendGamesList,
+  sendPayList,
+  sendQuickReply,
+} from "../../_actions";
+import { QUICK_REPLIES } from "../../_quick-replies";
+import { cn } from "@/lib/utils";
+import {
+  CheckIcon,
+  CopyIcon,
+  EyeIcon,
+  EyeOffIcon,
+  LinkIcon,
+  SendIcon,
+} from "@/components/icons";
+import ScreenshotViewer from "./screenshot-viewer";
+import { Avatar, StatusChip, bubbleTime, fullDateTime } from "./ui-bits";
+
+/* ── Account card (fixed 400px, never stretches — PRD Change 21a) ──────── */
+
+function AccountCard({
+  admin,
+  playerName,
+  msg,
+}: {
+  admin: AdminInfo;
+  playerName: string;
+  msg: ChatMessageView & { account: NonNullable<ChatMessageView["account"]> };
+}) {
+  const { account } = msg;
+  const [revealed, setRevealed] = useState(false);
+  const [password, setPassword] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
+  const [busy, setBusy] = useState(false);
+
+  async function reveal() {
+    if (password) {
+      setRevealed((v) => !v);
+      return;
+    }
+    setBusy(true);
+    try {
+      const pw = await decryptAccountPassword(admin.id, account.accountId);
+      setPassword(pw);
+      setRevealed(true);
+    } catch {
+      // leave masked
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function copy() {
+    let pw = password;
+    if (!pw) {
+      setBusy(true);
+      try {
+        pw = await decryptAccountPassword(admin.id, account.accountId);
+        setPassword(pw);
+      } catch {
+        setBusy(false);
+        return;
+      }
+      setBusy(false);
+    }
+    try {
+      await navigator.clipboard.writeText(pw);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch {
+      // clipboard unavailable
+    }
+  }
+
+  return (
+    <div className="w-[400px] max-w-full rounded-lg border border-gold/30 bg-surface-elevated p-3 shadow-[0_4px_16px_rgba(0,0,0,0.35)]">
+      <div className="flex items-center justify-between gap-2">
+        <span className="text-xs font-semibold text-gold">{account.gameName}</span>
+        <StatusChip status={account.status} />
+      </div>
+      <dl className="mt-2 space-y-1.5 text-xs">
+        <div className="flex items-center justify-between gap-2">
+          <dt className="text-text-muted">Username</dt>
+          <dd className="flex items-center gap-1.5 font-mono text-text-primary">
+            {account.username}
+            <button
+              type="button"
+              onClick={copy}
+              aria-label="Copy username"
+              className="admin-focus rounded p-0.5 text-text-muted hover:text-gold"
+            >
+              {copied ? (
+                <CheckIcon className="h-3.5 w-3.5 text-success" />
+              ) : (
+                <CopyIcon className="h-3.5 w-3.5" />
+              )}
+            </button>
+          </dd>
+        </div>
+        <div className="flex items-center justify-between gap-2">
+          <dt className="text-text-muted">Password</dt>
+          <dd className="flex items-center gap-1.5 font-mono text-text-primary">
+            {revealed && password ? password : "••••••••"}
+            <button
+              type="button"
+              onClick={reveal}
+              disabled={busy}
+              aria-label={revealed ? "Hide password" : "Show password"}
+              className="admin-focus rounded p-0.5 text-text-muted hover:text-gold disabled:opacity-40"
+            >
+              {revealed ? (
+                <EyeOffIcon className="h-3.5 w-3.5" />
+              ) : (
+                <EyeIcon className="h-3.5 w-3.5" />
+              )}
+            </button>
+            <button
+              type="button"
+              onClick={copy}
+              aria-label="Copy password"
+              className="admin-focus rounded p-0.5 text-text-muted hover:text-gold"
+            >
+              <CopyIcon className="h-3.5 w-3.5" />
+            </button>
+          </dd>
+        </div>
+      </dl>
+      <p className="mt-2 text-[10px] text-text-muted">
+        For {playerName} · created {fullDateTime(msg.createdAt)}
+      </p>
+    </div>
+  );
+}
+
+/* ── Message bubble ────────────────────────────────────────────────────── */
+
+function MessageItem({
+  admin,
+  playerName,
+  msg,
+  onViewShot,
+}: {
+  admin: AdminInfo;
+  playerName: string;
+  msg: ChatMessageView;
+  onViewShot: (src: string, caption: string | null) => void;
+}) {
+  if (msg.kind === "system") {
+    return (
+      <div className="admin-msg-in flex justify-center py-1">
+        <span className="max-w-[80%] rounded-full bg-surface-elevated px-3 py-1 text-center text-[11px] text-text-secondary">
+          {msg.text}
+        </span>
+      </div>
+    );
+  }
+
+  if (msg.kind === "account" && msg.account) {
+    const mine = msg.sender === "admin";
+    return (
+      <div className={cn("admin-msg-in flex py-1", mine ? "justify-end" : "justify-start")}>
+        <AccountCard admin={admin} playerName={playerName} msg={{ ...msg, account: msg.account }} />
+      </div>
+    );
+  }
+
+  if (msg.kind === "games_list" || msg.kind === "pay_list") {
+    return (
+      <div className="admin-msg-in flex justify-end py-1">
+        <div className="w-[400px] max-w-full rounded-lg border border-surface-border bg-surface-card p-3">
+          <p className="text-xs font-semibold text-text-primary">{msg.listTitle}</p>
+          <p className="mt-1 text-[11px] text-text-secondary">
+            {msg.picked
+              ? `Player picked: ${msg.pickedName ?? msg.picked.id}`
+              : "Waiting for the player to pick…"}
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  if (msg.kind === "payment_card" && msg.paymentCard) {
+    const card = msg.paymentCard;
+    return (
+      <div className="admin-msg-in flex justify-end py-1">
+        <div className="w-[400px] max-w-full rounded-lg border border-surface-border bg-surface-card p-3">
+          <p className="text-xs font-semibold text-gold">{card.name}</p>
+          <p className="mt-1 font-mono text-xs text-text-primary">{card.handle}</p>
+          {card.note && <p className="mt-1 text-[11px] text-text-secondary">{card.note}</p>}
+          {card.payLink && (
+            <a
+              href={card.payLink}
+              target="_blank"
+              rel="noreferrer"
+              className="admin-focus mt-1.5 inline-flex items-center gap-1 text-[11px] text-gold hover:underline"
+            >
+              <LinkIcon className="h-3 w-3" /> Open pay link
+            </a>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  if (msg.kind === "shot" && msg.screenshotUrl) {
+    const mine = msg.sender === "admin";
+    return (
+      <div className={cn("admin-msg-in flex py-1", mine ? "justify-end" : "justify-start")}>
+        <button
+          type="button"
+          onClick={() => onViewShot(msg.screenshotUrl!, msg.screenshotCaption)}
+          className="admin-focus overflow-hidden rounded-lg border border-surface-border"
+          aria-label="Open screenshot full screen"
+        >
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={msg.screenshotUrl}
+            alt={msg.screenshotCaption ?? "Screenshot"}
+            className="max-h-48 max-w-[240px] object-cover"
+          />
+        </button>
+      </div>
+    );
+  }
+
+  // text
+  const mine = msg.sender === "admin";
+  return (
+    <div className={cn("admin-msg-in flex items-end gap-1.5 py-0.5", mine ? "justify-end" : "justify-start")}>
+      {!mine && <Avatar name={playerName} size="sm" />}
+      <div
+        className={cn(
+          "max-w-[75%] rounded-lg px-2.5 py-1.5",
+          mine ? "bg-gold text-navy" : "bg-surface-card text-text-primary",
+        )}
+      >
+        <p className="whitespace-pre-wrap break-words text-[13px] leading-snug">
+          {msg.text}
+        </p>
+        <p
+          className={cn(
+            "mt-0.5 text-right text-[10px]",
+            mine ? "text-navy/70" : "text-text-muted",
+          )}
+          title={fullDateTime(msg.createdAt)}
+        >
+          {bubbleTime(msg.createdAt)}
+        </p>
+      </div>
+    </div>
+  );
+}
+
+/* ── Thread ────────────────────────────────────────────────────────────── */
+
+export default function ThreadView({
+  admin,
+  player,
+  thread,
+  gamesCount,
+  methodsCount,
+}: {
+  admin: AdminInfo;
+  player: PlayerOverview;
+  thread: ChatMessageView[];
+  gamesCount: number;
+  methodsCount: number;
+}) {
+  const router = useRouter();
+  const [draft, setDraft] = useState("");
+  const [sending, setSending] = useState(false);
+  const [sendListBusy, setSendListBusy] = useState<"games" | "pay" | null>(null);
+  const [viewer, setViewer] = useState<{ src: string; caption: string | null } | null>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }, [thread, player.id]);
+
+  async function sendText() {
+    const text = draft.trim();
+    if (!text || sending) return;
+    setSending(true);
+    try {
+      await sendAdminMessage(admin.id, { playerId: player.id, text });
+      setDraft("");
+      router.refresh();
+    } catch {
+      // keep draft
+    } finally {
+      setSending(false);
+    }
+  }
+
+  async function quickReply(key: string) {
+    try {
+      await sendQuickReply(admin.id, { playerId: player.id, key });
+      router.refresh();
+    } catch {
+      // ignore
+    }
+  }
+
+  async function sendList(kind: "games" | "pay") {
+    if (sendListBusy) return;
+    setSendListBusy(kind);
+    try {
+      if (kind === "games") await sendGamesList(admin.id, player.id);
+      else await sendPayList(admin.id, player.id);
+      router.refresh();
+    } finally {
+      setSendListBusy(null);
+    }
+  }
+
+  return (
+    <div className="flex h-full min-w-0 flex-1 flex-col">
+      {/* Thread header */}
+      <div className="flex shrink-0 items-center justify-between border-b border-surface-border bg-navy px-4 py-2.5">
+        <div className="flex min-w-0 items-center gap-2.5">
+          <Avatar name={player.displayName} />
+          <div className="min-w-0">
+            <p className="truncate text-[13px] font-semibold text-text-primary">
+              {player.displayName}
+              {player.isOnline && (
+                <span className="ml-1.5 inline-block h-1.5 w-1.5 rounded-full bg-success align-middle" />
+              )}
+            </p>
+            <p className="truncate text-[11px] text-text-muted">
+              {player.tags.length > 0 ? player.tags.join(" · ") : "No tags"}
+            </p>
+          </div>
+        </div>
+        {(player.pendingDeposits > 0 || player.creatingAccounts > 0) && (
+          <span className="rounded-full bg-gold/15 px-2 py-0.5 text-[10px] font-semibold text-gold">
+            Needs your action
+          </span>
+        )}
+      </div>
+
+      {/* SEND bar — no single-item push, only full lists */}
+      <div className="flex shrink-0 items-center gap-2 border-b border-surface-border bg-surface-card/60 px-4 py-2">
+        <span className="text-[11px] font-medium uppercase tracking-wide text-text-muted">
+          Send
+        </span>
+        <button
+          type="button"
+          onClick={() => sendList("games")}
+          disabled={sendListBusy !== null || gamesCount === 0}
+          className="admin-focus rounded-md bg-gold px-2.5 py-1.5 text-xs font-semibold text-navy transition-opacity hover:opacity-90 disabled:opacity-40"
+        >
+          {sendListBusy === "games" ? "Sending…" : `Send all ${gamesCount} games`}
+        </button>
+        <button
+          type="button"
+          onClick={() => sendList("pay")}
+          disabled={sendListBusy !== null || methodsCount === 0}
+          className="admin-focus rounded-md bg-gold px-2.5 py-1.5 text-xs font-semibold text-navy transition-opacity hover:opacity-90 disabled:opacity-40"
+        >
+          {sendListBusy === "pay" ? "Sending…" : `Send all ${methodsCount} payment methods`}
+        </button>
+      </div>
+
+      {/* Messages */}
+      <div
+        ref={scrollRef}
+        aria-live="polite"
+        className="admin-chat-scroll min-h-0 flex-1 overflow-y-auto bg-near-black px-4 py-3"
+      >
+        {thread.length === 0 ? (
+          <p className="mt-8 text-center text-xs text-text-muted">
+            No messages yet. Say hello or send the game list above.
+          </p>
+        ) : (
+          thread.map((m) => (
+            <MessageItem
+              key={m.id}
+              admin={admin}
+              playerName={player.displayName}
+              msg={m}
+              onViewShot={(src, caption) => setViewer({ src, caption })}
+            />
+          ))
+        )}
+      </div>
+
+      {/* Quick replies */}
+      <div className="admin-thin-scroll flex shrink-0 gap-1.5 overflow-x-auto border-t border-surface-border bg-navy px-3 py-1.5">
+        {Object.entries(QUICK_REPLIES).map(([key, q]) => (
+          <button
+            key={key}
+            type="button"
+            onClick={() => quickReply(key)}
+            title={q.message}
+            className="admin-focus shrink-0 rounded-full border border-surface-border bg-surface-card px-2.5 py-1 text-[11px] text-text-secondary transition-colors hover:border-gold/50 hover:text-gold"
+          >
+            {q.label}
+          </button>
+        ))}
+      </div>
+
+      {/* Composer */}
+      <div className="flex shrink-0 items-center gap-2 border-t border-surface-border bg-navy px-3 py-2">
+        <input
+          type="text"
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && !e.shiftKey) {
+              e.preventDefault();
+              sendText();
+            }
+          }}
+          placeholder={`Message ${player.displayName}…`}
+          aria-label="Message"
+          className="admin-focus min-w-0 flex-1 rounded-md border border-surface-border bg-surface-input px-3 py-2 text-[13px] text-text-primary placeholder:text-text-muted"
+        />
+        <button
+          type="button"
+          onClick={sendText}
+          disabled={sending || !draft.trim()}
+          aria-label="Send message"
+          className="admin-focus rounded-md bg-gold p-2 text-navy transition-opacity hover:opacity-90 disabled:opacity-40"
+        >
+          <SendIcon className="h-4 w-4" />
+        </button>
+      </div>
+
+      {viewer && (
+        <ScreenshotViewer
+          src={viewer.src}
+          caption={viewer.caption}
+          onClose={() => setViewer(null)}
+        />
+      )}
+    </div>
+  );
+}
