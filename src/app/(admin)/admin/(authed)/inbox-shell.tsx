@@ -174,13 +174,9 @@ export default function InboxShell({
     : null;
 
   const unreadTotal = overview.reduce((n, p) => n + p.unreadCount, 0);
-  const [mobileView, setMobileView] = useState<"list" | "thread" | "details">("list");
-
-  // When a player is selected on mobile, show thread
-  useEffect(() => {
-    if (selectedId) setMobileView("thread");
-    else setMobileView("list");
-  }, [selectedId]);
+  const [mobilePanel, setMobilePanel] = useState<"details" | null>(null);
+  // Mobile shows: list (no selection) → thread (selection) → details (if requested)
+  const mobileView = !selectedId ? "list" : mobilePanel === "details" ? "details" : "thread";
 
   return (
     <div className="flex h-full min-h-0">
@@ -295,7 +291,6 @@ export default function InboxShell({
                 type="button"
                 onClick={() => {
                   router.push("/admin");
-                  setMobileView("list");
                 }}
                 className="flex items-center gap-1 rounded-lg px-2 py-1.5 text-sm text-gold"
               >
@@ -306,7 +301,7 @@ export default function InboxShell({
               </span>
               <button
                 type="button"
-                onClick={() => setMobileView("details")}
+                onClick={() => setMobilePanel("details")}
                 className="rounded-lg px-2 py-1.5 text-sm text-gold"
               >
                 Details →
@@ -349,7 +344,7 @@ export default function InboxShell({
           <div className="flex shrink-0 items-center gap-2 border-b border-surface-border bg-navy px-2 py-1.5 md:hidden">
             <button
               type="button"
-              onClick={() => setMobileView("thread")}
+              onClick={() => setMobilePanel(null)}
               className="flex items-center gap-1 rounded-lg px-2 py-1.5 text-sm text-gold"
             >
               ← Chat
