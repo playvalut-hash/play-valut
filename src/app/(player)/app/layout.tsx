@@ -15,7 +15,7 @@ export default function PlayerLayout({
 }) {
   return (
     <div className="min-h-dvh bg-near-black flex justify-center">
-      <div className="relative flex min-h-dvh w-full max-w-[440px] flex-col bg-navy md:border-x md:border-surface-border">
+      <div className="relative flex min-h-dvh w-full max-w-[440px] flex-col bg-bg md:border-x md:border-line md:shadow-[0_0_80px_rgba(0,0,0,0.7)]">
         <main className="flex-1 pb-24">{children}</main>
         <Tabs />
       </div>
