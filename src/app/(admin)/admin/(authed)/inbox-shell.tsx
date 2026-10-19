@@ -145,8 +145,8 @@ export default function InboxShell({
 
   return (
     <div className="flex h-full min-h-0">
-      {/* Player list — fixed 320px */}
-      <div className="flex w-80 shrink-0 flex-col border-r border-surface-border bg-navy">
+      {/* Player list — fixed 300px (skeleton) */}
+      <div className="flex w-[300px] shrink-0 flex-col border-r border-line bg-bg-2">
         <div className="shrink-0 border-b border-surface-border p-3">
           <div className="relative">
             <SearchIcon className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-text-muted" />
