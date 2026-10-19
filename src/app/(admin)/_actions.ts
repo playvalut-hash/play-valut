@@ -531,22 +531,26 @@ async function signedScreenshotUrl(path: string | null): Promise<string | null> 
 export async function getThread(playerId: string): Promise<ChatMessageView[]> {
   const client = svc();
 
-  const { data: messages } = await client
-    .from("chat_messages")
-    .select("id, player_id, sender, kind, body, created_at")
-    .eq("player_id", playerId)
-    .order("created_at", { ascending: true })
-    .limit(500);
+  // Messages + games + methods in parallel (were sequential).
+  const [messagesRes, gamesRes, methodsRes] = await Promise.all([
+    client
+      .from("chat_messages")
+      .select("id, player_id, sender, kind, body, created_at")
+      .eq("player_id", playerId)
+      .order("created_at", { ascending: true })
+      .limit(200),
+    client.from("games").select("id, name"),
+    client.from("payment_methods").select("id, name"),
+  ]);
 
-  const { data: games } = await client.from("games").select("id, name");
+  const { data: messages } = messagesRes;
+  const { data: games } = gamesRes;
+  const { data: methods } = methodsRes;
   const gameNames = new Map(
     ((games ?? []) as Array<{ id: string; name: string }>).map(
       (g) => [g.id, g.name] as const,
     ),
   );
-  const { data: methods } = await client
-    .from("payment_methods")
-    .select("id, name");
   const methodNames = new Map(
     ((methods ?? []) as Array<{ id: string; name: string }>).map(
       (m) => [m.id, m.name] as const,
@@ -1090,7 +1094,7 @@ export async function markAccountActive(
     sender: "system",
     kind: "system",
     body: {
-      text: "Your game account is now active. Good luck!",
+      text: "All done! Your account's ready to go — have fun and good luck! 🎮",
       account_id: accountId,
       status: "active",
     },
