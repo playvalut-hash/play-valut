@@ -215,8 +215,8 @@ async function deliverAccount(playerId: string, game: Game): Promise<void> {
   }
 
   await notifyAdmin("account_request", playerId, `Account requested: ${game.name}`, accountId);
-  await insertSystemMessage(playerId, "system", {
-    text: `Setting up your ${game.name} account — one moment…`,
+  await insertSystemMessage(playerId, "text", {
+    text: `On it! Getting your ${game.name} account ready — give me just a sec 👍`,
   });
   await sleep(1500);
   await insertSystemMessage(playerId, "account", {
@@ -260,9 +260,9 @@ export async function signOut(): Promise<void> {
 /* ── chat ────────────────────────────────────────────────────────────────── */
 
 const WARM_THANKS = [
-  "You're very welcome! Anything else I can help with?",
-  "Anytime — happy to help!",
-  "Glad I could help! Let me know if you need anything else.",
+  "You're very welcome! Anything else I can help with? 😊",
+  "Anytime! Happy to help 🎮",
+  "Of course! Let me know if you need anything else 👍",
 ];
 
 function pickWarmThanks(): string {
@@ -365,10 +365,10 @@ export async function sendChatMessage(
       break;
     }
     case "greeting": {
-      // R5: warm reply + game chips once per session, then silent.
+      // Warm reply + game chips once per session, then silent.
       if (!sessionGreeted) {
         await insertSystemMessage(user.id, "text", {
-          text: "Hey there, welcome! Which game should I set you up with?",
+          text: "Hey! Welcome to PlayVault 🎮 What game are you looking to play today?",
         });
         await insertSystemMessage(user.id, "games_list", {
           title: "Tap a game to get your account",
@@ -380,9 +380,9 @@ export async function sendChatMessage(
       break;
     }
     case "cashout": {
-      // R6: no auto-flow — an agent handles it manually.
+      // No auto-flow — an agent handles it manually.
       await insertSystemMessage(user.id, "text", {
-        text: "For cashouts, one of our agents will help you personally — I've let them know you asked, and they'll reply here shortly.",
+        text: "Got you! For cashouts I'll have one of our agents help you out personally — just a moment while I get them 👍",
       });
       break;
     }
