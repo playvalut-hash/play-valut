@@ -174,11 +174,25 @@ export default function InboxShell({
     : null;
 
   const unreadTotal = overview.reduce((n, p) => n + p.unreadCount, 0);
+  const [mobileView, setMobileView] = useState<"list" | "thread" | "details">("list");
+
+  // When a player is selected on mobile, show thread
+  useEffect(() => {
+    if (selectedId) setMobileView("thread");
+    else setMobileView("list");
+  }, [selectedId]);
 
   return (
     <div className="flex h-full min-h-0">
-      {/* Player list — fixed 300px (skeleton) */}
-      <div className="flex w-[300px] shrink-0 flex-col border-r border-line bg-bg-2">
+      {/* Player list — full width on mobile, 300px on desktop */}
+      <div
+        className={cn(
+          "flex shrink-0 flex-col border-r border-line bg-bg-2",
+          "w-full md:w-[300px]",
+          // Hide on mobile when thread/details is shown
+          selectedId && mobileView !== "list" ? "hidden md:flex" : "flex",
+        )}
+      >
         <div className="shrink-0 border-b border-surface-border p-3">
           <div className="relative">
             <SearchIcon className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-text-muted" />
@@ -252,17 +266,48 @@ export default function InboxShell({
         </div>
       </div>
 
-      {/* Thread */}
-      <div className="flex min-w-0 flex-1 flex-col bg-near-black">
+      {/* Thread — full width on mobile, flex on desktop */}
+      <div
+        className={cn(
+          "flex min-w-0 flex-1 flex-col bg-near-black",
+          // Hide on mobile when list is shown and no selection
+          !selectedId ? "hidden md:flex" : mobileView === "thread" ? "flex" : "hidden md:flex",
+        )}
+      >
         {selected ? (
-          <ThreadView
-            admin={admin}
-            player={selected}
-            thread={thread}
-            games={games}
-            gamesCount={gamesCount}
-            methodsCount={methodsCount}
-          />
+          <>
+            {/* Mobile back button + details toggle */}
+            <div className="flex shrink-0 items-center gap-2 border-b border-surface-border bg-navy px-2 py-1.5 md:hidden">
+              <button
+                type="button"
+                onClick={() => {
+                  router.push("/admin");
+                  setMobileView("list");
+                }}
+                className="flex items-center gap-1 rounded-lg px-2 py-1.5 text-sm text-gold"
+              >
+                ← Back
+              </button>
+              <span className="flex-1 truncate text-center text-sm font-semibold text-text-primary">
+                {selected.displayName}
+              </span>
+              <button
+                type="button"
+                onClick={() => setMobileView("details")}
+                className="rounded-lg px-2 py-1.5 text-sm text-gold"
+              >
+                Details →
+              </button>
+            </div>
+            <ThreadView
+              admin={admin}
+              player={selected}
+              thread={thread}
+              games={games}
+              gamesCount={gamesCount}
+              methodsCount={methodsCount}
+            />
+          </>
         ) : (
           <div className="flex flex-1 flex-col items-center justify-center gap-3 text-center">
             <span className="flex h-14 w-14 items-center justify-center rounded-full bg-surface-card text-text-muted">
@@ -278,10 +323,31 @@ export default function InboxShell({
         )}
       </div>
 
-      {/* Details panel — fixed 336px */}
+      {/* Details panel — full width on mobile, 336px on desktop */}
       {selected && detail && (
-        <div className="w-[336px] shrink-0 border-l border-surface-border">
-          <DetailsPanel admin={admin} detail={detail} games={games} />
+        <div
+          className={cn(
+            "shrink-0 border-l border-surface-border",
+            "w-full md:w-[336px]",
+            mobileView === "details" ? "flex flex-col" : "hidden md:block",
+          )}
+        >
+          {/* Mobile back button */}
+          <div className="flex shrink-0 items-center gap-2 border-b border-surface-border bg-navy px-2 py-1.5 md:hidden">
+            <button
+              type="button"
+              onClick={() => setMobileView("thread")}
+              className="flex items-center gap-1 rounded-lg px-2 py-1.5 text-sm text-gold"
+            >
+              ← Chat
+            </button>
+            <span className="flex-1 text-center text-sm font-semibold text-text-primary">
+              Player details
+            </span>
+          </div>
+          <div className="min-h-0 flex-1">
+            <DetailsPanel admin={admin} detail={detail} games={games} />
+          </div>
         </div>
       )}
     </div>
