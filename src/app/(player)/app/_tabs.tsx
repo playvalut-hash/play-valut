@@ -29,10 +29,10 @@ export default function Tabs() {
   return (
     <nav
       aria-label="Player navigation"
-      className="fixed bottom-0 left-1/2 z-40 w-full max-w-[440px] -translate-x-1/2 border-t border-surface-border bg-navy/95 backdrop-blur"
-      style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
+      className="fixed bottom-0 left-1/2 z-[60] w-full max-w-[440px] -translate-x-1/2 border-t border-line bg-bg/95 backdrop-blur-xl"
+      style={{ padding: "6px 6px calc(6px + env(safe-area-inset-bottom))" }}
     >
-      <div className="grid grid-cols-5">
+      <div className="flex">
         {TABS.map(({ href, label, Icon }) => {
           const active = isActiveTab(pathname, href);
           return (
@@ -40,8 +40,8 @@ export default function Tabs() {
               key={href}
               href={href}
               aria-current={active ? "page" : undefined}
-              className={`flex min-h-[64px] flex-col items-center justify-center gap-1 text-[11px] font-semibold transition ${
-                active ? "text-gold" : "text-text-muted hover:text-text-secondary"
+              className={`relative flex flex-1 flex-col items-center gap-0.5 rounded-xl px-0 py-[7px] text-[11px] font-extrabold transition ${
+                active ? "text-gold" : "text-ink-3 hover:text-ink-2"
               }`}
             >
               <Icon className="h-6 w-6" />
