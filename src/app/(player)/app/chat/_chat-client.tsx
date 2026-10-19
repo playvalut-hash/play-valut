@@ -270,10 +270,12 @@ function PickerMessage({
   message,
   items,
   title,
+  onPicked,
 }: {
   message: ChatMessage;
   items: PickItem[];
   title: string;
+  onPicked: () => void;
 }) {
   const picked = message.body["picked"] as
     | { id: string; at: string }
@@ -285,7 +287,8 @@ function PickerMessage({
     if (picked || picking) return;
     setPicking(true);
     try {
-      await chatPick(message.id, id);
+      const res = await chatPick(message.id, id);
+      if (res.ok) onPicked();
     } finally {
       setPicking(false);
     }
@@ -486,7 +489,13 @@ function PaymentCardMessage({ message }: { message: ChatMessage }) {
 
 /* ── one message ──────────────────────────────────────────────────────────── */
 
-function MessageView({ message }: { message: ChatMessage }) {
+function MessageView({
+  message,
+  onPicked,
+}: {
+  message: ChatMessage;
+  onPicked: () => void;
+}) {
   const mine = message.sender === "player";
 
   if (message.kind === "shot") return <ShotMessage message={message} />;
@@ -509,6 +518,7 @@ function MessageView({ message }: { message: ChatMessage }) {
         message={message}
         items={items}
         title={str(message.body["title"]) || "Pick a game"}
+        onPicked={onPicked}
       />
     );
   }
@@ -526,6 +536,7 @@ function MessageView({ message }: { message: ChatMessage }) {
         message={message}
         items={items}
         title={str(message.body["title"]) || "Choose how to pay"}
+        onPicked={onPicked}
       />
     );
   }
@@ -684,7 +695,7 @@ export default function ChatClient({ playerId }: { playerId: string }) {
             </div>
           </div>
         ) : (
-          messages.map((m) => <MessageView key={m.id} message={m} />)
+          messages.map((m) => <MessageView key={m.id} message={m} onPicked={refresh} />)
         )}
         <div ref={bottomRef} />
       </div>
