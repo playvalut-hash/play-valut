@@ -10,6 +10,7 @@ import {
   sendGamesList,
   sendPayList,
   sendQuickReply,
+  sendSingleGame,
 } from "../../_actions";
 import { QUICK_REPLIES } from "../../_quick-replies";
 import { cn } from "@/lib/utils";
@@ -265,19 +266,22 @@ export default function ThreadView({
   admin,
   player,
   thread,
+  games,
   gamesCount,
   methodsCount,
 }: {
   admin: AdminInfo;
   player: PlayerOverview;
   thread: ChatMessageView[];
+  games: Array<{ id: string; name: string }>;
   gamesCount: number;
   methodsCount: number;
 }) {
   const router = useRouter();
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
-  const [sendListBusy, setSendListBusy] = useState<"games" | "pay" | null>(null);
+  const [sendListBusy, setSendListBusy] = useState<"games" | "pay" | "single" | null>(null);
+  const [gamesOpen, setGamesOpen] = useState(false);
   const [viewer, setViewer] = useState<{ src: string; caption: string | null } | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -322,6 +326,18 @@ export default function ThreadView({
     }
   }
 
+  async function sendOneGame(gameId: string) {
+    if (sendListBusy) return;
+    setSendListBusy("single");
+    try {
+      await sendSingleGame(admin.id, player.id, gameId);
+      setGamesOpen(false);
+      router.refresh();
+    } finally {
+      setSendListBusy(null);
+    }
+  }
+
   return (
     <div className="flex h-full min-w-0 flex-1 flex-col">
       {/* Thread header */}
@@ -347,27 +363,53 @@ export default function ThreadView({
         )}
       </div>
 
-      {/* SEND bar — no single-item push, only full lists */}
-      <div className="flex shrink-0 items-center gap-2 border-b border-surface-border bg-surface-card/60 px-4 py-2">
-        <span className="text-[11px] font-medium uppercase tracking-wide text-text-muted">
-          Send
-        </span>
-        <button
-          type="button"
-          onClick={() => sendList("games")}
-          disabled={sendListBusy !== null || gamesCount === 0}
-          className="admin-focus rounded-md bg-gold px-2.5 py-1.5 text-xs font-semibold text-navy transition-opacity hover:opacity-90 disabled:opacity-40"
-        >
-          {sendListBusy === "games" ? "Sending…" : `Send all ${gamesCount} games`}
-        </button>
-        <button
-          type="button"
-          onClick={() => sendList("pay")}
-          disabled={sendListBusy !== null || methodsCount === 0}
-          className="admin-focus rounded-md bg-gold px-2.5 py-1.5 text-xs font-semibold text-navy transition-opacity hover:opacity-90 disabled:opacity-40"
-        >
-          {sendListBusy === "pay" ? "Sending…" : `Send all ${methodsCount} payment methods`}
-        </button>
+      {/* SEND bar — expandable games + payment methods */}
+      <div className="shrink-0 border-b border-surface-border bg-surface-card/60 px-4 py-2">
+        <div className="flex items-center gap-2">
+          <span className="text-[11px] font-medium uppercase tracking-wide text-text-muted">
+            Send
+          </span>
+          <button
+            type="button"
+            onClick={() => setGamesOpen((v) => !v)}
+            disabled={sendListBusy !== null || gamesCount === 0}
+            className="flex items-center gap-1.5 rounded-full border border-gold/50 px-3 py-1.5 text-xs font-semibold text-gold transition hover:bg-gold/10 disabled:opacity-40"
+          >
+            🎮 Games
+            <span className={cn("transition-transform", gamesOpen && "rotate-180")}>▾</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => sendList("pay")}
+            disabled={sendListBusy !== null || methodsCount === 0}
+            className="flex items-center gap-1.5 rounded-full border border-surface-border px-3 py-1.5 text-xs font-semibold text-text-secondary transition hover:border-gold/50 hover:text-gold disabled:opacity-40"
+          >
+            💳 Payment methods ▾
+          </button>
+        </div>
+        {gamesOpen && (
+          <div className="mt-2 flex flex-wrap gap-1.5 rounded-xl border border-surface-border bg-navy p-2.5">
+            <button
+              type="button"
+              onClick={() => sendList("games")}
+              disabled={sendListBusy !== null}
+              className="rounded-full bg-gold px-3 py-1.5 text-[11px] font-bold text-navy hover:opacity-90 disabled:opacity-40"
+            >
+              {sendListBusy === "games" ? "Sending…" : `Send all ${gamesCount}`}
+            </button>
+            {games.map((g) => (
+              <button
+                key={g.id}
+                type="button"
+                onClick={() => sendOneGame(g.id)}
+                disabled={sendListBusy !== null}
+                className="rounded-full border border-gold/40 px-3 py-1.5 text-[11px] font-semibold text-gold transition hover:bg-gold/10 disabled:opacity-40"
+              >
+                {g.name}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Messages */}
