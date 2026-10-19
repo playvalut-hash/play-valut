@@ -1732,3 +1732,38 @@ export async function toggleAgentActive(
   audit(adminId, isActive ? "agents.enable" : "agents.disable", targetId);
   revalidateAdmin();
 }
+
+/* ── Create game account for player (from details panel) ── */
+
+import { generateGamePassword } from "@/lib/crypto";
+import { generateUsername } from "@/lib/utils";
+
+export async function createGameAccountForPlayer(
+  adminId: string,
+  playerId: string,
+  gameId: string,
+): Promise<void> {
+  await requireAdmin(adminId);
+  const client = svc();
+
+  // Check if account already exists
+  const { data: existing } = await client
+    .from("game_accounts")
+    .select("id")
+    .eq("player_id", playerId)
+    .eq("game_id", gameId)
+    .maybeSingle();
+  if (existing) throw new Error("Account already exists for this game");
+
+  const { error } = await client.from("game_accounts").insert({
+    player_id: playerId,
+    game_id: gameId,
+    username: generateUsername(gameId),
+    password_enc: encryptPassword(generateGamePassword()),
+    status: "active",
+  });
+  if (error) throw new Error("Could not create account");
+
+  audit(adminId, "accounts.create", `${playerId}/${gameId}`);
+  revalidateAdmin();
+}
