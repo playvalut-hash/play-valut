@@ -57,5 +57,5 @@ export default async function HomePage() {
     };
   });
 
-  return <GameGrid branding={branding} tiles={tiles} />;
+  return <GameGrid branding={branding} tiles={tiles} isPaid={isPaid} />;
 }
