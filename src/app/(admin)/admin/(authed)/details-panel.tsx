@@ -43,29 +43,48 @@ const TAG_PRESETS = [
   "New player",
 ];
 
-/* ── Collapsible section (matches reference screenshots) ── */
+/* ── Collapsible section (matches reference screenshots) ──
+   Default: minimized. When `attention` is true (e.g. a new account
+   request is waiting), the section auto-expands and gets a gold ring. */
 
 function Collapsible({
   title,
   count,
   defaultOpen = false,
+  attention = false,
   children,
 }: {
   title: string;
   count?: number;
   defaultOpen?: boolean;
+  attention?: boolean;
   children: React.ReactNode;
 }) {
-  const [open, setOpen] = useState(defaultOpen);
+  // null = user ne abhi toggle nahi kiya → default/attention decide karega.
+  // Ek dafa toggle karne ke baad user ki choice hi chalegi.
+  const [userOpen, setUserOpen] = useState<boolean | null>(null);
+  const open = userOpen ?? (defaultOpen || attention);
+
   return (
-    <div className="rounded-xl border border-surface-border bg-surface-card">
+    <div
+      className={cn(
+        "rounded-xl border bg-surface-card",
+        attention ? "border-gold shadow-[0_0_0_1px_var(--color-gold)]" : "border-surface-border",
+      )}
+    >
       <button
         type="button"
-        onClick={() => setOpen((v) => !v)}
+        onClick={() => setUserOpen(!open)}
+        aria-expanded={open}
         className="flex w-full items-center justify-between px-3.5 py-3 text-left"
       >
-        <span className="text-[11px] font-bold uppercase tracking-wider text-text-muted">
+        <span className="flex items-center gap-2 text-[11px] font-bold uppercase tracking-wider text-text-muted">
           {title}
+          {attention && (
+            <span className="rounded-full bg-gold px-1.5 py-px text-[9px] font-extrabold normal-case tracking-normal text-navy">
+              Action needed
+            </span>
+          )}
         </span>
         <span className="flex items-center gap-2">
           {typeof count === "number" && (
@@ -164,11 +183,25 @@ function AccountCard({
   onBusy: (b: boolean) => void;
 }) {
   const router = useRouter();
-  const [expanded, setExpanded] = useState(false);
+  const [expanded, setExpanded] = useState(account.status === "creating");
   const [editing, setEditing] = useState(false);
   const [username, setUsername] = useState(account.username);
   const [newPassword, setNewPassword] = useState("");
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [approving, setApproving] = useState(false);
+
+  async function approve() {
+    if (approving) return;
+    setApproving(true);
+    onBusy(true);
+    try {
+      await markAccountActive(admin.id, account.id);
+      router.refresh();
+    } finally {
+      setApproving(false);
+      onBusy(false);
+    }
+  }
 
   async function saveEdit() {
     if (!username.trim()) return;
@@ -212,6 +245,17 @@ function AccountCard({
           className={cn("h-4 w-4 text-text-muted transition-transform", expanded && "rotate-180")}
         />
       </button>
+      {account.status === "creating" && (
+        <button
+          type="button"
+          onClick={approve}
+          disabled={approving}
+          className="mt-2.5 flex w-full items-center justify-center gap-2 rounded-lg bg-green px-4 py-2.5 text-[13px] font-bold text-[#03231a] transition hover:brightness-110 active:scale-[0.99] disabled:opacity-50"
+        >
+          <CheckIcon className="h-4 w-4" />
+          {approving ? "Approving…" : "Approve — Mark as Active"}
+        </button>
+      )}
       {expanded && (
         <div className="mt-2.5 space-y-1.5 border-t border-surface-border pt-2.5">
           {!editing ? (
@@ -389,8 +433,8 @@ export default function DetailsPanel({
         </div>
       </div>
 
-      {/* Tags */}
-      <Collapsible title="Tags" defaultOpen>
+      {/* Tags — minimized by default */}
+      <Collapsible title="Tags">
         <div className="flex flex-wrap gap-1.5">
           {detail.tags.map((tag) => (
             <span
@@ -508,8 +552,13 @@ export default function DetailsPanel({
         </div>
       </Collapsible>
 
-      {/* Game accounts */}
-      <Collapsible title="Game accounts" count={detail.accounts.length} defaultOpen={detail.accounts.length > 0}>
+      {/* Game accounts — minimized by default; auto-expands when a new
+          account request (status "creating") is waiting for approval. */}
+      <Collapsible
+        title="Game accounts"
+        count={detail.accounts.length}
+        attention={detail.accounts.some((a) => a.status === "creating")}
+      >
         <div className="space-y-2">
           {detail.accounts.length === 0 && (
             <p className="text-[12px] text-text-muted">No accounts yet</p>
@@ -520,8 +569,8 @@ export default function DetailsPanel({
         </div>
       </Collapsible>
 
-      {/* Create game account */}
-      <Collapsible title="Create game account" defaultOpen>
+      {/* Create game account — minimized by default */}
+      <Collapsible title="Create game account">
         <div className="flex gap-2">
           <select
             value={selectedGame}
