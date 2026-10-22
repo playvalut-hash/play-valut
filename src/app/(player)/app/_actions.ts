@@ -440,6 +440,8 @@ export async function chatPick(
       payment_method_id: method.id,
       snapshot: {
         name: method.name,
+        account_name: method.account_name,
+        brand_color: method.brand_color,
         handle: method.handle,
         note: method.note,
         pay_link: method.pay_link,
