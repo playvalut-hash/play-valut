@@ -74,7 +74,7 @@ export default function LoginForm({
           className="mx-auto grid h-[84px] w-[84px] place-items-center rounded-[22px] text-gold"
           style={{
             background: "linear-gradient(145deg, #123524, #0a2317)",
-            border: "1px solid rgba(139, 92, 246, 0.45)",
+            border: "1px solid rgba(212, 175, 55, 0.45)",
           }}
           aria-hidden
         >
@@ -172,7 +172,7 @@ export default function LoginForm({
             type="submit"
             disabled={loading}
             className="flex w-full items-center justify-center gap-2 rounded-2xl py-4 text-[16px] font-bold transition hover:brightness-110 active:scale-[0.99] disabled:opacity-60"
-            style={{ background: "#8b5cf6", color: "#ffffff" }}
+            style={{ background: "#d4af37", color: "#241a02" }}
           >
             {loading ? "Signing in…" : (
               <>
