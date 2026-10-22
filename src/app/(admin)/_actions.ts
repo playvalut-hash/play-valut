@@ -831,18 +831,6 @@ export async function getPlayerDetail(
     created_at: string;
     activated_at: string | null;
   }>;
-  const gameIds = [...new Set(accountList.map((a) => a.game_id))];
-  const gameNames = new Map<string, string>();
-  if (gameIds.length > 0) {
-    const { data: games } = await client
-      .from("games")
-      .select("id, name")
-      .in("id", gameIds);
-    for (const g of ((games ?? []) as Array<{ id: string; name: string }>)) {
-      gameNames.set(g.id, g.name);
-    }
-  }
-
   const depositList = (deposits ?? []) as Array<{
     id: string;
     amount: string;
@@ -850,18 +838,8 @@ export async function getPlayerDetail(
     screenshot_path: string | null;
     created_at: string;
   }>;
+  const gameIds = [...new Set(accountList.map((a) => a.game_id))];
   const methodIds = [...new Set(depositList.map((d) => d.payment_method_id))];
-  const methodNames = new Map<string, string>();
-  if (methodIds.length > 0) {
-    const { data: methods } = await client
-      .from("payment_methods")
-      .select("id, name")
-      .in("id", methodIds);
-    for (const m of ((methods ?? []) as Array<{ id: string; name: string }>)) {
-      methodNames.set(m.id, m.name);
-    }
-  }
-
   const creatorIds = [
     ...new Set(
       ((notes ?? []) as Array<{ created_by: string | null }>)
@@ -869,19 +847,36 @@ export async function getPlayerDetail(
         .filter((v): v is string => !!v),
     ),
   ];
+
+  // Name lookups in parallel (were 3 sequential round-trips).
+  const [gamesRes, methodsRes, creatorsRes] = await Promise.all([
+    gameIds.length > 0
+      ? client.from("games").select("id, name").in("id", gameIds)
+      : Promise.resolve({ data: [] as Array<{ id: string; name: string }> }),
+    methodIds.length > 0
+      ? client.from("payment_methods").select("id, name").in("id", methodIds)
+      : Promise.resolve({ data: [] as Array<{ id: string; name: string }> }),
+    creatorIds.length > 0
+      ? client.from("admin_users").select("id, display_name, email").in("id", creatorIds)
+      : Promise.resolve({
+          data: [] as Array<{ id: string; display_name: string | null; email: string }>,
+        }),
+  ]);
+  const gameNames = new Map<string, string>();
+  for (const g of ((gamesRes.data ?? []) as Array<{ id: string; name: string }>)) {
+    gameNames.set(g.id, g.name);
+  }
+  const methodNames = new Map<string, string>();
+  for (const m of ((methodsRes.data ?? []) as Array<{ id: string; name: string }>)) {
+    methodNames.set(m.id, m.name);
+  }
   const creatorNames = new Map<string, string>();
-  if (creatorIds.length > 0) {
-    const { data: creators } = await client
-      .from("admin_users")
-      .select("id, display_name, email")
-      .in("id", creatorIds);
-    for (const c of ((creators ?? []) as Array<{
-      id: string;
-      display_name: string | null;
-      email: string;
-    }>)) {
-      creatorNames.set(c.id, c.display_name || c.email);
-    }
+  for (const c of ((creatorsRes.data ?? []) as Array<{
+    id: string;
+    display_name: string | null;
+    email: string;
+  }>)) {
+    creatorNames.set(c.id, c.display_name || c.email);
   }
 
   return {
