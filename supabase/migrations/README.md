@@ -85,4 +85,4 @@ the `handle_new_auth_user()` trigger on first sign-in.
   brand name ("PlayVault" placeholder, or the final brand) so reset/signup emails
   don't say "Supabase".
 - **Realtime:** enable Realtime on `chat_messages`, `deposits`, `notifications`,
-  `game_accounts` (Database → Replication → toggle per table). 
+  `game_accounts` (Database → Replication → toggle per table).
