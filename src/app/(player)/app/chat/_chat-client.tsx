@@ -341,6 +341,8 @@ function PickerMessage({
 function PaymentCardMessage({ message }: { message: ChatMessage }) {
   const snapshot = (message.body["snapshot"] ?? {}) as {
     name?: string;
+    account_name?: string | null;
+    brand_color?: string | null;
     handle?: string;
     note?: string | null;
     pay_link?: string | null;
@@ -352,6 +354,18 @@ function PaymentCardMessage({ message }: { message: ChatMessage }) {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState(false);
+  const [copied, setCopied] = useState(false);
+
+  async function copyHandle() {
+    if (!snapshot.handle) return;
+    try {
+      await navigator.clipboard.writeText(snapshot.handle);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch {
+      // clipboard unavailable
+    }
+  }
 
   async function handleUpload() {
     setError(null);
@@ -382,39 +396,103 @@ function PaymentCardMessage({ message }: { message: ChatMessage }) {
     }
   }
 
+  const methodName = snapshot.name ?? "Payment method";
+  const brandBg = snapshot.brand_color ?? undefined;
+
   return (
     <div className="flex justify-start">
-      <div className="w-full max-w-[320px] rounded-2xl border border-gold/40 bg-surface-card p-4">
-        <p className="text-[11px] font-semibold uppercase tracking-wide text-text-muted">
-          Pay with
-        </p>
-        <p className="mt-0.5 text-base font-extrabold text-text-primary">
-          {snapshot.name ?? "Payment method"}
-        </p>
-        <div className="mt-2.5 rounded-xl bg-surface-input p-3">
-          <p className="font-mono text-sm font-bold text-gold">
-            {snapshot.handle ?? ""}
-          </p>
-          {snapshot.note ? (
-            <p className="mt-1.5 text-xs text-text-secondary">{snapshot.note}</p>
-          ) : null}
+      <div className="w-full max-w-[340px] overflow-hidden rounded-2xl border border-gold/40 bg-surface-card">
+        {/* Header band — brand tile + label + Deposit tag */}
+        <div
+          className="flex items-center gap-3 px-4 py-3"
+          style={{
+            background: brandBg ?? "linear-gradient(135deg, #f0cd6a, #d4af37)",
+            color: brandBg ? "#ffffff" : "#241a02",
+          }}
+        >
+          <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-white/20 text-lg font-extrabold">
+            {methodName.charAt(0).toUpperCase()}
+          </span>
+          <span className="min-w-0 flex-1">
+            <span className="block text-[10px] font-bold uppercase tracking-widest opacity-80">
+              Payment method
+            </span>
+            <span className="block truncate text-[16px] font-extrabold leading-tight">
+              {methodName}
+            </span>
+          </span>
+          <span className="shrink-0 rounded-full bg-black/25 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide">
+            Deposit
+          </span>
         </div>
-        {snapshot.pay_link ? (
-          <a
-            href={snapshot.pay_link}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="mt-3 flex min-h-[48px] items-center justify-center gap-2 rounded-xl bg-gold text-sm font-bold text-text-ongold transition hover:brightness-110"
-          >
-            <LinkIcon className="h-4 w-4" />
-            Pay
-          </a>
-        ) : (
-          <p className="mt-3 rounded-xl bg-gold/10 px-3 py-2.5 text-xs font-semibold text-gold-light">
-            No pay link — send manually to the handle above, then upload your
-            screenshot.
+
+        {/* Body — labelled rows */}
+        <div className="p-4">
+          <p className="text-[13px] leading-relaxed text-text-secondary">
+            Here are the {methodName} details — tap Pay to send your payment,
+            then tap “I’ve paid” to upload your screenshot and we’ll load your
+            credits as soon as it’s verified.
           </p>
-        )}
+          <dl className="mt-3 space-y-2.5">
+            {snapshot.account_name ? (
+              <div className="flex items-baseline justify-between gap-3">
+                <dt className="shrink-0 text-[11px] font-bold uppercase tracking-wider text-text-muted">
+                  Name
+                </dt>
+                <dd className="text-right text-[13px] font-semibold text-text-primary">
+                  {snapshot.account_name}
+                </dd>
+              </div>
+            ) : null}
+            <div className="flex items-center justify-between gap-3">
+              <dt className="shrink-0 text-[11px] font-bold uppercase tracking-wider text-text-muted">
+                Send to
+              </dt>
+              <dd className="flex items-center gap-1.5">
+                <span className="rounded-lg bg-surface-input px-2.5 py-1.5 font-mono text-[13px] font-bold text-gold">
+                  {snapshot.handle ?? ""}
+                </span>
+                <button
+                  type="button"
+                  onClick={copyHandle}
+                  aria-label="Copy payment handle"
+                  className="rounded-lg border border-surface-border p-1.5 text-text-muted transition hover:text-gold"
+                >
+                  {copied ? (
+                    <CheckIcon className="h-4 w-4 text-success" />
+                  ) : (
+                    <CopyIcon className="h-4 w-4" />
+                  )}
+                </button>
+              </dd>
+            </div>
+            {snapshot.note ? (
+              <div className="flex items-baseline justify-between gap-3">
+                <dt className="shrink-0 text-[11px] font-bold uppercase tracking-wider text-text-muted">
+                  Note
+                </dt>
+                <dd className="text-right text-[13px] text-text-secondary">
+                  {snapshot.note}
+                </dd>
+              </div>
+            ) : null}
+          </dl>
+          {snapshot.pay_link ? (
+            <a
+              href={snapshot.pay_link}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="mt-4 flex min-h-[48px] items-center justify-center gap-2 rounded-xl bg-gold text-sm font-bold text-text-ongold transition hover:brightness-110"
+            >
+              <LinkIcon className="h-4 w-4" />
+              Pay with {methodName}
+            </a>
+          ) : (
+            <p className="mt-4 rounded-xl bg-gold/10 px-3 py-2.5 text-xs font-semibold text-gold-light">
+              No pay link — send manually to the handle above, then upload your
+              screenshot.
+            </p>
+          )}
         {done ? (
           <p className="mt-3 flex items-center gap-1.5 rounded-xl bg-success/10 px-3 py-2.5 text-xs font-bold text-success">
             <CheckIcon className="h-4 w-4" />
@@ -482,6 +560,7 @@ function PaymentCardMessage({ message }: { message: ChatMessage }) {
             I’ve paid — upload screenshot
           </button>
         )}
+        </div>
       </div>
     </div>
   );
