@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 
 import type {
@@ -113,6 +113,27 @@ export default function InboxShell({
   const [thread, setThread] = useState<ChatMessageView[]>(initialThread);
   const [detail, setDetail] = useState<PlayerDetailView | null>(initialDetail);
   const [loadingThread, setLoadingThread] = useState(false);
+  const selectedIdRef = useRef<string | null>(initialSelectedId);
+  useEffect(() => {
+    selectedIdRef.current = selectedId;
+  }, [selectedId]);
+
+  // Silent refetch of the open conversation — actions (approve, send, tags…)
+  // call this instead of router.refresh() so updates appear INSTANTLY
+  // without a manual page refresh.
+  const refreshSelected = useCallback(async () => {
+    const id = selectedIdRef.current;
+    if (!id) return;
+    try {
+      const [t, d] = await Promise.all([getThread(id), getPlayerDetail(id)]);
+      if (selectedIdRef.current === id) {
+        setThread(t);
+        setDetail(d);
+      }
+    } catch {
+      // keep current view on transient errors
+    }
+  }, []);
 
   async function selectPlayer(id: string | null) {
     if (id === selectedId) {
@@ -156,14 +177,20 @@ export default function InboxShell({
             "postgres_changes",
             { event: "*", schema: "public", table: "chat_messages" },
             () => {
-              if (!document.hidden) router.refresh();
+              if (!document.hidden) {
+                router.refresh();
+                void refreshSelected();
+              }
             },
           )
           .on(
             "postgres_changes",
             { event: "*", schema: "public", table: "deposits" },
             () => {
-              if (!document.hidden) router.refresh();
+              if (!document.hidden) {
+                router.refresh();
+                void refreshSelected();
+              }
             },
           )
           .subscribe() as unknown as { unsubscribe: () => void };
@@ -179,7 +206,7 @@ export default function InboxShell({
       channel?.unsubscribe();
       if (timer) clearInterval(timer);
     };
-  }, [router]);
+  }, [router, refreshSelected]);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -355,6 +382,7 @@ export default function InboxShell({
                 games={games}
                 gamesCount={gamesCount}
                 methodsCount={methodsCount}
+                onMutated={refreshSelected}
               />
             )}
           </>
@@ -373,13 +401,15 @@ export default function InboxShell({
         )}
       </div>
 
-      {/* Details panel — full width on mobile, 336px on desktop */}
+      {/* Details panel — full width on mobile, 336px on desktop.
+          Must stay flex-col at ALL sizes so the inner min-h-0 flex-1 chain
+          gives DetailsPanel a bounded height and its own scroll works. */}
       {selected && detail && (
         <div
           className={cn(
             "shrink-0 border-l border-surface-border",
             "w-full md:w-[336px]",
-            mobileView === "details" ? "flex flex-col" : "hidden md:block",
+            mobileView === "details" ? "flex flex-col" : "hidden md:flex md:flex-col",
           )}
         >
           {/* Mobile back button */}
@@ -396,7 +426,13 @@ export default function InboxShell({
             </span>
           </div>
           <div className="min-h-0 flex-1">
-            <DetailsPanel key={detail.player.id} admin={admin} detail={detail} games={games} />
+            <DetailsPanel
+              key={detail.player.id}
+              admin={admin}
+              detail={detail}
+              games={games}
+              onMutated={refreshSelected}
+            />
           </div>
         </div>
       )}
