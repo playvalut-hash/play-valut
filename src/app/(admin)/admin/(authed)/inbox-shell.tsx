@@ -123,16 +123,18 @@ export default function InboxShell({
   }, [selectedId]);
 
   // Conversation cache: reopening a player is INSTANT (stale-while-revalidate).
-  const cacheRef = useRef(
-    new Map<string, { thread: ChatMessageView[]; detail: PlayerDetailView | null }>(),
-  );
-  // Seed with whatever the server already loaded.
-  if (initialSelectedId && cacheRef.current.size === 0) {
-    cacheRef.current.set(initialSelectedId, {
-      thread: initialThread,
-      detail: initialDetail,
-    });
-  }
+  // Stable Map held in state (never re-set), seeded with the server-loaded
+  // conversation so the initially open player reopens instantly too.
+  const [cache] = useState(() => {
+    const m = new Map<
+      string,
+      { thread: ChatMessageView[]; detail: PlayerDetailView | null }
+    >();
+    if (initialSelectedId) {
+      m.set(initialSelectedId, { thread: initialThread, detail: initialDetail });
+    }
+    return m;
+  });
 
   // Silent refetch of the open conversation — actions (approve, send, tags…)
   // call this instead of router.refresh() so updates appear INSTANTLY
@@ -142,7 +144,7 @@ export default function InboxShell({
     if (!id) return;
     try {
       const [t, d] = await Promise.all([getThread(id), getPlayerDetail(id)]);
-      cacheRef.current.set(id, { thread: t, detail: d });
+      cache.set(id, { thread: t, detail: d });
       if (selectedIdRef.current === id) {
         setThread(t);
         setDetail(d);
@@ -150,21 +152,21 @@ export default function InboxShell({
     } catch {
       // keep current view on transient errors
     }
-  }, []);
+  }, [cache]);
 
   // Background prefetch (hover/touch on a row) — fills the cache so the
   // click that follows opens instantly.
   const prefetchPlayer = useCallback((id: string) => {
-    if (cacheRef.current.has(id)) return;
+    if (cache.has(id)) return;
     void (async () => {
       try {
         const [t, d] = await Promise.all([getThread(id), getPlayerDetail(id)]);
-        cacheRef.current.set(id, { thread: t, detail: d });
+        cache.set(id, { thread: t, detail: d });
       } catch {
         // prefetch is best-effort
       }
     })();
-  }, []);
+  }, [cache]);
 
   async function selectPlayer(id: string | null) {
     if (id === selectedId) {
@@ -181,7 +183,7 @@ export default function InboxShell({
       return;
     }
     // Cache hit → show instantly, refresh silently in the background.
-    const cached = cacheRef.current.get(id);
+    const cached = cache.get(id);
     if (cached) {
       setThread(cached.thread);
       setDetail(cached.detail);
@@ -201,7 +203,7 @@ export default function InboxShell({
       setLoadingThread(false);
       markThreadRead(admin.id, id).catch(() => {});
       const d = await getPlayerDetail(id);
-      cacheRef.current.set(id, { thread: t, detail: d });
+      cache.set(id, { thread: t, detail: d });
       if (selectedIdRef.current === id) setDetail(d);
     } catch {
       setLoadingThread(false);
