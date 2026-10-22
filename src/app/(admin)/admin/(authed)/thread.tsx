@@ -1,6 +1,8 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+
+import { createClient } from "@/lib/supabase/client";
 
 import type { AdminInfo, ChatMessageView, PlayerOverview } from "../../_actions";
 import {
@@ -180,12 +182,14 @@ function MessageItem({
   msg,
   onViewShot,
   onMutated,
+  receipt,
 }: {
   admin: AdminInfo;
   playerName: string;
   msg: ChatMessageView;
   onViewShot: (src: string, caption: string | null) => void;
   onMutated?: () => Promise<void>;
+  receipt?: "delivered" | "seen";
 }) {
   if (msg.kind === "system") {
     return (
@@ -357,6 +361,11 @@ function MessageItem({
           title={fullDateTime(msg.createdAt)}
         >
           {bubbleTime(msg.createdAt)}
+          {mine && receipt ? (
+            <span className="ml-1 font-semibold">
+              {receipt === "seen" ? "\u2713\u2713 Seen" : "\u2713 Delivered"}
+            </span>
+          ) : null}
         </p>
       </div>
     </div>
@@ -388,6 +397,44 @@ export default function ThreadView({
   const [gamesOpen, setGamesOpen] = useState(false);
   const [viewer, setViewer] = useState<{ src: string; caption: string | null } | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
+
+  // Live "player is typing" via Realtime broadcast (Meta Business style).
+  const [playerTyping, setPlayerTyping] = useState(false);
+  const typingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const typingChannelRef = useRef<ReturnType<
+    ReturnType<typeof createClient>["channel"]
+  > | null>(null);
+  const lastTypingSentRef = useRef(0);
+
+  useEffect(() => {
+    const supabase = createClient();
+    const channel = supabase
+      .channel(`typing:${player.id}`)
+      .on("broadcast", { event: "typing" }, (msg) => {
+        const from = (msg.payload as { from?: string } | null)?.from;
+        if (from !== "player") return;
+        setPlayerTyping(true);
+        if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
+        typingTimeoutRef.current = setTimeout(() => setPlayerTyping(false), 3000);
+      })
+      .subscribe();
+    typingChannelRef.current = channel;
+    return () => {
+      typingChannelRef.current = null;
+      void supabase.removeChannel(channel);
+    };
+  }, [player.id]);
+
+  const broadcastAdminTyping = useCallback(() => {
+    const now = Date.now();
+    if (now - lastTypingSentRef.current < 2500) return;
+    lastTypingSentRef.current = now;
+    void typingChannelRef.current?.send({
+      type: "broadcast",
+      event: "typing",
+      payload: { from: "admin" },
+    });
+  }, []);
 
   // Instant local refetch after any send/action (no full page refresh).
   async function changed() {
@@ -452,6 +499,14 @@ export default function ThreadView({
       setSendListBusy(null);
     }
   }
+
+  const lastAdminTextId = (() => {
+    for (let i = thread.length - 1; i >= 0; i--) {
+      const m = thread[i];
+      if (m.sender === "admin" && m.kind === "text") return m.id;
+    }
+    return null;
+  })();
 
   return (
     <div className="flex h-full min-w-0 flex-1 flex-col">
@@ -546,6 +601,13 @@ export default function ThreadView({
               msg={m}
               onViewShot={(src, caption) => setViewer({ src, caption })}
               onMutated={changed}
+              receipt={
+                m.id === lastAdminTextId
+                  ? m.readByPlayer
+                    ? "seen"
+                    : "delivered"
+                  : undefined
+              }
             />
           ))
         )}
@@ -566,12 +628,29 @@ export default function ThreadView({
         ))}
       </div>
 
+      {/* Player typing indicator */}
+      {playerTyping ? (
+        <div className="flex shrink-0 items-center gap-2 border-t border-surface-border bg-navy px-4 py-1.5">
+          <span className="flex items-center gap-1">
+            <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-gold [animation-delay:0ms]" />
+            <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-gold [animation-delay:150ms]" />
+            <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-gold [animation-delay:300ms]" />
+          </span>
+          <span className="text-[11px] text-text-muted">
+            {player.displayName} is typing\u2026
+          </span>
+        </div>
+      ) : null}
+
       {/* Composer */}
       <div className="flex shrink-0 items-center gap-2 border-t border-surface-border bg-navy px-3 py-2">
         <input
           type="text"
           value={draft}
-          onChange={(e) => setDraft(e.target.value)}
+          onChange={(e) => {
+            setDraft(e.target.value);
+            broadcastAdminTyping();
+          }}
           onKeyDown={(e) => {
             if (e.key === "Enter" && !e.shiftKey) {
               e.preventDefault();
