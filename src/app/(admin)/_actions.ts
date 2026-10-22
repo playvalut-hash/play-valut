@@ -79,6 +79,8 @@ export interface ChatMessageView {
   pickedName: string | null;
   paymentCard: {
     name: string;
+    accountName: string | null;
+    brandColor: string | null;
     handle: string;
     note: string | null;
     payLink: string | null;
@@ -635,7 +637,14 @@ export async function getThread(playerId: string): Promise<ChatMessageView[]> {
     }
 
     const snapshot = body.snapshot as
-      | { name?: string; handle?: string; note?: string; pay_link?: string }
+      | {
+          name?: string;
+          account_name?: string;
+          brand_color?: string;
+          handle?: string;
+          note?: string;
+          pay_link?: string;
+        }
       | undefined;
 
     const screenshotPath =
@@ -660,6 +669,8 @@ export async function getThread(playerId: string): Promise<ChatMessageView[]> {
         m.kind === "payment_card" && snapshot
           ? {
               name: snapshot.name ?? "",
+              accountName: snapshot.account_name ?? null,
+              brandColor: snapshot.brand_color ?? null,
               handle: snapshot.handle ?? "",
               note: snapshot.note ?? null,
               payLink: snapshot.pay_link ?? null,
