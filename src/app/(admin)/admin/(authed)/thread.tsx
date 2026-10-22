@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
 
 import type { AdminInfo, ChatMessageView, PlayerOverview } from "../../_actions";
 import {
@@ -32,25 +31,32 @@ function AccountCard({
   admin,
   playerName,
   msg,
+  onMutated,
 }: {
   admin: AdminInfo;
   playerName: string;
   msg: ChatMessageView & { account: NonNullable<ChatMessageView["account"]> };
+  onMutated?: () => Promise<void>;
 }) {
   const { account } = msg;
-  const router = useRouter();
   const [revealed, setRevealed] = useState(false);
   const [password, setPassword] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const [busy, setBusy] = useState(false);
   const [approving, setApproving] = useState(false);
+  // Optimistic status: flips to "active" the moment Approve is tapped.
+  const [optimisticActive, setOptimisticActive] = useState(false);
+  const status = optimisticActive ? "active" : account.status;
 
   async function approve() {
     if (approving) return;
     setApproving(true);
+    setOptimisticActive(true); // instant visual feedback
     try {
       await markAccountActive(admin.id, account.accountId);
-      router.refresh();
+      if (onMutated) await onMutated();
+    } catch {
+      setOptimisticActive(false); // revert on failure
     } finally {
       setApproving(false);
     }
@@ -99,7 +105,7 @@ function AccountCard({
     <div className="w-[400px] max-w-full rounded-lg border border-gold/30 bg-surface-elevated p-3 shadow-[0_4px_16px_rgba(0,0,0,0.35)]">
       <div className="flex items-center justify-between gap-2">
         <span className="text-xs font-semibold text-gold">{account.gameName}</span>
-        <StatusChip status={account.status} />
+        <StatusChip status={status} />
       </div>
       <dl className="mt-2 space-y-1.5 text-xs">
         <div className="flex items-center justify-between gap-2">
@@ -151,7 +157,7 @@ function AccountCard({
       <p className="mt-2 text-[10px] text-text-muted">
         For {playerName} · created {fullDateTime(msg.createdAt)}
       </p>
-      {account.status === "creating" && (
+      {status === "creating" && (
         <button
           type="button"
           onClick={approve}
@@ -173,11 +179,13 @@ function MessageItem({
   playerName,
   msg,
   onViewShot,
+  onMutated,
 }: {
   admin: AdminInfo;
   playerName: string;
   msg: ChatMessageView;
   onViewShot: (src: string, caption: string | null) => void;
+  onMutated?: () => Promise<void>;
 }) {
   if (msg.kind === "system") {
     return (
@@ -193,7 +201,12 @@ function MessageItem({
     const mine = msg.sender === "admin";
     return (
       <div className={cn("admin-msg-in flex py-1", mine ? "justify-end" : "justify-start")}>
-        <AccountCard admin={admin} playerName={playerName} msg={{ ...msg, account: msg.account }} />
+        <AccountCard
+          admin={admin}
+          playerName={playerName}
+          msg={{ ...msg, account: msg.account }}
+          onMutated={onMutated}
+        />
       </div>
     );
   }
@@ -294,6 +307,7 @@ export default function ThreadView({
   games,
   gamesCount,
   methodsCount,
+  onMutated,
 }: {
   admin: AdminInfo;
   player: PlayerOverview;
@@ -301,14 +315,19 @@ export default function ThreadView({
   games: Array<{ id: string; name: string }>;
   gamesCount: number;
   methodsCount: number;
+  onMutated?: () => Promise<void>;
 }) {
-  const router = useRouter();
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
   const [sendListBusy, setSendListBusy] = useState<"games" | "pay" | "single" | null>(null);
   const [gamesOpen, setGamesOpen] = useState(false);
   const [viewer, setViewer] = useState<{ src: string; caption: string | null } | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
+
+  // Instant local refetch after any send/action (no full page refresh).
+  async function changed() {
+    if (onMutated) await onMutated();
+  }
 
   useEffect(() => {
     const el = scrollRef.current;
@@ -322,7 +341,7 @@ export default function ThreadView({
     try {
       await sendAdminMessage(admin.id, { playerId: player.id, text });
       setDraft("");
-      router.refresh();
+      await changed();
     } catch {
       // keep draft
     } finally {
@@ -333,7 +352,7 @@ export default function ThreadView({
   async function quickReply(key: string) {
     try {
       await sendQuickReply(admin.id, { playerId: player.id, key });
-      router.refresh();
+      await changed();
     } catch {
       // ignore
     }
@@ -345,7 +364,7 @@ export default function ThreadView({
     try {
       if (kind === "games") await sendGamesList(admin.id, player.id);
       else await sendPayList(admin.id, player.id);
-      router.refresh();
+      await changed();
     } finally {
       setSendListBusy(null);
     }
@@ -363,7 +382,7 @@ export default function ThreadView({
       });
       // 2. Send the single game
       await sendSingleGame(admin.id, player.id, gameId);
-      router.refresh();
+      await changed();
     } finally {
       setSendListBusy(null);
     }
@@ -461,6 +480,7 @@ export default function ThreadView({
               playerName={player.displayName}
               msg={m}
               onViewShot={(src, caption) => setViewer({ src, caption })}
+              onMutated={changed}
             />
           ))
         )}
