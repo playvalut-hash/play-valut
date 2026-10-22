@@ -571,9 +571,11 @@ function PaymentCardMessage({ message }: { message: ChatMessage }) {
 function MessageView({
   message,
   onPicked,
+  receipt,
 }: {
   message: ChatMessage;
   onPicked: () => void;
+  receipt?: "sent" | "seen";
 }) {
   const mine = message.sender === "player";
 
@@ -625,7 +627,7 @@ function MessageView({
 
   // text
   return (
-    <div className={`flex ${mine ? "justify-end" : "justify-start"}`}>
+    <div className={`flex flex-col ${mine ? "items-end" : "items-start"}`}>
       <div
         className={`max-w-[82%] rounded-2xl px-[13px] py-[9px] text-[14.5px] leading-[1.45] ${
           mine
@@ -640,6 +642,15 @@ function MessageView({
           {formatTime(message.created_at)}
         </p>
       </div>
+      {mine && receipt ? (
+        <p className="mt-1 pr-1 text-[10px] font-medium text-text-muted">
+          {receipt === "seen" ? (
+            <span className="text-gold">{"\u2713\u2713"} Seen</span>
+          ) : (
+            "\u2713 Sent"
+          )}
+        </p>
+      ) : null}
     </div>
   );
 }
@@ -658,11 +669,31 @@ export default function ChatClient({ playerId }: { playerId: string }) {
       sessionStorage.getItem("pv_greeted") === "1",
   );
   const bottomRef = useRef<HTMLDivElement>(null);
+  // Real-chat feel: live typing indicator (admin typing via Realtime
+  // broadcast) + a short "agent is typing" beat while an auto-reply lands.
+  const [agentTyping, setAgentTyping] = useState(false);
+  const [awaitingReply, setAwaitingReply] = useState(false);
+  const typingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const awaitingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const typingChannelRef = useRef<ReturnType<
+    ReturnType<typeof createClient>["channel"]
+  > | null>(null);
+  const lastTypingSentRef = useRef(0);
+
+  const noteAwaiting = useCallback(() => {
+    setAwaitingReply(true);
+    if (awaitingTimeoutRef.current) clearTimeout(awaitingTimeoutRef.current);
+    awaitingTimeoutRef.current = setTimeout(() => setAwaitingReply(false), 6000);
+  }, []);
+
 
   const refresh = useCallback(async () => {
     const thread = await getThread();
     setMessages(thread);
     setLoading(false);
+    // A non-player message landing ends the "typing" beat.
+    const last = thread[thread.length - 1];
+    if (last && last.sender !== "player") setAwaitingReply(false);
     void markThreadRead();
   }, []);
 
@@ -695,14 +726,45 @@ export default function ChatClient({ playerId }: { playerId: string }) {
   }, [playerId, refresh]);
 
   useEffect(() => {
+    const supabase = createClient();
+    const channel = supabase
+      .channel(`typing:${playerId}`)
+      .on("broadcast", { event: "typing" }, (msg) => {
+        const from = (msg.payload as { from?: string } | null)?.from;
+        if (from !== "admin") return;
+        setAgentTyping(true);
+        if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
+        typingTimeoutRef.current = setTimeout(() => setAgentTyping(false), 3000);
+      })
+      .subscribe();
+    typingChannelRef.current = channel;
+    return () => {
+      typingChannelRef.current = null;
+      void supabase.removeChannel(channel);
+    };
+  }, [playerId]);
+
+  const broadcastTyping = useCallback(() => {
+    const now = Date.now();
+    if (now - lastTypingSentRef.current < 2500) return;
+    lastTypingSentRef.current = now;
+    void typingChannelRef.current?.send({
+      type: "broadcast",
+      event: "typing",
+      payload: { from: "player" },
+    });
+  }, []);
+
+  useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
-  }, [messages.length]);
+  }, [messages.length, agentTyping, awaitingReply]);
 
   async function send(text: string) {
     const t = text.trim();
     if (!t || sending) return;
     setSending(true);
     setError(null);
+    noteAwaiting();
     try {
       const result = await sendChatMessage(t, greeted);
       if (!result.ok) {
@@ -724,6 +786,13 @@ export default function ChatClient({ playerId }: { playerId: string }) {
   }
 
   const showSlicks = !loading && messages.length === 0;
+  const lastOwnTextId = (() => {
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const m = messages[i];
+      if (m.sender === "player" && m.kind === "text") return m.id;
+    }
+    return null;
+  })();
 
   return (
     <div className="flex h-[calc(100dvh-6rem)] flex-col">
@@ -774,8 +843,33 @@ export default function ChatClient({ playerId }: { playerId: string }) {
             </div>
           </div>
         ) : (
-          messages.map((m) => <MessageView key={m.id} message={m} onPicked={refresh} />)
+          messages.map((m) => (
+            <MessageView
+              key={m.id}
+              message={m}
+              onPicked={() => {
+                noteAwaiting();
+                void refresh();
+              }}
+              receipt={
+                m.id === lastOwnTextId
+                  ? m.is_read_by_admin
+                    ? "seen"
+                    : "sent"
+                  : undefined
+              }
+            />
+          ))
         )}
+        {(agentTyping || awaitingReply) && !loading ? (
+          <div className="flex justify-start" aria-label="Agent is typing">
+            <div className="flex items-center gap-1 rounded-2xl rounded-bl-[5px] border border-line bg-card-2 px-3.5 py-2.5">
+              <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-text-muted [animation-delay:0ms]" />
+              <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-text-muted [animation-delay:150ms]" />
+              <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-text-muted [animation-delay:300ms]" />
+            </div>
+          </div>
+        ) : null}
         <div ref={bottomRef} />
       </div>
 
@@ -799,7 +893,10 @@ export default function ChatClient({ playerId }: { playerId: string }) {
             id="chat-input"
             type="text"
             value={input}
-            onChange={(e) => setInput(e.target.value)}
+            onChange={(e) => {
+              setInput(e.target.value);
+              broadcastTyping();
+            }}
             placeholder="Type a message…"
             autoComplete="off"
             className="min-h-[48px] flex-1 rounded-full border border-surface-border bg-surface-input px-4 text-sm text-text-primary placeholder:text-text-muted focus:border-gold/60 focus:outline-none"
