@@ -162,7 +162,7 @@ function MethodForm({
           <div className="flex items-center gap-2">
             <input
               type="color"
-              value={form.brandColor || "#8b5cf6"}
+              value={form.brandColor || "#d4af37"}
               onChange={(e) => set("brandColor", e.target.value)}
               aria-label="Brand color picker"
               className="h-9 w-10 cursor-pointer rounded border border-surface-border bg-surface-input"
@@ -170,7 +170,7 @@ function MethodForm({
             <input
               value={form.brandColor}
               onChange={(e) => set("brandColor", e.target.value)}
-              placeholder="#8b5cf6"
+              placeholder="#d4af37"
               className={inputCls}
             />
           </div>
@@ -190,7 +190,7 @@ function MethodForm({
             type="checkbox"
             checked={form.isActive}
             onChange={(e) => set("isActive", e.target.checked)}
-            className="h-4 w-4 accent-[#8b5cf6]"
+            className="h-4 w-4 accent-[#d4af37]"
           />
           Visible to players
         </label>
@@ -290,7 +290,7 @@ export default function MethodsManager({
               <div className="flex items-center gap-2.5">
                 <span
                   className="flex h-9 w-9 items-center justify-center rounded-md text-navy"
-                  style={{ backgroundColor: m.brandColor ?? "#8b5cf6" }}
+                  style={{ backgroundColor: m.brandColor ?? "#d4af37" }}
                 >
                   <CardIcon className="h-4 w-4" />
                 </span>
