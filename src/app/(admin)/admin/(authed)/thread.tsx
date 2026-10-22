@@ -230,20 +230,85 @@ function MessageItem({
     const card = msg.paymentCard;
     return (
       <div className="admin-msg-in flex justify-end py-1">
-        <div className="w-[400px] max-w-full rounded-lg border border-surface-border bg-surface-card p-3">
-          <p className="text-xs font-semibold text-gold">{card.name}</p>
-          <p className="mt-1 font-mono text-xs text-text-primary">{card.handle}</p>
-          {card.note && <p className="mt-1 text-[11px] text-text-secondary">{card.note}</p>}
-          {card.payLink && (
-            <a
-              href={card.payLink}
-              target="_blank"
-              rel="noreferrer"
-              className="admin-focus mt-1.5 inline-flex items-center gap-1 text-[11px] text-gold hover:underline"
-            >
-              <LinkIcon className="h-3 w-3" /> Open pay link
-            </a>
-          )}
+        <div className="w-[400px] max-w-full overflow-hidden rounded-lg border border-gold/30 bg-surface-card shadow-[0_4px_16px_rgba(0,0,0,0.35)]">
+          {/* Header band — brand tile + label + Deposit tag */}
+          <div
+            className="flex items-center gap-2.5 px-3 py-2.5"
+            style={{
+              background: card.brandColor ?? "linear-gradient(135deg, #f0cd6a, #d4af37)",
+              color: card.brandColor ? "#ffffff" : "#241a02",
+            }}
+          >
+            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-white/20 text-base font-extrabold">
+              {card.name.charAt(0).toUpperCase()}
+            </span>
+            <span className="min-w-0 flex-1">
+              <span className="block text-[9px] font-bold uppercase tracking-widest opacity-80">
+                Payment method
+              </span>
+              <span className="block truncate text-[14px] font-extrabold leading-tight">
+                {card.name}
+              </span>
+            </span>
+            <span className="shrink-0 rounded-full bg-black/25 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wide">
+              Deposit
+            </span>
+          </div>
+          {/* Body — labelled rows */}
+          <div className="space-y-2 px-3 py-2.5">
+            {card.accountName && (
+              <div className="flex items-baseline justify-between gap-3">
+                <span className="shrink-0 text-[10px] font-bold uppercase tracking-wider text-text-muted">
+                  Name
+                </span>
+                <span className="text-right text-xs font-semibold text-text-primary">
+                  {card.accountName}
+                </span>
+              </div>
+            )}
+            <div className="flex items-center justify-between gap-3">
+              <span className="shrink-0 text-[10px] font-bold uppercase tracking-wider text-text-muted">
+                Send to
+              </span>
+              <span className="flex items-center gap-1.5">
+                <span className="rounded-md bg-surface-input px-2 py-1 font-mono text-xs font-bold text-gold">
+                  {card.handle}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    try {
+                      void navigator.clipboard.writeText(card.handle);
+                    } catch {
+                      // noop
+                    }
+                  }}
+                  aria-label="Copy payment handle"
+                  className="admin-focus rounded p-1 text-text-muted hover:text-gold"
+                >
+                  <CopyIcon className="h-3.5 w-3.5" />
+                </button>
+              </span>
+            </div>
+            {card.note && (
+              <div className="flex items-baseline justify-between gap-3">
+                <span className="shrink-0 text-[10px] font-bold uppercase tracking-wider text-text-muted">
+                  Note
+                </span>
+                <span className="text-right text-xs text-text-secondary">{card.note}</span>
+              </div>
+            )}
+            {card.payLink && (
+              <a
+                href={card.payLink}
+                target="_blank"
+                rel="noreferrer"
+                className="admin-focus inline-flex items-center gap-1 pt-0.5 text-[11px] font-semibold text-gold hover:underline"
+              >
+                <LinkIcon className="h-3 w-3" /> Open pay link
+              </a>
+            )}
+          </div>
         </div>
       </div>
     );
