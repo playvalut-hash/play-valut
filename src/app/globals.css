@@ -11,10 +11,10 @@
   --color-ink: #eef2f7;
   --color-ink-2: #a7b2c3;
   --color-ink-3: #6d7a8f;
-  --color-gold: #8b5cf6;
-  --color-gold-2: #a78bfa;
-  --color-gold-ink: #ffffff;
-  --color-gold-bg: rgba(139, 92, 246, 0.13);
+  --color-gold: #d4af37;
+  --color-gold-2: #f0cd6a;
+  --color-gold-ink: #241a02;
+  --color-gold-bg: rgba(212, 175, 55, 0.13);
   --color-green: #10b981;
   --color-green-bg: rgba(16, 185, 129, 0.14);
   --color-red: #ff6b5e;
@@ -26,7 +26,7 @@
   /* ── Legacy aliases (map to skeleton tokens) ── */
   --color-navy: #0b0e14;
   --color-near-black: #04060a;
-  --color-gold-light: #a78bfa;
+  --color-gold-light: #f0cd6a;
   --color-success: #10b981;
   --color-danger: #ff6b5e;
   --color-teal: #2bb3a3;
@@ -34,7 +34,7 @@
   --color-text-primary: #eef2f7;
   --color-text-secondary: #a7b2c3;
   --color-text-muted: #6d7a8f;
-  --color-text-ongold: #ffffff;
+  --color-text-ongold: #241a02;
 
   --color-surface-card: #151a26;
   --color-surface-elevated: #1b2231;
