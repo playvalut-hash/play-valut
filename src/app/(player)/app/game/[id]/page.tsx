@@ -145,7 +145,7 @@ export default async function GameDetailPage({
               href={game.link}
               target="_blank"
               rel="noopener noreferrer"
-              className="flex min-h-[52px] items-center justify-center gap-2 rounded-xl bg-gold text-base font-bold text-text-ongold shadow-[0_4px_20px_rgba(139,92,246,0.25)] transition hover:brightness-110"
+              className="flex min-h-[52px] items-center justify-center gap-2 rounded-xl bg-gold text-base font-bold text-text-ongold shadow-[0_4px_20px_rgba(212,175,55,0.25)] transition hover:brightness-110"
             >
               Play
               <ArrowRightIcon className="h-5 w-5" />
@@ -185,7 +185,7 @@ export default async function GameDetailPage({
           <form action={generateAction}>
             <button
               type="submit"
-              className="w-full rounded-xl bg-gold py-4 text-base font-bold text-text-ongold shadow-[0_4px_20px_rgba(139,92,246,0.25)] transition hover:brightness-110 active:scale-[0.99] min-h-[56px]"
+              className="w-full rounded-xl bg-gold py-4 text-base font-bold text-text-ongold shadow-[0_4px_20px_rgba(212,175,55,0.25)] transition hover:brightness-110 active:scale-[0.99] min-h-[56px]"
             >
               Generate my account
             </button>
