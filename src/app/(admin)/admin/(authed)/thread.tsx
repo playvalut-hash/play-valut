@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import type { AdminInfo, ChatMessageView, PlayerOverview } from "../../_actions";
 import {
   decryptAccountPassword,
+  markAccountActive,
   sendAdminMessage,
   sendGamesList,
   sendPayList,
@@ -37,10 +38,23 @@ function AccountCard({
   msg: ChatMessageView & { account: NonNullable<ChatMessageView["account"]> };
 }) {
   const { account } = msg;
+  const router = useRouter();
   const [revealed, setRevealed] = useState(false);
   const [password, setPassword] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [approving, setApproving] = useState(false);
+
+  async function approve() {
+    if (approving) return;
+    setApproving(true);
+    try {
+      await markAccountActive(admin.id, account.accountId);
+      router.refresh();
+    } finally {
+      setApproving(false);
+    }
+  }
 
   async function reveal() {
     if (password) {
@@ -137,6 +151,17 @@ function AccountCard({
       <p className="mt-2 text-[10px] text-text-muted">
         For {playerName} · created {fullDateTime(msg.createdAt)}
       </p>
+      {account.status === "creating" && (
+        <button
+          type="button"
+          onClick={approve}
+          disabled={approving}
+          className="mt-3 flex w-full items-center justify-center gap-2 rounded-lg bg-green px-4 py-2.5 text-[13px] font-bold text-[#03231a] transition hover:brightness-110 active:scale-[0.99] disabled:opacity-50"
+        >
+          <CheckIcon className="h-4 w-4" />
+          {approving ? "Approving…" : "Approve — Mark as Active"}
+        </button>
+      )}
     </div>
   );
 }
