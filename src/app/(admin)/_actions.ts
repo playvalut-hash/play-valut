@@ -87,6 +87,8 @@ export interface ChatMessageView {
   } | null;
   screenshotUrl: string | null;
   screenshotCaption: string | null;
+  readByPlayer: boolean;
+  readByAdmin: boolean;
 }
 
 export interface AdminNoteView {
@@ -547,7 +549,7 @@ export async function getThread(playerId: string): Promise<ChatMessageView[]> {
   const [messagesRes, gamesRes, methodsRes] = await Promise.all([
     client
       .from("chat_messages")
-      .select("id, player_id, sender, kind, body, created_at")
+      .select("id, player_id, sender, kind, body, created_at, is_read_by_player, is_read_by_admin")
       .eq("player_id", playerId)
       .order("created_at", { ascending: true })
       .limit(200),
@@ -577,6 +579,8 @@ export async function getThread(playerId: string): Promise<ChatMessageView[]> {
     kind: string;
     body: Record<string, unknown>;
     created_at: string;
+    is_read_by_player: boolean;
+    is_read_by_admin: boolean;
   }>);
   const accountIds = rows
     .filter((m) => m.kind === "account")
@@ -677,6 +681,8 @@ export async function getThread(playerId: string): Promise<ChatMessageView[]> {
             }
           : null,
       screenshotUrl: null,
+      readByPlayer: m.is_read_by_player,
+      readByAdmin: m.is_read_by_admin,
       screenshotCaption:
         m.kind === "shot" && typeof body.caption === "string"
           ? body.caption
@@ -1104,15 +1110,21 @@ export async function markAccountActive(
       .eq("id", target.id);
   }
 
-  // Notify the player: a system message carrying the flipped card state.
+  // Notify the player with a warm, human-style chat message naming the game
+  // (kind "text" so it renders as a normal agent bubble, not a robotic
+  // centered system pill).
+  const { data: gameRow } = await client
+    .from("games")
+    .select("name")
+    .eq("id", account.game_id as string)
+    .maybeSingle();
+  const gameName = (gameRow?.name as string | undefined) ?? "your game";
   await client.from("chat_messages").insert({
     player_id: account.player_id,
     sender: "system",
-    kind: "system",
+    kind: "text",
     body: {
-      text: "All done! Your account's ready to go — have fun and good luck! 🎮",
-      account_id: accountId,
-      status: "active",
+      text: `Great news — your ${gameName} account is ready to go! 🎉 Your username and password are in the card above. Have fun, and good luck! 🍀`,
     },
     is_read_by_player: false,
     is_read_by_admin: true,
