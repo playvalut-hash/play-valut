@@ -22,16 +22,20 @@ function PlayerRow({
   player,
   selected,
   onSelect,
+  onPrefetch,
 }: {
   player: PlayerOverview;
   selected: boolean;
   onSelect: () => void;
+  onPrefetch: () => void;
 }) {
   const actionNeeded = player.pendingDeposits > 0 || player.creatingAccounts > 0;
   return (
     <button
       type="button"
       onClick={onSelect}
+      onMouseEnter={onPrefetch}
+      onTouchStart={onPrefetch}
       aria-current={selected ? "true" : undefined}
       className={cn(
         "admin-focus admin-lift block w-full border-b border-surface-border/50 px-3 py-2.5 text-left",
@@ -118,6 +122,18 @@ export default function InboxShell({
     selectedIdRef.current = selectedId;
   }, [selectedId]);
 
+  // Conversation cache: reopening a player is INSTANT (stale-while-revalidate).
+  const cacheRef = useRef(
+    new Map<string, { thread: ChatMessageView[]; detail: PlayerDetailView | null }>(),
+  );
+  // Seed with whatever the server already loaded.
+  if (initialSelectedId && cacheRef.current.size === 0) {
+    cacheRef.current.set(initialSelectedId, {
+      thread: initialThread,
+      detail: initialDetail,
+    });
+  }
+
   // Silent refetch of the open conversation — actions (approve, send, tags…)
   // call this instead of router.refresh() so updates appear INSTANTLY
   // without a manual page refresh.
@@ -126,6 +142,7 @@ export default function InboxShell({
     if (!id) return;
     try {
       const [t, d] = await Promise.all([getThread(id), getPlayerDetail(id)]);
+      cacheRef.current.set(id, { thread: t, detail: d });
       if (selectedIdRef.current === id) {
         setThread(t);
         setDetail(d);
@@ -133,6 +150,20 @@ export default function InboxShell({
     } catch {
       // keep current view on transient errors
     }
+  }, []);
+
+  // Background prefetch (hover/touch on a row) — fills the cache so the
+  // click that follows opens instantly.
+  const prefetchPlayer = useCallback((id: string) => {
+    if (cacheRef.current.has(id)) return;
+    void (async () => {
+      try {
+        const [t, d] = await Promise.all([getThread(id), getPlayerDetail(id)]);
+        cacheRef.current.set(id, { thread: t, detail: d });
+      } catch {
+        // prefetch is best-effort
+      }
+    })();
   }, []);
 
   async function selectPlayer(id: string | null) {
@@ -149,14 +180,30 @@ export default function InboxShell({
       setDetail(null);
       return;
     }
+    // Cache hit → show instantly, refresh silently in the background.
+    const cached = cacheRef.current.get(id);
+    if (cached) {
+      setThread(cached.thread);
+      setDetail(cached.detail);
+      setLoadingThread(false);
+      void refreshSelected();
+      markThreadRead(admin.id, id).catch(() => {});
+      return;
+    }
+    // Cache miss → thread FIRST (chat appears ASAP), detail right after.
+    setThread([]);
+    setDetail(null);
     setLoadingThread(true);
     try {
-      const [t, d] = await Promise.all([getThread(id), getPlayerDetail(id)]);
+      const t = await getThread(id);
+      if (selectedIdRef.current !== id) return;
       setThread(t);
-      setDetail(d);
-      // Mark as read in background
+      setLoadingThread(false);
       markThreadRead(admin.id, id).catch(() => {});
-    } finally {
+      const d = await getPlayerDetail(id);
+      cacheRef.current.set(id, { thread: t, detail: d });
+      if (selectedIdRef.current === id) setDetail(d);
+    } catch {
       setLoadingThread(false);
     }
   }
@@ -313,6 +360,7 @@ export default function InboxShell({
                 key={p.id}
                 player={p}
                 selected={p.id === selectedId}
+                onPrefetch={() => prefetchPlayer(p.id)}
                 onSelect={() => {
                   void selectPlayer(p.id === selectedId ? null : p.id);
                 }}
