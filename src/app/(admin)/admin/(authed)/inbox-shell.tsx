@@ -396,7 +396,7 @@ export default function InboxShell({
             </span>
           </div>
           <div className="min-h-0 flex-1">
-            <DetailsPanel admin={admin} detail={detail} games={games} />
+            <DetailsPanel key={detail.player.id} admin={admin} detail={detail} games={games} />
           </div>
         </div>
       )}
