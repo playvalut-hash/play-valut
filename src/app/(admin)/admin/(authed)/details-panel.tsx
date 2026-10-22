@@ -1,7 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
 
 import type { AdminInfo, PlayerDetailView } from "../../_actions";
 import {
@@ -177,26 +176,33 @@ function AccountCard({
   admin,
   account,
   onBusy,
+  onMutated,
 }: {
   admin: AdminInfo;
   account: PlayerDetailView["accounts"][number];
   onBusy: (b: boolean) => void;
+  onMutated?: () => Promise<void>;
 }) {
-  const router = useRouter();
   const [expanded, setExpanded] = useState(account.status === "creating");
   const [editing, setEditing] = useState(false);
   const [username, setUsername] = useState(account.username);
   const [newPassword, setNewPassword] = useState("");
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [approving, setApproving] = useState(false);
+  // Optimistic status: flips to "active" the moment Approve is tapped.
+  const [optimisticActive, setOptimisticActive] = useState(false);
+  const displayStatus = optimisticActive ? "active" : account.status;
 
   async function approve() {
     if (approving) return;
     setApproving(true);
+    setOptimisticActive(true); // instant visual feedback
     onBusy(true);
     try {
       await markAccountActive(admin.id, account.id);
-      router.refresh();
+      if (onMutated) await onMutated();
+    } catch {
+      setOptimisticActive(false);
     } finally {
       setApproving(false);
       onBusy(false);
@@ -214,7 +220,7 @@ function AccountCard({
       });
       setEditing(false);
       setNewPassword("");
-      router.refresh();
+      if (onMutated) await onMutated();
     } finally {
       onBusy(false);
     }
@@ -224,7 +230,7 @@ function AccountCard({
     onBusy(true);
     try {
       await deleteGameAccount(admin.id, account.id);
-      router.refresh();
+      if (onMutated) await onMutated();
     } finally {
       onBusy(false);
     }
@@ -239,13 +245,13 @@ function AccountCard({
       >
         <span className="flex items-center gap-2">
           <span className="text-[14px] font-bold text-text-primary">{account.gameName}</span>
-          <StatusChip status={account.status} />
+          <StatusChip status={displayStatus} />
         </span>
         <ChevronDownIcon
           className={cn("h-4 w-4 text-text-muted transition-transform", expanded && "rotate-180")}
         />
       </button>
-      {account.status === "creating" && (
+      {displayStatus === "creating" && (
         <button
           type="button"
           onClick={approve}
@@ -364,12 +370,13 @@ export default function DetailsPanel({
   admin,
   detail,
   games,
+  onMutated,
 }: {
   admin: AdminInfo;
   detail: PlayerDetailView;
   games: Array<{ id: string; name: string }>;
+  onMutated?: () => Promise<void>;
 }) {
-  const router = useRouter();
   const [newTag, setNewTag] = useState("");
   const [noteBody, setNoteBody] = useState("");
   const [busy, setBusy] = useState(false);
@@ -381,7 +388,7 @@ export default function DetailsPanel({
     setBusy(true);
     try {
       await fn();
-      router.refresh();
+      if (onMutated) await onMutated();
     } finally {
       setBusy(false);
     }
@@ -564,7 +571,7 @@ export default function DetailsPanel({
             <p className="text-[12px] text-text-muted">No accounts yet</p>
           )}
           {detail.accounts.map((a) => (
-            <AccountCard key={a.id} admin={admin} account={a} onBusy={setBusy} />
+            <AccountCard key={a.id} admin={admin} account={a} onBusy={setBusy} onMutated={onMutated} />
           ))}
         </div>
       </Collapsible>
@@ -590,7 +597,7 @@ export default function DetailsPanel({
               setCreating(true);
               try {
                 await createGameAccountForPlayer(admin.id, detail.player.id, selectedGame);
-                router.refresh();
+                if (onMutated) await onMutated();
               } finally {
                 setCreating(false);
               }
