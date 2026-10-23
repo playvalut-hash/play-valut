@@ -563,13 +563,16 @@ export async function getThread(playerId: string): Promise<ChatMessageView[]> {
       .from("chat_messages")
       .select("id, player_id, sender, kind, body, created_at, is_read_by_player, is_read_by_admin")
       .eq("player_id", playerId)
-      .order("created_at", { ascending: true })
-      .limit(200),
+      // LATEST 500, not the OLDEST 200 (Build 42) — same truncation trap
+      // as the player side; rows are reversed back to ascending below.
+      .order("created_at", { ascending: false })
+      .limit(500),
     client.from("games").select("id, name"),
     client.from("payment_methods").select("id, name"),
   ]);
 
-  const { data: messages } = messagesRes;
+  const { data: messagesDesc } = messagesRes;
+  const messages = (messagesDesc ?? []).slice().reverse();
   const { data: games } = gamesRes;
   const { data: methods } = methodsRes;
   const gameNames = new Map(
