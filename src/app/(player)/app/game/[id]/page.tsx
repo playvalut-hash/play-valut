@@ -35,13 +35,14 @@ export default async function GameDetailPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  const game = await getGame(id);
-  if (!game) notFound();
-
+  // Game row + auth in parallel (both depend only on the URL/cookies).
   const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const [game, authRes] = await Promise.all([
+    getGame(id),
+    supabase.auth.getUser(),
+  ]);
+  if (!game) notFound();
+  const user = authRes.data.user;
   let existingStatus: "creating" | "active" | null = null;
   if (user) {
     const { data } = await supabase
