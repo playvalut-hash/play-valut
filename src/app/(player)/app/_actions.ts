@@ -293,6 +293,16 @@ function pickWarmThanks(): string {
   return WARM_THANKS[Math.floor(Math.random() * WARM_THANKS.length)];
 }
 
+const WARM_CLOSINGS = [
+  "No problem at all! We're right here whenever you need a top-up or a new game 🎮",
+  "Anytime! Just drop a message here when you need anything — good luck! 🍀",
+  "Sounds good — we'll be here when you need us. Have fun! 🎉",
+];
+
+function pickWarmClosing(): string {
+  return WARM_CLOSINGS[Math.floor(Math.random() * WARM_CLOSINGS.length)];
+}
+
 /**
  * Send a player chat message, notify the admin (every player message, R5),
  * and run the intent engine for the auto-reply.
@@ -396,6 +406,12 @@ export async function sendChatMessage(
     case "thanks": {
       // R5: warm text only — no game list.
       await insertSystemMessage(user.id, "text", { text: pickWarmThanks() });
+      break;
+    }
+    case "closing": {
+      // Player is wrapping up ("no thank you", "that's all", "bye"):
+      // a warm sign-off — never another "you're welcome" loop.
+      await insertSystemMessage(user.id, "text", { text: pickWarmClosing() });
       break;
     }
     case "greeting": {

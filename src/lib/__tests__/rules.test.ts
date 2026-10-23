@@ -107,6 +107,12 @@ describe("chat intent matcher", () => {
     expect(matchChatIntent("account bana do", GAMES)).toBe("account_request");
     expect(matchChatIntent("shukriya", GAMES)).toBe("thanks");
     expect(matchChatIntent("thank you", GAMES)).toBe("thanks");
+    expect(matchChatIntent("no thank you", GAMES)).toBe("closing");
+    expect(matchChatIntent("no thanks", GAMES)).toBe("closing");
+    expect(matchChatIntent("that's all", GAMES)).toBe("closing");
+    expect(matchChatIntent("nothing else", GAMES)).toBe("closing");
+    expect(matchChatIntent("ok bye", GAMES)).toBe("closing");
+    expect(matchChatIntent("aur kuch nahi chahiye", GAMES)).toBe("closing");
   });
 
   it("routes cashout mentions to the cashout intent (manual handling)", () => {

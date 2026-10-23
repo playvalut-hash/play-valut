@@ -14,6 +14,7 @@ export type ChatIntent =
   | "account_request"
   | "deposit"
   | "thanks"
+  | "closing"
   | "greeting"
   | "cashout"
   | "silent";
@@ -29,6 +30,28 @@ function normalize(text: string): string {
 function matchesAny(text: string, patterns: RegExp[]): boolean {
   return patterns.some((p) => p.test(text));
 }
+
+/**
+ * Conversation closers — "no thank you", "that's all", goodbyes.
+ * Checked BEFORE thanks on purpose: "no thank you" contains "thank",
+ * but the player is ENDING the chat, not thanking again (Build 47).
+ */
+const CLOSING_PATTERNS: RegExp[] = [
+  /\bno\s+(thank|thanks|thx)\b/,
+  /\bthat'?s\s+all\b/,
+  /\bnothing\s+(else|more)\b/,
+  /\bno\s+(need|more)\b/,
+  /\bi'?m\s+(good|done|all\s+set)\b/,
+  /\ball\s+(set|good)\b/,
+  /\bbye\b/,
+  /\bgood\s?bye\b/,
+  /allah\s+hafiz/,
+  /khuda\s+hafiz/,
+  /kuch\s+nahi\s+chahiye/,
+  /nahi\s+chahiye/,
+  /aur\s+kuch\s+nahi/,
+  /\bho\s+gaya\b/,
+];
 
 const THANKS_PATTERNS: RegExp[] = [
   /\bthank(s| you)?\b/,
@@ -120,6 +143,7 @@ export function matchChatIntent(
   const loweredNames = gameNames.map((n) => normalize(n));
   if (loweredNames.includes(text)) return "account_request";
 
+  if (matchesAny(text, CLOSING_PATTERNS)) return "closing";
   if (matchesAny(text, THANKS_PATTERNS)) return "thanks";
   if (matchesAny(text, CASHOUT_PATTERNS)) return "cashout";
   if (matchesAny(text, DEPOSIT_PATTERNS)) return "deposit";
