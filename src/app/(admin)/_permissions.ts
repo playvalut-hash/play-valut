@@ -20,6 +20,11 @@ export const STAFF_PERMISSION_META: Array<{
     hint: "Deletes a player's whole chat history. Cannot be undone.",
   },
   {
+    key: "shortcuts_manage",
+    label: "Manage text shortcuts",
+    hint: "Create and edit the shared chat shortcuts (text expander) for all staff.",
+  },
+  {
     key: "player_delete",
     label: "Delete players",
     hint: "Permanently deletes the player, their accounts, deposits and chat. Cannot be undone.",

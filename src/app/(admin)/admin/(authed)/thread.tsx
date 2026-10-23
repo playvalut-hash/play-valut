@@ -10,6 +10,7 @@ import {
   markAccountActive,
   sendAdminMessage,
   adminSendChatImage,
+  getShortcutsForChat,
   sendGamesList,
   sendPayList,
   sendQuickReply,
@@ -27,6 +28,7 @@ import {
   SendIcon,
   ImageIcon,
 } from "@/components/icons";
+import { expandShortcut } from "@/lib/text-expander";
 import ScreenshotViewer from "./screenshot-viewer";
 import { Avatar, StatusChip, bubbleTime, fullDateTime } from "./ui-bits";
 
@@ -490,6 +492,33 @@ export default function ThreadView({
     }
   }
 
+  // Text shortcuts (Build 59): enabled shortcuts load once per admin and
+  // expand inline while typing (key + space). Fails soft to none.
+  const [shortcutMap, setShortcutMap] = useState<ReadonlyMap<string, string>>(
+    new Map(),
+  );
+  const composerRef = useRef<HTMLTextAreaElement>(null);
+  useEffect(() => {
+    let alive = true;
+    getShortcutsForChat(admin.id)
+      .then((list) => {
+        if (alive) setShortcutMap(new Map(list.map((s) => [s.key, s.expansion])));
+      })
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, [admin.id]);
+
+  // Auto-growing composer (Build 59): grows with the text up to a cap,
+  // then scrolls — like a professional chat system.
+  useEffect(() => {
+    const el = composerRef.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${Math.min(el.scrollHeight, 150)}px`;
+  }, [draft]);
+
   const imageInputRef = useRef<HTMLInputElement>(null);
 
   async function sendImageFile(file: File) {
@@ -801,11 +830,31 @@ export default function ThreadView({
         >
           <ImageIcon className="h-[18px] w-[18px]" />
         </button>
-        <input
-          type="text"
+        <textarea
+          ref={composerRef}
+          rows={1}
           value={draft}
           onChange={(e) => {
-            setDraft(e.target.value);
+            const el = e.target;
+            // Text expander (Build 59): "key + space" expands inline,
+            // cursor lands right after the expansion.
+            const res =
+              shortcutMap.size > 0
+                ? expandShortcut(
+                    el.value,
+                    el.selectionStart ?? el.value.length,
+                    shortcutMap,
+                  )
+                : null;
+            if (res) {
+              setDraft(res.value);
+              requestAnimationFrame(() => {
+                el.focus();
+                el.setSelectionRange(res.cursor, res.cursor);
+              });
+            } else {
+              setDraft(el.value);
+            }
             broadcastAdminTyping();
           }}
           onPaste={(e) => {
@@ -823,7 +872,7 @@ export default function ThreadView({
           }}
           placeholder={`Message ${player.displayName}…`}
           aria-label="Message"
-          className="admin-focus min-h-[42px] min-w-0 flex-1 rounded-full border border-surface-border bg-surface-input px-3.5 text-[13.5px] text-text-primary placeholder:text-text-muted"
+          className="admin-focus max-h-[150px] min-h-[42px] min-w-0 flex-1 resize-none overflow-y-auto rounded-[22px] border border-surface-border bg-surface-input px-3.5 py-2.5 text-[13.5px] leading-snug text-text-primary placeholder:text-text-muted"
         />
         <button
           type="button"

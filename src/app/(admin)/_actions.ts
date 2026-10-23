@@ -24,24 +24,31 @@ import { QUICK_REPLIES } from "./_quick-replies";
 export type AdminRole = "super_admin" | "agent";
 
 /** Grantable staff permissions (Build 43). Super admin always has all. */
-export type StaffPermissionKey = "player_block" | "chat_clear" | "player_delete";
+export type StaffPermissionKey =
+  | "player_block"
+  | "chat_clear"
+  | "player_delete"
+  | "shortcuts_manage";
 
 export interface StaffPermissions {
   player_block: boolean;
   chat_clear: boolean;
   player_delete: boolean;
+  shortcuts_manage: boolean;
 }
 
 const NO_PERMISSIONS: StaffPermissions = {
   player_block: false,
   chat_clear: false,
   player_delete: false,
+  shortcuts_manage: false,
 };
 
 const ALL_PERMISSIONS: StaffPermissions = {
   player_block: true,
   chat_clear: true,
   player_delete: true,
+  shortcuts_manage: true,
 };
 
 function parsePermissions(raw: unknown, role: AdminRole): StaffPermissions {
@@ -51,6 +58,7 @@ function parsePermissions(raw: unknown, role: AdminRole): StaffPermissions {
     player_block: r.player_block === true,
     chat_clear: r.chat_clear === true,
     player_delete: r.player_delete === true,
+    shortcuts_manage: r.shortcuts_manage === true,
   };
 }
 
@@ -1982,6 +1990,7 @@ const permissionsSchema = z.object({
   player_block: z.boolean(),
   chat_clear: z.boolean(),
   player_delete: z.boolean(),
+  shortcuts_manage: z.boolean(),
 });
 
 /** Super admin grants/revokes an AGENT's moderation permissions. */
@@ -2164,4 +2173,163 @@ export async function sendSingleGame(
   });
   if (error) throw new Error("Could not send game");
   audit(adminId, "chat.send_single_game", `${playerId}/${gameId}`);
+}
+
+/* ── Text shortcuts (Build 59) ───────────────────────────────────────────
+ * Blaze-style text expander: centrally managed by the super admin (or an
+ * agent granted "shortcuts_manage"); every staff member can USE the
+ * enabled shortcuts in any admin chat. Storage: text_shortcuts (0012).
+ * All reads/writes are permission-checked server-side. */
+
+export interface TextShortcut {
+  id: string;
+  key: string;
+  expansion: string;
+  description: string | null;
+  isEnabled: boolean;
+  updatedAt: string;
+}
+
+const shortcutInputSchema = z.object({
+  key: z
+    .string()
+    .trim()
+    .toLowerCase()
+    .regex(
+      /^[a-z0-9][a-z0-9_-]{0,31}$/,
+      "Shortcut must be 1–32 chars: letters, numbers, - or _ (no spaces)",
+    ),
+  expansion: z
+    .string()
+    .trim()
+    .min(1, "Expansion text can't be empty")
+    .max(2000, "Expansion is too long (2000 chars max)"),
+  description: z.string().trim().max(120, "Description is too long").optional(),
+});
+
+type ShortcutRow = {
+  id: string;
+  key: string;
+  expansion: string;
+  description: string | null;
+  is_enabled: boolean;
+  updated_at: string;
+};
+
+function toTextShortcut(r: ShortcutRow): TextShortcut {
+  return {
+    id: r.id,
+    key: r.key,
+    expansion: r.expansion,
+    description: r.description,
+    isEnabled: r.is_enabled,
+    updatedAt: r.updated_at,
+  };
+}
+
+function shortcutError(error: { code?: string; message: string }): Error {
+  if (error.code === "23505") {
+    return new Error("That shortcut key is already taken — pick another one.");
+  }
+  return new Error("Could not save the shortcut. Try again.");
+}
+
+export async function getShortcuts(adminId: string): Promise<TextShortcut[]> {
+  await requirePermission(adminId, "shortcuts_manage");
+  const { data, error } = await svc()
+    .from("text_shortcuts")
+    .select("id, key, expansion, description, is_enabled, updated_at")
+    .order("key", { ascending: true });
+  if (error) throw new Error("Could not load shortcuts");
+  return ((data ?? []) as ShortcutRow[]).map(toTextShortcut);
+}
+
+export async function createShortcut(
+  adminId: string,
+  input: { key: string; expansion: string; description?: string },
+): Promise<TextShortcut> {
+  const me = await requirePermission(adminId, "shortcuts_manage");
+  const parsed = shortcutInputSchema.parse(input);
+  const { data, error } = await svc()
+    .from("text_shortcuts")
+    .insert({
+      key: parsed.key,
+      expansion: parsed.expansion,
+      description: parsed.description || null,
+      created_by: me.id,
+    })
+    .select("id, key, expansion, description, is_enabled, updated_at")
+    .single();
+  if (error) throw shortcutError(error);
+  revalidateSection("/admin/shortcuts");
+  return toTextShortcut(data as ShortcutRow);
+}
+
+export async function updateShortcut(
+  adminId: string,
+  id: string,
+  input: { key: string; expansion: string; description?: string },
+): Promise<TextShortcut> {
+  await requirePermission(adminId, "shortcuts_manage");
+  z.string().uuid().parse(id);
+  const parsed = shortcutInputSchema.parse(input);
+  const { data, error } = await svc()
+    .from("text_shortcuts")
+    .update({
+      key: parsed.key,
+      expansion: parsed.expansion,
+      description: parsed.description || null,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", id)
+    .select("id, key, expansion, description, is_enabled, updated_at")
+    .single();
+  if (error) throw shortcutError(error);
+  revalidateSection("/admin/shortcuts");
+  return toTextShortcut(data as ShortcutRow);
+}
+
+export async function setShortcutEnabled(
+  adminId: string,
+  id: string,
+  enabled: boolean,
+): Promise<void> {
+  await requirePermission(adminId, "shortcuts_manage");
+  z.string().uuid().parse(id);
+  const { error } = await svc()
+    .from("text_shortcuts")
+    .update({ is_enabled: enabled, updated_at: new Date().toISOString() })
+    .eq("id", id);
+  if (error) throw new Error("Could not update the shortcut");
+  revalidateSection("/admin/shortcuts");
+}
+
+export async function deleteShortcut(adminId: string, id: string): Promise<void> {
+  await requirePermission(adminId, "shortcuts_manage");
+  z.string().uuid().parse(id);
+  const { error } = await svc().from("text_shortcuts").delete().eq("id", id);
+  if (error) throw new Error("Could not delete the shortcut");
+  revalidateSection("/admin/shortcuts");
+}
+
+/**
+ * Enabled shortcuts for the chat composer — usable by EVERY staff member.
+ * Fails soft to an empty list (e.g. before migration 0012 is run) so the
+ * chat itself never breaks.
+ */
+export async function getShortcutsForChat(
+  adminId: string,
+): Promise<Array<{ key: string; expansion: string }>> {
+  await requireAdmin(adminId);
+  try {
+    const { data, error } = await svc()
+      .from("text_shortcuts")
+      .select("key, expansion")
+      .eq("is_enabled", true)
+      .order("key", { ascending: true });
+    if (error) return [];
+    return (data ?? []) as Array<{ key: string; expansion: string }>;
+  } catch {
+    return [];
+  }
 }

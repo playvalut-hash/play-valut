@@ -971,6 +971,16 @@ export default function ChatClient({
   }
 
   const imageInputRef = useRef<HTMLInputElement>(null);
+  const composerRef = useRef<HTMLTextAreaElement>(null);
+
+  // Auto-growing composer (Build 59): grows with the text up to a cap,
+  // then scrolls — like a professional chat system.
+  useEffect(() => {
+    const el = composerRef.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${Math.min(el.scrollHeight, 150)}px`;
+  }, [input]);
 
   async function sendImage(file: File) {
     if (sending) return;
@@ -1145,9 +1155,10 @@ export default function ChatClient({
           >
             <ImageIcon className="h-5 w-5" />
           </button>
-          <input
+          <textarea
             id="chat-input"
-            type="text"
+            ref={composerRef}
+            rows={1}
             value={input}
             onChange={(e) => {
               setInput(e.target.value);
@@ -1160,9 +1171,16 @@ export default function ChatClient({
                 void sendImage(file);
               }
             }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && !e.shiftKey) {
+                e.preventDefault();
+                void send(input);
+                setInput("");
+              }
+            }}
             placeholder="Type a message…"
             autoComplete="off"
-            className="min-h-[48px] flex-1 rounded-full border border-surface-border bg-surface-input px-4 text-sm text-text-primary placeholder:text-text-muted focus:border-gold/60 focus:outline-none"
+            className="max-h-[150px] min-h-[48px] flex-1 resize-none overflow-y-auto rounded-[24px] border border-surface-border bg-surface-input px-4 py-3 text-sm leading-snug text-text-primary placeholder:text-text-muted focus:border-gold/60 focus:outline-none"
           />
           <button
             type="submit"

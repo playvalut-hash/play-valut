@@ -35,18 +35,30 @@ const AGENTS_ITEM: NavItem = {
   icon: UsersIcon,
 };
 
+const SHORTCUTS_ITEM: NavItem = {
+  href: "/admin/shortcuts",
+  label: "Text Shortcuts",
+  icon: NoteIcon,
+};
+
 /** Left nav for the admin shell. Agents link only renders for super_admins.
  *  `collapsed` (desktop rail) hides labels at md+ only — the mobile drawer
  *  always shows full labels. */
 export default function SideNav({
   role,
   collapsed = false,
+  canShortcuts = false,
 }: {
   role: AdminRole;
   collapsed?: boolean;
+  canShortcuts?: boolean;
 }) {
   const pathname = usePathname();
-  const items = role === "super_admin" ? [...ITEMS, AGENTS_ITEM] : ITEMS;
+  const items = [
+    ...ITEMS,
+    ...(canShortcuts ? [SHORTCUTS_ITEM] : []),
+    ...(role === "super_admin" ? [AGENTS_ITEM] : []),
+  ];
 
   return (
     <nav

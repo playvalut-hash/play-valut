@@ -160,7 +160,14 @@ export default function AdminShell({
                 </button>
               </div>
               <div className="min-h-0 flex-1 overflow-y-auto" onClick={() => setSidebarOpen(false)}>
-                <SideNav role={session.role} collapsed={collapsed} />
+                <SideNav
+                  role={session.role}
+                  collapsed={collapsed}
+                  canShortcuts={
+                    session.role === "super_admin" ||
+                    session.permissions.shortcuts_manage
+                  }
+                />
               </div>
               {/* Desktop collapse control (bottom of the rail) */}
               <button
