@@ -34,15 +34,22 @@ type ChatSendResult = { ok: true; greeted: boolean } | { ok: false; error: strin
 
 /* ── small helpers ───────────────────────────────────────────────────────── */
 
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
 function normalizeName(value: string): string {
   return value.toLowerCase().replace(/[^a-z0-9]/g, "");
 }
 
+// Games + payment methods change rarely, yet they were re-queried on
+// EVERY chat message / pick / deposit step (each ~0.3-1s from the DB).
+// A 60-second in-memory cache (per warm server instance) removes those
+// round trips from the hot path; admin edits show up within a minute.
+const CATALOG_TTL_MS = 60_000;
+let gamesCache: { at: number; rows: Game[] } | null = null;
+let methodsCache: { at: number; rows: PaymentMethod[] } | null = null;
+
 async function fetchActiveGames(): Promise<Game[]> {
+  if (gamesCache && Date.now() - gamesCache.at < CATALOG_TTL_MS) {
+    return gamesCache.rows;
+  }
   const service = createServiceClient();
   const { data, error } = await service
     .from("games")
@@ -51,11 +58,16 @@ async function fetchActiveGames(): Promise<Game[]> {
     )
     .eq("is_active", true)
     .order("sort_order", { ascending: true });
-  if (error || !data) return [];
-  return data as unknown as Game[];
+  if (error || !data) return gamesCache?.rows ?? [];
+  const rows = data as unknown as Game[];
+  gamesCache = { at: Date.now(), rows };
+  return rows;
 }
 
 async function fetchActiveMethods(): Promise<PaymentMethod[]> {
+  if (methodsCache && Date.now() - methodsCache.at < CATALOG_TTL_MS) {
+    return methodsCache.rows;
+  }
   const service = createServiceClient();
   const { data, error } = await service
     .from("payment_methods")
@@ -64,8 +76,10 @@ async function fetchActiveMethods(): Promise<PaymentMethod[]> {
     )
     .eq("is_active", true)
     .order("sort_order", { ascending: true });
-  if (error || !data) return [];
-  return data as unknown as PaymentMethod[];
+  if (error || !data) return methodsCache?.rows ?? [];
+  const rows = data as unknown as PaymentMethod[];
+  methodsCache = { at: Date.now(), rows };
+  return rows;
 }
 
 /**
@@ -218,7 +232,6 @@ async function deliverAccount(playerId: string, game: Game): Promise<void> {
   await insertSystemMessage(playerId, "text", {
     text: `On it! Getting your ${game.name} account ready — give me just a sec 👍`,
   });
-  await sleep(1500);
   await insertSystemMessage(playerId, "account", {
     game_id: game.id,
     account_id: accountId,
@@ -282,12 +295,13 @@ export async function sendChatMessage(
   const text = parsed.data;
 
   const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  // Auth + catalog fetch in parallel (independent round trips).
+  const [authRes, games] = await Promise.all([
+    supabase.auth.getUser(),
+    fetchActiveGames(),
+  ]);
+  const user = authRes.data.user;
   if (!user) return { ok: false, error: "You're signed out. Please sign in again." };
-
-  const games = await fetchActiveGames();
 
   // Ensure players row exists (agents/admins don't have one; creates on demand).
   await supabase.from("players").upsert(
@@ -482,11 +496,9 @@ export async function markThreadRead(): Promise<void> {
     data: { user },
   } = await supabase.auth.getUser();
   if (!user) return;
-  await supabase
-    .from("chat_messages")
-    .update({ is_read_by_player: true })
-    .eq("player_id", user.id)
-    .eq("is_read_by_player", false);
+  // RPC (0009): players have no UPDATE policy on chat_messages — the
+  // SECURITY DEFINER function flips only their own read flags.
+  await supabase.rpc("mark_my_thread_read");
 }
 
 /**
