@@ -2121,7 +2121,17 @@ export async function createGameAccountForPlayer(
   gameId: string,
 ): Promise<void> {
   await requireAdmin(adminId);
+  z.string().uuid().parse(playerId);
+  z.string().min(1).parse(gameId); // games.id is TEXT (slug), not uuid (Build 41)
   const client = svc();
+
+  const { data: game } = await client
+    .from("games")
+    .select("id, name")
+    .eq("id", gameId)
+    .maybeSingle();
+  if (!game) throw new Error("Game not found");
+  const gameName = (game as { name: string }).name;
 
   // Check if account already exists
   const { data: existing } = await client
@@ -2130,16 +2140,48 @@ export async function createGameAccountForPlayer(
     .eq("player_id", playerId)
     .eq("game_id", gameId)
     .maybeSingle();
-  if (existing) throw new Error("Account already exists for this game");
+  if (existing) {
+    throw new Error(`This player already has a ${gameName} account`);
+  }
 
-  const { error } = await client.from("game_accounts").insert({
+  // Status starts at "creating" — NOT active. The admin verifies it from
+  // the card in the thread (markAccountActive), like a chat-requested
+  // account. (Build 62: this used to insert "active" directly and never
+  // sent anything to the player, so Create looked broken.)
+  const { data: account, error } = await client
+    .from("game_accounts")
+    .insert({
+      player_id: playerId,
+      game_id: gameId,
+      username: generateUsername(gameId),
+      password_enc: encryptPassword(generateGamePassword()),
+      status: "creating",
+    })
+    .select("id")
+    .single();
+  if (error || !account) throw new Error("Could not create account");
+  const accountId = (account as { id: string }).id;
+
+  // Send it to the player in chat, exactly like a requested account:
+  // a short setup note, a human beat, then the CREATING card.
+  await client.from("chat_messages").insert({
     player_id: playerId,
-    game_id: gameId,
-    username: generateUsername(gameId),
-    password_enc: encryptPassword(generateGamePassword()),
-    status: "active",
+    sender: "system",
+    kind: "text",
+    body: { text: `Setting up your ${gameName} account — give me just a sec 👍` },
+    is_read_by_player: false,
+    is_read_by_admin: true,
   });
-  if (error) throw new Error("Could not create account");
+  void broadcastAgentTyping(playerId);
+  await sleep(900);
+  await client.from("chat_messages").insert({
+    player_id: playerId,
+    sender: "system",
+    kind: "account",
+    body: { game_id: gameId, account_id: accountId, status: "creating" },
+    is_read_by_player: false,
+    is_read_by_admin: true,
+  });
 
   audit(adminId, "accounts.create", `${playerId}/${gameId}`);
 }

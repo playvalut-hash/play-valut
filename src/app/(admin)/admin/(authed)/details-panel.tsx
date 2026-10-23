@@ -506,6 +506,14 @@ export default function DetailsPanel({
   const [customDays, setCustomDays] = useState("");
   const [selectedGame, setSelectedGame] = useState(games[0]?.id ?? "");
   const [creating, setCreating] = useState(false);
+  const [createError, setCreateError] = useState<string | null>(null);
+  // Only games the player does NOT already have can be created (Build 62).
+  const creatableGames = games.filter(
+    (g) => !detail.accounts.some((a) => a.gameId === g.id),
+  );
+  const effectiveGame = creatableGames.some((g) => g.id === selectedGame)
+    ? selectedGame
+    : (creatableGames[0]?.id ?? "");
 
   async function run(fn: () => Promise<void>) {
     setBusy(true);
@@ -730,39 +738,58 @@ export default function DetailsPanel({
 
       {/* Create game account — minimized by default */}
       <Collapsible title="Create game account">
-        <div className="flex gap-2">
-          <select
-            value={selectedGame}
-            onChange={(e) => setSelectedGame(e.target.value)}
-            className="min-w-0 flex-1 rounded-lg border border-surface-border bg-surface-input px-3 py-2.5 text-[14px] text-text-primary"
-          >
-            {games.map((g) => (
-              <option key={g.id} value={g.id}>
-                {g.name}
-              </option>
-            ))}
-          </select>
-          <button
-            type="button"
-            disabled={creating || !selectedGame}
-            onClick={async () => {
-              setCreating(true);
-              try {
-                await createGameAccountForPlayer(admin.id, detail.player.id, selectedGame);
-                if (onMutated) await onMutated();
-              } finally {
-                setCreating(false);
-              }
-            }}
-            className="rounded-lg bg-gold px-5 py-2.5 text-[14px] font-bold text-navy hover:opacity-90 disabled:opacity-40"
-          >
-            {creating ? "…" : "Create"}
-          </button>
-        </div>
-        <p className="mt-2 text-[11px] leading-relaxed text-text-muted">
-          Generates the username &amp; password, adds it to the sheet log, and sends the login
-          to the player as a card in this chat.
-        </p>
+        {creatableGames.length === 0 ? (
+          <p className="text-[12px] leading-relaxed text-text-muted">
+            This player already has an account for every game.
+          </p>
+        ) : (
+          <>
+            <div className="flex gap-2">
+              <select
+                value={effectiveGame}
+                onChange={(e) => setSelectedGame(e.target.value)}
+                className="min-w-0 flex-1 rounded-lg border border-surface-border bg-surface-input px-3 py-2.5 text-[14px] text-text-primary"
+              >
+                {creatableGames.map((g) => (
+                  <option key={g.id} value={g.id}>
+                    {g.name}
+                  </option>
+                ))}
+              </select>
+              <button
+                type="button"
+                disabled={creating || !effectiveGame}
+                onClick={async () => {
+                  setCreating(true);
+                  setCreateError(null);
+                  try {
+                    await createGameAccountForPlayer(admin.id, detail.player.id, effectiveGame);
+                    if (onMutated) await onMutated();
+                  } catch (e) {
+                    setCreateError(
+                      e instanceof Error ? e.message : "Could not create account",
+                    );
+                  } finally {
+                    setCreating(false);
+                  }
+                }}
+                className="rounded-lg bg-gold px-5 py-2.5 text-[14px] font-bold text-navy hover:opacity-90 disabled:opacity-40"
+              >
+                {creating ? "…" : "Create"}
+              </button>
+            </div>
+            {createError && (
+              <p role="alert" className="mt-2 text-[12px] font-medium text-red-400">
+                {createError}
+              </p>
+            )}
+            <p className="mt-2 text-[11px] leading-relaxed text-text-muted">
+              Generates the username &amp; password and sends the login to the player as a
+              card in this chat. Once the account is ready on the game, verify it from
+              that card — the player then gets the “account ready” message.
+            </p>
+          </>
+        )}
       </Collapsible>
 
       {/* Moderation — permission-gated (Build 43) */}
