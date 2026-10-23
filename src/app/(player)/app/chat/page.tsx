@@ -27,10 +27,13 @@ export default async function ChatPage() {
       "id, player_id, sender, kind, body, is_read_by_admin, is_read_by_player, created_at",
     )
     .eq("player_id", user.id)
-    .order("created_at", { ascending: true })
+    // LATEST 500, not the OLDEST 500 (Build 42): ascending+limit silently
+    // hid every message past #500 in long threads — the player stopped
+    // seeing new admin messages while the admin still saw them.
+    .order("created_at", { ascending: false })
     .limit(500);
 
-  const initialMessages = (data ?? []) as unknown as ChatMessage[];
+  const initialMessages = ((data ?? []) as unknown as ChatMessage[]).reverse();
 
   // ── Batch-resolve account cards (one query for all cards in the thread) ──
   const accountIds = [
