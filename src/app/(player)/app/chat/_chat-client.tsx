@@ -4,7 +4,6 @@ import { useCallback, useEffect, useRef, useState } from "react";import Link fro
 import { createClient } from "@/lib/supabase/client";
 import {
   CheckIcon,
-  ClockIcon,
   CopyIcon,
   EyeIcon,
   EyeOffIcon,
@@ -161,6 +160,7 @@ function AccountCardMessage({
   const [card, setCard] = useState<AccountCard | null>(resolvedCard ?? null);
   const [showPassword, setShowPassword] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [copiedUser, setCopiedUser] = useState(false);
 
   useEffect(() => {
     // Server batch-resolved this card (page.tsx) and its status matches the
@@ -195,37 +195,73 @@ function AccountCardMessage({
     }
   }
 
+  async function copyUsername() {
+    if (!card) return;
+    try {
+      await navigator.clipboard.writeText(card.username);
+      setCopiedUser(true);
+      setTimeout(() => setCopiedUser(false), 1500);
+    } catch {
+      // ignore
+    }
+  }
+
   return (
     <div className="flex justify-start">
-      <div className="w-full max-w-[320px] overflow-hidden rounded-2xl border border-gold/40 bg-surface-card">
-        <div className="bg-gradient-to-r from-gold to-gold-light px-4 py-2.5">
-          <p className="text-sm font-extrabold text-text-ongold">
+      <div className="w-full max-w-[340px] overflow-hidden rounded-2xl border border-gold/40 bg-surface-card shadow-xl shadow-black/25">
+        <div className="flex items-center justify-between gap-2 bg-gradient-to-r from-gold to-gold-light px-4 py-2.5">
+          <p className="min-w-0 truncate text-sm font-extrabold text-text-ongold">
             {card?.gameName ?? "Game account"}
           </p>
+          {active ? (
+            <span className="flex shrink-0 items-center gap-1 rounded-full bg-black/20 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-text-ongold">
+              <span className="h-1.5 w-1.5 rounded-full bg-success" />
+              Active
+            </span>
+          ) : (
+            <span className="flex shrink-0 items-center gap-1 rounded-full bg-black/20 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-text-ongold">
+              <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-text-ongold" />
+              Creating
+            </span>
+          )}
         </div>
         <div className="space-y-2.5 p-4">
-          <div>
-            <p className="text-[11px] font-semibold uppercase tracking-wide text-text-muted">
+          <div className="rounded-xl bg-surface-input px-3 py-2.5">
+            <p className="text-[10px] font-semibold uppercase tracking-wider text-text-muted">
               Username
             </p>
-            <p className="font-mono text-sm font-bold text-text-primary">
-              {card?.username ?? "…"}
-            </p>
+            <div className="mt-0.5 flex items-center justify-between gap-2">
+              <p className="truncate font-mono text-sm font-bold text-text-primary">
+                {card?.username ?? "…"}
+              </p>
+              <button
+                type="button"
+                onClick={copyUsername}
+                aria-label="Copy username"
+                className="shrink-0 rounded-lg p-1.5 text-text-secondary transition hover:text-gold"
+              >
+                {copiedUser ? (
+                  <CheckIcon className="h-4 w-4 text-success" />
+                ) : (
+                  <CopyIcon className="h-4 w-4" />
+                )}
+              </button>
+            </div>
           </div>
-          <div>
-            <p className="text-[11px] font-semibold uppercase tracking-wide text-text-muted">
+          <div className="rounded-xl bg-surface-input px-3 py-2.5">
+            <p className="text-[10px] font-semibold uppercase tracking-wider text-text-muted">
               Password
             </p>
-            <div className="flex items-center justify-between gap-2">
-              <p className="font-mono text-sm font-bold text-text-primary">
+            <div className="mt-0.5 flex items-center justify-between gap-2">
+              <p className="truncate font-mono text-sm font-bold text-text-primary">
                 {showPassword ? (card?.password ?? "…") : "••••••••"}
               </p>
-              <div className="flex gap-1.5">
+              <div className="flex shrink-0 gap-1">
                 <button
                   type="button"
                   onClick={() => setShowPassword((v) => !v)}
                   aria-label={showPassword ? "Hide password" : "Show password"}
-                  className="rounded-lg border border-surface-border p-1.5 text-text-secondary transition hover:border-gold/60 hover:text-gold"
+                  className="rounded-lg p-1.5 text-text-secondary transition hover:text-gold"
                 >
                   {showPassword ? (
                     <EyeOffIcon className="h-4 w-4" />
@@ -237,7 +273,7 @@ function AccountCardMessage({
                   type="button"
                   onClick={copyPassword}
                   aria-label="Copy password"
-                  className="rounded-lg border border-surface-border p-1.5 text-text-secondary transition hover:border-gold/60 hover:text-gold"
+                  className="rounded-lg p-1.5 text-text-secondary transition hover:text-gold"
                 >
                   {copied ? (
                     <CheckIcon className="h-4 w-4 text-success" />
@@ -248,18 +284,12 @@ function AccountCardMessage({
               </div>
             </div>
           </div>
-          <div className="flex items-center justify-between border-t border-surface-border pt-3">
-            {active ? (
-              <span className="flex items-center gap-1 text-xs font-bold text-success">
-                <CheckIcon className="h-4 w-4" />
-                Active
-              </span>
-            ) : (
-              <span className="flex items-center gap-1 text-xs font-bold text-gold animate-pulse">
-                <ClockIcon className="h-4 w-4" />
-                Creating…
-              </span>
-            )}
+          <div className="flex items-center justify-between pt-1">
+            <span className="text-[11px] text-text-muted">
+              {active
+                ? "Your login is ready"
+                : "Support is setting up your login…"}
+            </span>
             <span className="text-[10px] text-text-muted">
               {formatTime(message.created_at)}
             </span>
@@ -317,9 +347,16 @@ function PickerMessage({
 
   return (
     <div className="flex justify-start">
-      <div className="w-full max-w-[320px] rounded-2xl border border-surface-border bg-surface-card p-3.5">
-        <p className="text-sm font-bold text-text-primary">{title}</p>
-        <div className="mt-2.5 flex flex-wrap gap-2">
+      <div className="w-full max-w-[340px] overflow-hidden rounded-2xl border border-surface-border bg-surface-card shadow-xl shadow-black/25">
+        <div className="border-b border-surface-border px-4 py-3">
+          <p className="text-sm font-bold text-text-primary">{title}</p>
+          <p className="mt-0.5 text-[11px] text-text-muted">
+            {picked
+              ? `Picked · ${formatTime(picked.at)}`
+              : "Tap one to continue"}
+          </p>
+        </div>
+        <div className="space-y-1 p-2">
           {items.map((item) => {
             const isPicked = picked?.id === item.id;
             return (
@@ -328,30 +365,53 @@ function PickerMessage({
                 type="button"
                 disabled={!!picked || picking}
                 onClick={() => pick(item.id)}
-                className={`flex min-h-[40px] items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-bold transition ${
+                className={`flex w-full items-center gap-3 rounded-xl px-2.5 py-2.5 text-left transition disabled:opacity-60 ${
                   isPicked
-                    ? "border-gold bg-gold text-text-ongold"
-                    : "border-gold/40 text-gold hover:bg-gold/10 disabled:opacity-50"
+                    ? "bg-gold text-text-ongold"
+                    : "text-text-primary hover:bg-surface-elevated"
                 }`}
               >
-                {item.brand_color ? (
+                <span
+                  aria-hidden
+                  className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-[13px] font-extrabold ${
+                    isPicked ? "bg-black/15" : "bg-gold/10 text-gold"
+                  }`}
+                  style={
+                    item.brand_color && !isPicked
+                      ? { backgroundColor: item.brand_color, color: "#fff" }
+                      : undefined
+                  }
+                >
+                  {item.name.charAt(0).toUpperCase()}
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-[13.5px] font-bold leading-tight">
+                    {item.name}
+                  </span>
+                  {item.handle ? (
+                    <span
+                      className={`block truncate text-[11px] leading-tight ${
+                        isPicked ? "opacity-75" : "text-text-muted"
+                      }`}
+                    >
+                      {item.handle}
+                    </span>
+                  ) : null}
+                </span>
+                {isPicked ? (
+                  <CheckIcon className="h-4 w-4 shrink-0" />
+                ) : (
                   <span
                     aria-hidden
-                    className="h-3 w-3 rounded-full"
-                    style={{ backgroundColor: item.brand_color }}
-                  />
-                ) : null}
-                {item.name}
-                {isPicked ? <CheckIcon className="h-3.5 w-3.5" /> : null}
+                    className="shrink-0 text-lg leading-none text-text-muted"
+                  >
+                    ›
+                  </span>
+                )}
               </button>
             );
           })}
         </div>
-        {picked ? (
-          <p className="mt-2 text-[11px] text-text-muted">
-            Picked {formatTime(picked.at)}
-          </p>
-        ) : null}
       </div>
     </div>
   );
@@ -422,7 +482,7 @@ function PaymentCardMessage({ message }: { message: ChatMessage }) {
 
   return (
     <div className="flex justify-start">
-      <div className="w-full max-w-[340px] overflow-hidden rounded-2xl border border-gold/40 bg-surface-card">
+      <div className="w-full max-w-[340px] overflow-hidden rounded-2xl border border-gold/40 bg-surface-card shadow-xl shadow-black/25">
         {/* Header band — brand tile + label + Deposit tag */}
         <div
           className="flex items-center gap-3 px-4 py-3"
@@ -656,7 +716,7 @@ function MessageView({
   return (
     <div className={`flex flex-col ${mine ? "items-end" : "items-start"}`}>
       <div
-        className={`max-w-[82%] rounded-2xl px-[13px] py-[9px] text-[14.5px] leading-[1.45] ${
+        className={`max-w-[82%] rounded-2xl px-[13px] py-[9px] text-[14.5px] leading-[1.45] shadow-sm shadow-black/20 ${
           mine
             ? "rounded-br-[5px] bg-gold font-semibold text-gold-ink"
             : "rounded-bl-[5px] border border-line bg-card-2 text-ink"
@@ -851,15 +911,20 @@ export default function ChatClient({
 
   return (
     <div className="flex h-[calc(100dvh-6rem)] flex-col">
-      {/* Header */}
-      <header className="shrink-0 border-b border-surface-border bg-navy px-4 py-3.5">
-        <h1 className="text-base font-extrabold text-text-primary">
-          Support chat
-        </h1>
-        <p className="flex items-center gap-1.5 text-xs text-text-secondary">
-          <span className="inline-block h-2 w-2 rounded-full bg-success" />
-          An agent usually replies within minutes
-        </p>
+      {/* Header — support identity, Messenger-style */}
+      <header className="flex shrink-0 items-center gap-3 border-b border-surface-border bg-navy px-4 py-3">
+        <span className="relative flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-gold font-display text-[13px] font-extrabold text-text-ongold">
+          PV
+          <span className="absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full border-2 border-navy bg-success" />
+        </span>
+        <div className="min-w-0">
+          <h1 className="text-[15px] font-extrabold leading-tight text-text-primary">
+            Support chat
+          </h1>
+          <p className="text-xs leading-tight text-text-secondary">
+            Online · replies within minutes
+          </p>
+        </div>
       </header>
 
       {/* Thread */}
