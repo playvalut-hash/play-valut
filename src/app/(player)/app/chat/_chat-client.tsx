@@ -356,7 +356,8 @@ function PickerMessage({
               : "Tap one to continue"}
           </p>
         </div>
-        <div className="space-y-1 p-2">
+        {/* Chips layout (Build 46 — skeleton style, replaces rows) */}
+        <div className="flex flex-wrap gap-1.5 p-3">
           {items.map((item) => {
             const isPicked = picked?.id === item.id;
             return (
@@ -365,16 +366,16 @@ function PickerMessage({
                 type="button"
                 disabled={!!picked || picking}
                 onClick={() => pick(item.id)}
-                className={`flex w-full items-center gap-3 rounded-xl px-2.5 py-2.5 text-left transition disabled:opacity-60 ${
+                className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-2 text-[12.5px] font-bold leading-none transition ${
                   isPicked
-                    ? "bg-gold text-text-ongold"
-                    : "text-text-primary hover:bg-surface-elevated"
-                }`}
+                    ? "border-gold bg-gold text-text-ongold shadow-lg shadow-gold/25"
+                    : "border-surface-border bg-surface-elevated/70 text-text-primary hover:border-gold/60 hover:text-gold"
+                } ${picked && !isPicked ? "opacity-40" : ""}`}
               >
                 <span
                   aria-hidden
-                  className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-[13px] font-extrabold ${
-                    isPicked ? "bg-black/15" : "bg-gold/10 text-gold"
+                  className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[10px] font-extrabold ${
+                    isPicked ? "bg-black/20" : "bg-gold/15 text-gold"
                   }`}
                   style={
                     item.brand_color && !isPicked
@@ -384,30 +385,19 @@ function PickerMessage({
                 >
                   {item.name.charAt(0).toUpperCase()}
                 </span>
-                <span className="min-w-0 flex-1">
-                  <span className="block truncate text-[13.5px] font-bold leading-tight">
-                    {item.name}
-                  </span>
-                  {item.handle ? (
-                    <span
-                      className={`block truncate text-[11px] leading-tight ${
-                        isPicked ? "opacity-75" : "text-text-muted"
-                      }`}
-                    >
-                      {item.handle}
-                    </span>
-                  ) : null}
-                </span>
-                {isPicked ? (
-                  <CheckIcon className="h-4 w-4 shrink-0" />
-                ) : (
+                {item.name}
+                {item.handle ? (
                   <span
-                    aria-hidden
-                    className="shrink-0 text-lg leading-none text-text-muted"
+                    className={`text-[11px] font-semibold ${
+                      isPicked ? "opacity-75" : "text-text-muted"
+                    }`}
                   >
-                    ›
+                    {item.handle}
                   </span>
-                )}
+                ) : null}
+                {isPicked ? (
+                  <CheckIcon className="h-3.5 w-3.5 shrink-0" />
+                ) : null}
               </button>
             );
           })}
