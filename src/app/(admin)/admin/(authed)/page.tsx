@@ -10,15 +10,15 @@ import InboxShell from "./inbox-shell";
 
 /** Business Inbox — /admin. Player selection is client-side (instant). */
 export default async function InboxPage() {
-  const session = await getAdminSession();
-  if (!session) redirect("/admin/login");
-
-  // Overview + games + methods in parallel.
-  const [overview, games, methods] = await Promise.all([
+  // Everything in ONE parallel batch — previously the session check ran
+  // first and the overview only started after it returned (~1s wasted).
+  const [session, overview, games, methods] = await Promise.all([
+    getAdminSession(),
     getInboxOverview(),
     getGames(),
     getPaymentMethods(),
   ]);
+  if (!session) redirect("/admin/login");
 
   const tagOptions = [...new Set(overview.flatMap((p) => p.tags))].sort();
 
