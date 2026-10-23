@@ -788,18 +788,32 @@ export async function sendQuickReply(
   audit(adminId, "chat.quick_reply", `${playerId}:${key}`);
 }
 
-/** SEND bar: push the full active games list to the player's chat. */
+/** SEND bar: push the full active games list to the player's chat. The items
+ *  MUST be embedded in the body — the player picker renders from the body,
+ *  and a list without items shows as an empty card (Build 38 fix). */
 export async function sendGamesList(
   adminId: string,
   playerId: string,
 ): Promise<void> {
   await requireAdmin(adminId);
   z.string().uuid().parse(playerId);
+  const { data: games } = await svc()
+    .from("games")
+    .select("id, name")
+    .eq("is_active", true)
+    .order("sort_order", { ascending: true });
   const { error } = await svc().from("chat_messages").insert({
     player_id: playerId,
     sender: "admin",
     kind: "games_list",
-    body: { title: "Choose your game", picked: null },
+    body: {
+      title: "Choose your game",
+      games: (games ?? []).map((g) => ({
+        id: g.id as string,
+        name: g.name as string,
+      })),
+      picked: null,
+    },
     is_read_by_player: false,
     is_read_by_admin: true,
   });
@@ -807,23 +821,85 @@ export async function sendGamesList(
   audit(adminId, "chat.send_games_list", playerId);
 }
 
-/** SEND bar: push the full active payment-methods list to the player's chat. */
+/** SEND bar: push the full active payment-methods list to the player's chat.
+ *  Items embedded in the body — same empty-picker fix as sendGamesList. */
 export async function sendPayList(
   adminId: string,
   playerId: string,
 ): Promise<void> {
   await requireAdmin(adminId);
   z.string().uuid().parse(playerId);
+  const { data: methods } = await svc()
+    .from("payment_methods")
+    .select("id, name, handle, brand_color")
+    .eq("is_active", true)
+    .order("sort_order", { ascending: true });
   const { error } = await svc().from("chat_messages").insert({
     player_id: playerId,
     sender: "admin",
     kind: "pay_list",
-    body: { title: "Choose a payment method", picked: null },
+    body: {
+      title: "Choose a payment method",
+      methods: (methods ?? []).map((m) => ({
+        id: m.id as string,
+        name: m.name as string,
+        handle: m.handle as string,
+        brand_color: (m.brand_color as string | null) ?? null,
+      })),
+      picked: null,
+    },
     is_read_by_player: false,
     is_read_by_admin: true,
   });
   if (error) throw new Error("Could not send payment list");
   audit(adminId, "chat.send_pay_list", playerId);
+}
+
+/** SEND bar: push ONE payment method's detail card straight to the chat —
+ *  same payment_card shape a player pick produces (Build 38). */
+export async function sendSingleMethod(
+  adminId: string,
+  playerId: string,
+  methodId: string,
+): Promise<void> {
+  await requireAdmin(adminId);
+  z.string().uuid().parse(playerId);
+  z.string().uuid().parse(methodId);
+  const { data: method } = await svc()
+    .from("payment_methods")
+    .select("id, name, account_name, brand_color, handle, note, pay_link")
+    .eq("id", methodId)
+    .single();
+  if (!method) throw new Error("Payment method not found");
+  const m = method as {
+    id: string;
+    name: string;
+    account_name: string;
+    brand_color: string | null;
+    handle: string;
+    note: string | null;
+    pay_link: string | null;
+  };
+  const { error } = await svc().from("chat_messages").insert({
+    player_id: playerId,
+    sender: "admin",
+    kind: "payment_card",
+    body: {
+      payment_method_id: m.id,
+      snapshot: {
+        name: m.name,
+        account_name: m.account_name,
+        brand_color: m.brand_color,
+        handle: m.handle,
+        note: m.note,
+        pay_link: m.pay_link,
+      },
+    },
+    is_read_by_player: false,
+    is_read_by_admin: true,
+  });
+  if (error) throw new Error("Could not send payment method");
+  audit(adminId, "chat.send_single_method", `${playerId}/${methodId}`);
 }
 
 /* ── Inbox: player detail (tags, notes, accounts, deposits) ─────────────── */
