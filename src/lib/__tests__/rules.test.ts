@@ -69,20 +69,23 @@ describe("username generation", () => {
 });
 
 describe("deposit amount validation", () => {
-  it("accepts 5–5000", () => {
+  it("accepts 1–5000", () => {
+    expect(depositAmountSchema.safeParse(1).success).toBe(true);
     expect(depositAmountSchema.safeParse(5).success).toBe(true);
     expect(depositAmountSchema.safeParse(5000).success).toBe(true);
     expect(depositAmountSchema.safeParse(100).success).toBe(true);
   });
   it("rejects out-of-range values", () => {
-    expect(depositAmountSchema.safeParse(4.99).success).toBe(false);
+    expect(depositAmountSchema.safeParse(0).success).toBe(false);
+    expect(depositAmountSchema.safeParse(0.5).success).toBe(false);
     expect(depositAmountSchema.safeParse(5000.01).success).toBe(false);
     expect(depositAmountSchema.safeParse(-10).success).toBe(false);
     expect(depositAmountSchema.safeParse("abc").success).toBe(false);
   });
   it("validateDepositAmount returns null when valid, message when not", () => {
     expect(validateDepositAmount(50)).toBeNull();
-    expect(validateDepositAmount(1)).not.toBeNull();
+    expect(validateDepositAmount(1)).toBeNull();
+    expect(validateDepositAmount(0)).not.toBeNull();
   });
 });
 

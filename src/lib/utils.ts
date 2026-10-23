@@ -100,7 +100,7 @@ export function generateUsername(gameSlug: string): string {
 
 /* ── Deposit amount validation (PRD §3.3) ───────────────────────────────── */
 
-export const MIN_DEPOSIT = 5;
+export const MIN_DEPOSIT = 1;
 export const MAX_DEPOSIT = 5000;
 
 export const depositAmountSchema = z
