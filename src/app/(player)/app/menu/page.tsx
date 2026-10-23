@@ -30,11 +30,23 @@ export default async function MenuPage() {
   const updates: PlayerUpdate[] = [];
 
   if (user) {
-    const { data: playerRow } = await supabase
-      .from("players")
-      .select("display_name, email, avatar_url")
-      .eq("id", user.id)
-      .maybeSingle();
+    // Profile + deposit updates in parallel (both depend only on user).
+    const [{ data: playerRow }, { data: deposits }] = await Promise.all([
+      supabase
+        .from("players")
+        .select("display_name, email, avatar_url")
+        .eq("id", user.id)
+        .maybeSingle(),
+      supabase
+        .from("deposits")
+        .select(
+          "id, status, admin_note, created_at, decided_at, method:payment_methods(name)",
+        )
+        .eq("player_id", user.id)
+        .not("decided_at", "is", null)
+        .order("decided_at", { ascending: false })
+        .limit(10),
+    ]);
     if (playerRow) {
       const row = playerRow as unknown as PlayerProfile;
       profile = {
@@ -43,16 +55,6 @@ export default async function MenuPage() {
         avatar_url: row.avatar_url ?? null,
       };
     }
-
-    const { data: deposits } = await supabase
-      .from("deposits")
-      .select(
-        "id, status, admin_note, created_at, decided_at, method:payment_methods(name)",
-      )
-      .eq("player_id", user.id)
-      .not("decided_at", "is", null)
-      .order("decided_at", { ascending: false })
-      .limit(10);
     for (const d of (deposits ?? []) as unknown as Array<{
       id: string;
       status: string;
