@@ -203,10 +203,25 @@ async function accountCardExists(
   return (data?.length ?? 0) > 0;
 }
 
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
 /**
- * Deliver an account through chat: setup note first, then the credential card
- * (human pacing, F11). Existing accounts return the saved card — never a
- * duplicate (R1, R2).
+ * Best-effort "agent is typing…" on the player's chat while the next message
+ * is prepared (Build 56 — human pacing). Decoration only; failures ignored.
+ */
+async function broadcastAgentTyping(playerId: string): Promise<void> {
+  try {
+    await createServiceClient()
+      .channel(`typing:${playerId}`)
+      .send({ type: "broadcast", event: "typing", payload: { from: "admin" } });
+  } catch {
+    /* typing is decoration — never break the flow */
+  }
+}
+
+/**
+ * Deliver an account through chat: setup note first, then the credential card.
+ * Existing accounts return the saved card — never a duplicate (R1, R2).
  */
 async function deliverAccount(playerId: string, game: Game): Promise<void> {
   const { accountId, status, created } = await createOrReturnAccount(playerId, game.id);
@@ -232,6 +247,11 @@ async function deliverAccount(playerId: string, game: Game): Promise<void> {
   await insertSystemMessage(playerId, "text", {
     text: `On it! Getting your ${game.name} account ready — give me just a sec 👍`,
   });
+  // Human pacing (Build 56): the card must NOT land in the same instant as
+  // the "On it!" note — a real agent takes a beat. Typing dots show on the
+  // player's side while the card is "prepared"; the card lands ~1.2s later.
+  void broadcastAgentTyping(playerId);
+  await sleep(1200);
   await insertSystemMessage(playerId, "account", {
     game_id: game.id,
     account_id: accountId,

@@ -251,6 +251,22 @@ function svc() {
   return createServiceClient();
 }
 
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+/**
+ * Best-effort "agent is typing…" on the player's chat while the next message
+ * is prepared (Build 56 — human pacing). Decoration only; failures ignored.
+ */
+async function broadcastAgentTyping(playerId: string): Promise<void> {
+  try {
+    await svc()
+      .channel(`typing:${playerId}`)
+      .send({ type: "broadcast", event: "typing", payload: { from: "admin" } });
+  } catch {
+    /* typing is decoration — never break the flow */
+  }
+}
+
 async function requireAdmin(adminId: string): Promise<AdminInfo> {
   const { data, error } = await svc()
     .from("admin_users")
@@ -1259,8 +1275,7 @@ export async function markAccountActive(
 
   // Notify the player with a warm, human-style chat message naming the game
   // (kind "text" so it renders as a normal agent bubble, not a robotic
-  // centered system pill) + flip the card + clear the notification,
-  // all in one parallel batch.
+  // centered system pill). Flip the card + clear the notification first…
   const gameName = (gameRes.data?.name as string | undefined) ?? "your game";
   await Promise.all([
     target
@@ -1274,16 +1289,6 @@ export async function markAccountActive(
           })
           .eq("id", target.id)
       : Promise.resolve(),
-    client.from("chat_messages").insert({
-      player_id: account.player_id,
-      sender: "system",
-      kind: "text",
-      body: {
-        text: `Great news — your ${gameName} account is ready to go! 🎉 Your username and password are in the card above. Have fun, and good luck! 🍀`,
-      },
-      is_read_by_player: false,
-      is_read_by_admin: true,
-    }),
     client
       .from("notifications")
       .update({ is_read: true })
@@ -1291,6 +1296,22 @@ export async function markAccountActive(
       .eq("kind", "account_request")
       .eq("ref_id", accountId),
   ]);
+
+  // …then a human beat (Build 56): the agent "types" for ~1s and the ready
+  // message lands after the card flip — like a person, not a robot dumping
+  // everything in the same instant.
+  void broadcastAgentTyping(account.player_id as string);
+  await sleep(1000);
+  await client.from("chat_messages").insert({
+    player_id: account.player_id,
+    sender: "system",
+    kind: "text",
+    body: {
+      text: `Great news — your ${gameName} account is ready to go! 🎉 Your username and password are in the card above. Have fun, and good luck! 🍀`,
+    },
+    is_read_by_player: false,
+    is_read_by_admin: true,
+  });
 
   audit(adminId, `accounts.mark_active by=${me.displayName}`, accountId);
 }
