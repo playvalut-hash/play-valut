@@ -157,7 +157,9 @@ function AccountCardMessage({ message }: { message: ChatMessage }) {
     return () => {
       cancelled = true;
     };
-  }, [accountId]);
+    // bodyStatus is a dependency ON PURPOSE: when the admin approves, the
+    // message body flips to "active" and the card must refetch fresh state.
+  }, [accountId, bodyStatus]);
 
   // R2: the same card flips Creating… → Active in place (no second card).
   const status = card?.status ?? bodyStatus;
@@ -701,6 +703,22 @@ export default function ChatClient({ playerId }: { playerId: string }) {
     // Initial load: syncing React state with the external chat store.
     // eslint-disable-next-line react-hooks/set-state-in-effect
     void refresh();
+  }, [refresh]);
+
+  useEffect(() => {
+    const poll = setInterval(() => {
+      if (document.visibilityState === "visible") void refresh();
+    }, 10000);
+    const onVisible = () => {
+      if (document.visibilityState === "visible") void refresh();
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    window.addEventListener("focus", onVisible);
+    return () => {
+      clearInterval(poll);
+      document.removeEventListener("visibilitychange", onVisible);
+      window.removeEventListener("focus", onVisible);
+    };
   }, [refresh]);
 
   useEffect(() => {
