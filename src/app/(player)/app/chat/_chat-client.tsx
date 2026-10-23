@@ -322,11 +322,13 @@ function PickerMessage({
   items,
   title,
   onPicked,
+  onPickStart,
 }: {
   message: ChatMessage;
   items: PickItem[];
   title: string;
   onPicked: () => void;
+  onPickStart?: () => void;
 }) {
   const picked = message.body["picked"] as
     | { id: string; at: string }
@@ -337,6 +339,7 @@ function PickerMessage({
   async function pick(id: string) {
     if (picked || picking) return;
     setPicking(true);
+    onPickStart?.();
     try {
       const res = await chatPick(message.id, id);
       if (res.ok) onPicked();
@@ -649,12 +652,14 @@ function PaymentCardMessage({ message }: { message: ChatMessage }) {
 function MessageView({
   message,
   onPicked,
+  onPickStart,
   receipt,
   resolvedCard,
   resolvedShotUrl,
 }: {
   message: ChatMessage;
   onPicked: (kind: ChatMessage["kind"]) => void;
+  onPickStart: (kind: ChatMessage["kind"]) => void;
   receipt?: "sent" | "seen";
   resolvedCard?: AccountCard | null;
   resolvedShotUrl?: string | null;
@@ -684,6 +689,7 @@ function MessageView({
         items={items}
         title={str(message.body["title"]) || "Pick a game"}
         onPicked={() => onPicked(message.kind)}
+        onPickStart={() => onPickStart(message.kind)}
       />
     );
   }
@@ -702,6 +708,7 @@ function MessageView({
         items={items}
         title={str(message.body["title"]) || "Choose how to pay"}
         onPicked={() => onPicked(message.kind)}
+        onPickStart={() => onPickStart(message.kind)}
       />
     );
   }
@@ -1045,9 +1052,11 @@ export default function ChatClient({
                   ? (initialShotUrls[str(m.body["screenshot_path"])] ?? null)
                   : null
               }
-              onPicked={(kind) => {
-                noteAwaiting();
+              onPickStart={(kind) => {
                 if (kind === "games_list") startPreparing("account");
+              }}
+              onPicked={() => {
+                noteAwaiting();
                 void refresh();
               }}
               receipt={
