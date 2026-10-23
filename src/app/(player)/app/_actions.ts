@@ -484,9 +484,10 @@ export async function getThread(): Promise<ChatMessage[]> {
     .from("chat_messages")
     .select("id, player_id, sender, kind, body, is_read_by_admin, is_read_by_player, created_at")
     .eq("player_id", user.id)
-    .order("created_at", { ascending: true })
+    // LATEST 500, not the OLDEST 500 (Build 42) — see chat/page.tsx.
+    .order("created_at", { ascending: false })
     .limit(500);
-  return (data ?? []) as unknown as ChatMessage[];
+  return ((data ?? []) as unknown as ChatMessage[]).reverse();
 }
 
 /** Mark admin/system messages as read by the player. */
