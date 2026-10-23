@@ -864,7 +864,7 @@ export async function sendSingleMethod(
 ): Promise<void> {
   await requireAdmin(adminId);
   z.string().uuid().parse(playerId);
-  z.string().uuid().parse(methodId);
+  z.string().min(1).parse(methodId); // payment_methods.id is TEXT (slug), not uuid — uuid parse here killed every single-method send (Build 41)
   const { data: method } = await svc()
     .from("payment_methods")
     .select("id, name, account_name, brand_color, handle, note, pay_link")
@@ -1901,7 +1901,7 @@ export async function sendSingleGame(
 ): Promise<void> {
   await requireAdmin(adminId);
   z.string().uuid().parse(playerId);
-  z.string().uuid().parse(gameId);
+  z.string().min(1).parse(gameId); // games.id is TEXT (slug), not uuid (Build 41)
   const { data: game } = await svc()
     .from("games")
     .select("id, name")
