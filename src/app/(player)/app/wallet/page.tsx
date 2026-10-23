@@ -46,7 +46,8 @@ export default async function WalletPage() {
         "id, payment_method_id, screenshot_path, status, admin_note, created_at, method:payment_methods(name)",
       )
       .eq("player_id", user.id)
-      .order("created_at", { ascending: false });
+      .order("created_at", { ascending: false })
+      .limit(50);
     deposits = (data ?? []) as unknown as Deposit[];
   }
 
