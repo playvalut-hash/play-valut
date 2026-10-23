@@ -16,6 +16,15 @@ function HamburgerIcon({ className }: { className?: string }) {
   );
 }
 
+function PanelIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="3" y="4" width="18" height="16" rx="2" />
+      <path d="M9.5 4v16" />
+    </svg>
+  );
+}
+
 export default function AdminShell({
   session,
   children,
@@ -24,6 +33,27 @@ export default function AdminShell({
   children: React.ReactNode;
 }) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  // Desktop: collapsible icon rail (persisted). Mobile keeps the drawer.
+  // Lazy init (same pattern as the inbox snapshot) — no effect needed.
+  const [collapsed, setCollapsed] = useState<boolean>(() => {
+    try {
+      return window.localStorage.getItem("pv-admin-collapsed") === "1";
+    } catch {
+      return false;
+    }
+  });
+
+  function toggleCollapsed() {
+    setCollapsed((v) => {
+      const next = !v;
+      try {
+        window.localStorage.setItem("pv-admin-collapsed", next ? "1" : "0");
+      } catch {
+        // ignore
+      }
+      return next;
+    });
+  }
 
   // Listen for sidebar open requests from mobile inbox
   useEffect(() => {
@@ -45,6 +75,16 @@ export default function AdminShell({
           >
             {sidebarOpen ? <XIcon className="h-5 w-5" /> : <HamburgerIcon className="h-5 w-5" />}
           </button>
+          {/* Desktop sidebar collapse toggle */}
+          <button
+            type="button"
+            onClick={toggleCollapsed}
+            className="ml-2 hidden rounded-lg p-2 text-text-secondary transition hover:text-gold md:block"
+            aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+            title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+          >
+            <PanelIcon className="h-5 w-5" />
+          </button>
           <div className="min-w-0 flex-1">
             <TopBar admin={session} notifications={[]} unreadCount={0} />
           </div>
@@ -53,8 +93,9 @@ export default function AdminShell({
           {/* Sidebar — hidden on mobile unless open */}
           <aside
             className={cn(
-              "shrink-0 border-r border-surface-border bg-navy transition-all",
-              "fixed inset-y-0 left-0 z-40 w-64 md:static md:w-52",
+              "shrink-0 border-r border-surface-border bg-navy transition-all duration-200",
+              "fixed inset-y-0 left-0 z-40 w-64 md:static",
+              collapsed ? "md:w-[68px]" : "md:w-52",
               sidebarOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0",
             )}
           >
@@ -71,8 +112,20 @@ export default function AdminShell({
                 </button>
               </div>
               <div className="min-h-0 flex-1 overflow-y-auto" onClick={() => setSidebarOpen(false)}>
-                <SideNav role={session.role} />
+                <SideNav role={session.role} collapsed={collapsed} />
               </div>
+              {/* Desktop collapse control (bottom of the rail) */}
+              <button
+                type="button"
+                onClick={toggleCollapsed}
+                className="hidden items-center gap-2.5 border-t border-surface-border px-5 py-3 text-[13px] text-text-secondary transition hover:text-gold md:flex"
+                aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+              >
+                <span aria-hidden className="text-base leading-none">
+                  {collapsed ? "»" : "«"}
+                </span>
+                {!collapsed ? <span>Collapse</span> : null}
+              </button>
             </div>
           </aside>
           {/* Overlay for mobile */}
