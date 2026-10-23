@@ -511,41 +511,6 @@ export default function InboxShell({
       >
         {selected ? (
           <>
-            {/* Mobile nav bar: hamburger + back + details */}
-            <div className="flex shrink-0 items-center gap-1 border-b border-surface-border bg-navy px-2 py-1.5 md:hidden">
-              <button
-                type="button"
-                onClick={() => {
-                  // Open the main sidebar via custom event
-                  window.dispatchEvent(new CustomEvent("open-admin-sidebar"));
-                }}
-                className="rounded-lg p-2 text-text-secondary hover:text-gold"
-                aria-label="Open menu"
-              >
-                <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-                  <path d="M4 6h16M4 12h16M4 18h16" />
-                </svg>
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  void selectPlayer(null);
-                }}
-                className="flex items-center gap-1 rounded-lg px-2 py-1.5 text-sm text-gold"
-              >
-                ← Back
-              </button>
-              <span className="flex-1 truncate text-center text-sm font-semibold text-text-primary">
-                {selected.displayName}
-              </span>
-              <button
-                type="button"
-                onClick={() => setMobilePanel("details")}
-                className="rounded-lg px-2 py-1.5 text-sm text-gold"
-              >
-                Details →
-              </button>
-            </div>
             {loadingThread ? (
               <div className="flex flex-1 items-center justify-center">
                 <div className="flex flex-col items-center gap-3">
@@ -563,6 +528,10 @@ export default function InboxShell({
                 methods={methods}
                 methodsCount={methodsCount}
                 onMutated={refreshSelected}
+                onBack={() => {
+                  void selectPlayer(null);
+                }}
+                onShowDetails={() => setMobilePanel("details")}
               />
             )}
           </>
