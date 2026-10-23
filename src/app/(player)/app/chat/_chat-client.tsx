@@ -654,7 +654,7 @@ function MessageView({
   resolvedShotUrl,
 }: {
   message: ChatMessage;
-  onPicked: () => void;
+  onPicked: (kind: ChatMessage["kind"]) => void;
   receipt?: "sent" | "seen";
   resolvedCard?: AccountCard | null;
   resolvedShotUrl?: string | null;
@@ -683,7 +683,7 @@ function MessageView({
         message={message}
         items={items}
         title={str(message.body["title"]) || "Pick a game"}
-        onPicked={onPicked}
+        onPicked={() => onPicked(message.kind)}
       />
     );
   }
@@ -701,7 +701,7 @@ function MessageView({
         message={message}
         items={items}
         title={str(message.body["title"]) || "Choose how to pay"}
-        onPicked={onPicked}
+        onPicked={() => onPicked(message.kind)}
       />
     );
   }
@@ -781,6 +781,34 @@ export default function ChatClient({
     awaitingTimeoutRef.current = setTimeout(() => setAwaitingReply(false), 6000);
   }, []);
 
+  // Build 57 — deterministic "agent is preparing" typing beat, driven HERE
+  // because the server-side typing broadcast proved unreliable in live
+  // tests: dots run after a game pick until the account card lands, and
+  // after a card flips to Active until the "ready" message lands.
+  const [preparing, setPreparing] = useState(false);
+  const preparingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const preparingTargetRef = useRef<{ kind: string; knownIds: Set<string> } | null>(null);
+  const messagesRef = useRef<ChatMessage[]>(initialMessages);
+
+  const stopPreparing = useCallback(() => {
+    preparingTargetRef.current = null;
+    setPreparing(false);
+    if (preparingTimeoutRef.current) clearTimeout(preparingTimeoutRef.current);
+  }, []);
+
+  const startPreparing = useCallback(
+    (targetKind: string) => {
+      preparingTargetRef.current = {
+        kind: targetKind,
+        knownIds: new Set(messagesRef.current.map((m) => m.id)),
+      };
+      setPreparing(true);
+      if (preparingTimeoutRef.current) clearTimeout(preparingTimeoutRef.current);
+      preparingTimeoutRef.current = setTimeout(() => stopPreparing(), 3500);
+    },
+    [stopPreparing],
+  );
+
 
   const refreshInFlightRef = useRef(false);
   const refreshQueuedRef = useRef(false);
@@ -795,11 +823,35 @@ export default function ChatClient({
     refreshInFlightRef.current = true;
     try {
       const thread = await getThread();
+      // Build 57: detect an account card flipping to Active (admin approve)
+      // so the typing beat can run until the "ready" text lands after it.
+      const prevById = new Map(messagesRef.current.map((m) => [m.id, m]));
+      const flippedActive = thread.some(
+        (m) =>
+          m.kind === "account" &&
+          m.body["status"] === "active" &&
+          prevById.has(m.id) &&
+          prevById.get(m.id)?.body["status"] !== "active",
+      );
+      const newTextAlreadyLanded = thread.some(
+        (m) => m.kind === "text" && !prevById.has(m.id),
+      );
       setMessages(thread);
+      messagesRef.current = thread;
       setLoading(false);
       // A non-player message landing ends the "typing" beat.
       const last = thread[thread.length - 1];
       if (last && last.sender !== "player") setAwaitingReply(false);
+      // Preparing beat ends when the awaited kind lands as a NEW message.
+      const target = preparingTargetRef.current;
+      if (
+        target &&
+        thread.some((m) => m.kind === target.kind && !target.knownIds.has(m.id))
+      ) {
+        stopPreparing();
+      } else if (flippedActive && !newTextAlreadyLanded) {
+        startPreparing("text");
+      }
       void markThreadRead();
     } finally {
       refreshInFlightRef.current = false;
@@ -808,7 +860,7 @@ export default function ChatClient({
         void refresh();
       }
     }
-  }, []);
+  }, [startPreparing, stopPreparing]);
 
   useEffect(() => {
     // Initial messages came with the page; just mark the thread read.
@@ -888,7 +940,7 @@ export default function ChatClient({
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
-  }, [messages.length, agentTyping, awaitingReply]);
+  }, [messages.length, agentTyping, awaitingReply, preparing]);
 
   async function send(text: string) {
     const t = text.trim();
@@ -993,8 +1045,9 @@ export default function ChatClient({
                   ? (initialShotUrls[str(m.body["screenshot_path"])] ?? null)
                   : null
               }
-              onPicked={() => {
+              onPicked={(kind) => {
                 noteAwaiting();
+                if (kind === "games_list") startPreparing("account");
                 void refresh();
               }}
               receipt={
@@ -1007,7 +1060,7 @@ export default function ChatClient({
             />
           ))
         )}
-        {(agentTyping || awaitingReply) && !loading ? (
+        {(agentTyping || awaitingReply || preparing) && !loading ? (
           <div className="flex justify-start" aria-label="Agent is typing">
             <div className="flex items-center gap-1 rounded-2xl rounded-bl-[5px] border border-line bg-card-2 px-3.5 py-2.5">
               <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-text-muted [animation-delay:0ms]" />
