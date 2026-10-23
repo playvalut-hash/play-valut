@@ -13,6 +13,7 @@ import {
   sendPayList,
   sendQuickReply,
   sendSingleGame,
+  sendSingleMethod,
 } from "../../_actions";
 import { QUICK_REPLIES } from "../../_quick-replies";
 import { cn } from "@/lib/utils";
@@ -380,6 +381,7 @@ export default function ThreadView({
   thread,
   games,
   gamesCount,
+  methods,
   methodsCount,
   onMutated,
 }: {
@@ -388,13 +390,15 @@ export default function ThreadView({
   thread: ChatMessageView[];
   games: Array<{ id: string; name: string }>;
   gamesCount: number;
+  methods: Array<{ id: string; name: string; brandColor: string | null }>;
   methodsCount: number;
   onMutated?: () => Promise<void>;
 }) {
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
-  const [sendListBusy, setSendListBusy] = useState<"games" | "pay" | "single" | null>(null);
+  const [sendListBusy, setSendListBusy] = useState<"games" | "pay" | "single" | "single-method" | null>(null);
   const [gamesOpen, setGamesOpen] = useState(false);
+  const [payOpen, setPayOpen] = useState(false);
   const [viewer, setViewer] = useState<{ src: string; caption: string | null } | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -500,6 +504,24 @@ export default function ThreadView({
     }
   }
 
+  async function sendOneMethod(methodId: string, methodName: string) {
+    if (sendListBusy) return;
+    setSendListBusy("single-method");
+    setPayOpen(false); // Panel closes immediately, same as games
+    try {
+      // 1. Short lead-in so the card doesn't land without context
+      await sendAdminMessage(admin.id, {
+        playerId: player.id,
+        text: `Here are the ${methodName} payment details 👇`,
+      });
+      // 2. Send that method's payment card
+      await sendSingleMethod(admin.id, player.id, methodId);
+      await changed();
+    } finally {
+      setSendListBusy(null);
+    }
+  }
+
   const lastAdminTextId = (() => {
     for (let i = thread.length - 1; i >= 0; i--) {
       const m = thread[i];
@@ -541,7 +563,10 @@ export default function ThreadView({
           </span>
           <button
             type="button"
-            onClick={() => setGamesOpen((v) => !v)}
+            onClick={() => {
+              setGamesOpen((v) => !v);
+              setPayOpen(false);
+            }}
             disabled={sendListBusy !== null || gamesCount === 0}
             className="flex items-center gap-1.5 rounded-full border border-gold/50 px-3 py-1.5 text-xs font-semibold text-gold transition hover:bg-gold/10 disabled:opacity-40"
           >
@@ -550,11 +575,15 @@ export default function ThreadView({
           </button>
           <button
             type="button"
-            onClick={() => sendList("pay")}
+            onClick={() => {
+              setPayOpen((v) => !v);
+              setGamesOpen(false);
+            }}
             disabled={sendListBusy !== null || methodsCount === 0}
             className="flex items-center gap-1.5 rounded-full border border-surface-border px-3 py-1.5 text-xs font-semibold text-text-secondary transition hover:border-gold/50 hover:text-gold disabled:opacity-40"
           >
-            💳 Payment methods ▾
+            💳 Payment methods
+            <span className={cn("transition-transform", payOpen && "rotate-180")}>▾</span>
           </button>
         </div>
         {gamesOpen && (
@@ -576,6 +605,36 @@ export default function ThreadView({
                 className="rounded-full border border-gold/40 px-3 py-1.5 text-[11px] font-semibold text-gold transition hover:bg-gold/10 disabled:opacity-40"
               >
                 {g.name}
+              </button>
+            ))}
+          </div>
+        )}
+        {payOpen && (
+          <div className="mt-2 flex flex-wrap gap-1.5 rounded-xl border border-surface-border bg-navy p-2.5">
+            <button
+              type="button"
+              onClick={() => sendList("pay")}
+              disabled={sendListBusy !== null}
+              className="rounded-full bg-gold px-3 py-1.5 text-[11px] font-bold text-navy hover:opacity-90 disabled:opacity-40"
+            >
+              {sendListBusy === "pay" ? "Sending…" : `Send all ${methodsCount}`}
+            </button>
+            {methods.map((m) => (
+              <button
+                key={m.id}
+                type="button"
+                onClick={() => sendOneMethod(m.id, m.name)}
+                disabled={sendListBusy !== null}
+                className="flex items-center gap-1.5 rounded-full border border-gold/40 px-3 py-1.5 text-[11px] font-semibold text-gold transition hover:bg-gold/10 disabled:opacity-40"
+              >
+                {m.brandColor ? (
+                  <span
+                    aria-hidden
+                    className="h-2.5 w-2.5 rounded-full"
+                    style={{ backgroundColor: m.brandColor }}
+                  />
+                ) : null}
+                {m.name}
               </button>
             ))}
           </div>
