@@ -8,6 +8,8 @@
  */
 "use server";
 
+import { cache } from "react";
+
 import { z } from "zod";
 import { revalidatePath } from "next/cache";
 
@@ -237,8 +239,14 @@ async function requireSuperAdmin(adminId: string): Promise<AdminInfo> {
   return me;
 }
 
-function revalidateAdmin(): void {
-  revalidatePath("/admin", "layout");
+/**
+ * Scoped revalidation for the server-rendered section pages only.
+ * Inbox actions must NOT revalidate: the inbox is client-state driven and
+ * refetches itself (onMutated) — a layout revalidation here re-rendered the
+ * whole inbox inside every click's POST response (the #1 speed killer).
+ */
+function revalidateSection(path: string): void {
+  revalidatePath(path);
 }
 
 /* ── Auth ──────────────────────────────────────────────────────────────── */
@@ -255,18 +263,21 @@ export async function adminSignIn(
   const { email, password } = signInSchema.parse(input);
   const supabase = await createClient();
 
-  // Check if email exists (for specific error message)
-  const { data: users } = await svc().auth.admin.listUsers();
-  const emailExists = users?.users?.some(
-    (u) => u.email?.toLowerCase() === email.toLowerCase(),
-  );
+  // Specific "no account" error WITHOUT downloading the whole auth user
+  // list (listUsers was a full-table Auth Admin call on every attempt):
+  // one indexed admin_users lookup by email does the same job.
+  const { data: emailRow } = await svc()
+    .from("admin_users")
+    .select("id")
+    .eq("email", email.toLowerCase())
+    .maybeSingle();
+  if (!emailRow) throw new Error("No account found with this email");
 
   const { error: signInError } = await supabase.auth.signInWithPassword({
     email,
     password,
   });
   if (signInError) {
-    if (!emailExists) throw new Error("No account found with this email");
     throw new Error("Incorrect password — please try again");
   }
   const {
@@ -298,8 +309,9 @@ export async function adminSignOut(): Promise<void> {
  * Session check for server components (layout + login page).
  * Returns the admin info, or null when there is no session / not an admin.
  */
-export async function getAdminSession(): Promise<AdminInfo | null> {
-  const supabase = await createClient();
+export const getAdminSession = cache(
+  async (): Promise<AdminInfo | null> => {
+    const supabase = await createClient();
   const {
     data: { user },
   } = await supabase.auth.getUser();
@@ -309,14 +321,15 @@ export async function getAdminSession(): Promise<AdminInfo | null> {
     .select("id, role, display_name, email, is_active")
     .eq("id", user.id)
     .single();
-  if (!data || data.is_active !== true) return null;
-  return {
-    id: data.id as string,
-    role: data.role as AdminRole,
-    displayName: (data.display_name as string) || (data.email as string),
-    email: data.email as string,
-  };
-}
+    if (!data || data.is_active !== true) return null;
+    return {
+      id: data.id as string,
+      role: data.role as AdminRole,
+      displayName: (data.display_name as string) || (data.email as string),
+      email: data.email as string,
+    };
+  },
+);
 
 /* ── Notifications ─────────────────────────────────────────────────────── */
 
@@ -375,7 +388,6 @@ export async function markNotificationRead(
   await requireAdmin(adminId);
   await svc().from("notifications").update({ is_read: true }).eq("id", notificationId);
   audit(adminId, "notifications.mark_read", notificationId);
-  revalidateAdmin();
 }
 
 /* ── Inbox: players overview ───────────────────────────────────────────── */
@@ -689,12 +701,24 @@ export async function getThread(playerId: string): Promise<ChatMessageView[]> {
           : null,
     });
   }
-  // Mint screenshot URLs in parallel (1h expiry each).
-  await Promise.all(
-    shotPaths.map(async ({ index, path }) => {
-      views[index].screenshotUrl = await signedScreenshotUrl(path);
-    }),
-  );
+  // Mint ALL screenshot URLs in ONE Storage batch call (was one HTTP
+  // round trip per screenshot, on every thread fetch).
+  if (shotPaths.length > 0) {
+    const { data: signed } = await svc()
+      .storage.from("screenshots")
+      .createSignedUrls(
+        shotPaths.map((s) => s.path),
+        3600,
+      );
+    const byPath = new Map(
+      (signed ?? [])
+        .filter((s) => s.path && s.signedUrl)
+        .map((s) => [s.path as string, s.signedUrl as string]),
+    );
+    for (const { index, path } of shotPaths) {
+      views[index].screenshotUrl = byPath.get(path) ?? null;
+    }
+  }
   return views;
 }
 
@@ -744,7 +768,6 @@ export async function sendAdminMessage(
   const { playerId, text } = textSchema.parse(input);
   await insertAdminText(adminId, playerId, text);
   audit(adminId, "chat.send_message", playerId);
-  revalidateAdmin();
 }
 
 const quickReplySchema = z.object({
@@ -763,7 +786,6 @@ export async function sendQuickReply(
   if (!preset) throw new Error("Unknown quick reply");
   await insertAdminText(adminId, playerId, preset.message);
   audit(adminId, "chat.quick_reply", `${playerId}:${key}`);
-  revalidateAdmin();
 }
 
 /** SEND bar: push the full active games list to the player's chat. */
@@ -783,7 +805,6 @@ export async function sendGamesList(
   });
   if (error) throw new Error("Could not send game list");
   audit(adminId, "chat.send_games_list", playerId);
-  revalidateAdmin();
 }
 
 /** SEND bar: push the full active payment-methods list to the player's chat. */
@@ -803,7 +824,6 @@ export async function sendPayList(
   });
   if (error) throw new Error("Could not send payment list");
   audit(adminId, "chat.send_pay_list", playerId);
-  revalidateAdmin();
 }
 
 /* ── Inbox: player detail (tags, notes, accounts, deposits) ─────────────── */
@@ -958,7 +978,6 @@ export async function addPlayerTag(
     .upsert({ player_id: playerId, tag: normalized }, { onConflict: "player_id,tag" });
   if (error) throw new Error("Could not add tag");
   audit(adminId, "tags.add", `${playerId}:${normalized}`);
-  revalidateAdmin();
 }
 
 export async function removePlayerTag(
@@ -975,7 +994,6 @@ export async function removePlayerTag(
     .eq("tag", normalized);
   if (error) throw new Error("Could not remove tag");
   audit(adminId, "tags.remove", `${playerId}:${normalized}`);
-  revalidateAdmin();
 }
 
 const noteSchema = z.object({
@@ -996,7 +1014,6 @@ export async function addPlayerNote(
   });
   if (error) throw new Error("Could not add note");
   audit(adminId, "notes.add", playerId);
-  revalidateAdmin();
 }
 
 export async function deletePlayerNote(
@@ -1008,7 +1025,6 @@ export async function deletePlayerNote(
   const { error } = await svc().from("player_notes").delete().eq("id", noteId);
   if (error) throw new Error("Could not delete note");
   audit(adminId, "notes.delete", noteId);
-  revalidateAdmin();
 }
 
 /* ── Inbox: game accounts (edit / delete / mark active) ─────────────────── */
@@ -1041,7 +1057,6 @@ export async function editGameAccount(
     .eq("id", accountId);
   if (error) throw new Error("Could not update account");
   audit(adminId, "accounts.edit", `${accountId} player=${existing.player_id}`);
-  revalidateAdmin();
 }
 
 export async function deleteGameAccount(
@@ -1060,7 +1075,6 @@ export async function deleteGameAccount(
   const { error } = await client.from("game_accounts").delete().eq("id", accountId);
   if (error) throw new Error("Could not delete account");
   audit(adminId, "accounts.delete", `${accountId} player=${existing.player_id}`);
-  revalidateAdmin();
 }
 
 /**
@@ -1083,63 +1097,70 @@ export async function markAccountActive(
   if (!account) throw new Error("Account not found");
   if (account.status === "active") return;
 
-  const { error: updateError } = await client
-    .from("game_accounts")
-    .update({ status: "active", activated_at: new Date().toISOString() })
-    .eq("id", accountId);
-  if (updateError) throw new Error("Could not activate account");
+  // Status flip + card lookup + game name are independent — ONE parallel
+  // batch (this action used to be 8 strictly sequential round trips).
+  const [updateRes, cardMsgRes, gameRes] = await Promise.all([
+    client
+      .from("game_accounts")
+      .update({ status: "active", activated_at: new Date().toISOString() })
+      .eq("id", accountId),
+    client
+      .from("chat_messages")
+      .select("id, body")
+      .eq("player_id", account.player_id as string)
+      .eq("kind", "account")
+      .order("created_at", { ascending: false })
+      .limit(10),
+    client
+      .from("games")
+      .select("name")
+      .eq("id", account.game_id as string)
+      .maybeSingle(),
+  ]);
+  if (updateRes.error) throw new Error("Could not activate account");
 
   // Flip the existing in-chat card (R2: one account = one card).
-  const { data: cardMsg } = await client
-    .from("chat_messages")
-    .select("id, body")
-    .eq("player_id", account.player_id as string)
-    .eq("kind", "account")
-    .order("created_at", { ascending: false })
-    .limit(10);
-  const target = ((cardMsg ?? []) as Array<{
+  const target = ((cardMsgRes.data ?? []) as Array<{
     id: string;
     body: Record<string, unknown>;
   }>).find((m) => m.body.account_id === accountId);
-  if (target) {
-    await client
-      .from("chat_messages")
-      .update({
-        body: { ...(target.body as Record<string, unknown>), status: "active" },
-      })
-      .eq("id", target.id);
-  }
 
   // Notify the player with a warm, human-style chat message naming the game
   // (kind "text" so it renders as a normal agent bubble, not a robotic
-  // centered system pill).
-  const { data: gameRow } = await client
-    .from("games")
-    .select("name")
-    .eq("id", account.game_id as string)
-    .maybeSingle();
-  const gameName = (gameRow?.name as string | undefined) ?? "your game";
-  await client.from("chat_messages").insert({
-    player_id: account.player_id,
-    sender: "system",
-    kind: "text",
-    body: {
-      text: `Great news — your ${gameName} account is ready to go! 🎉 Your username and password are in the card above. Have fun, and good luck! 🍀`,
-    },
-    is_read_by_player: false,
-    is_read_by_admin: true,
-  });
-
-  // Clear the matching "account to create" notification.
-  await client
-    .from("notifications")
-    .update({ is_read: true })
-    .eq("player_id", account.player_id as string)
-    .eq("kind", "account_request")
-    .eq("ref_id", accountId);
+  // centered system pill) + flip the card + clear the notification,
+  // all in one parallel batch.
+  const gameName = (gameRes.data?.name as string | undefined) ?? "your game";
+  await Promise.all([
+    target
+      ? client
+          .from("chat_messages")
+          .update({
+            body: {
+              ...(target.body as Record<string, unknown>),
+              status: "active",
+            },
+          })
+          .eq("id", target.id)
+      : Promise.resolve(),
+    client.from("chat_messages").insert({
+      player_id: account.player_id,
+      sender: "system",
+      kind: "text",
+      body: {
+        text: `Great news — your ${gameName} account is ready to go! 🎉 Your username and password are in the card above. Have fun, and good luck! 🍀`,
+      },
+      is_read_by_player: false,
+      is_read_by_admin: true,
+    }),
+    client
+      .from("notifications")
+      .update({ is_read: true })
+      .eq("player_id", account.player_id as string)
+      .eq("kind", "account_request")
+      .eq("ref_id", accountId),
+  ]);
 
   audit(adminId, `accounts.mark_active by=${me.displayName}`, accountId);
-  revalidateAdmin();
 }
 
 /**
@@ -1195,25 +1216,26 @@ export async function approveDeposit(
     .eq("id", depositId);
   if (error) throw new Error("Could not approve deposit");
 
-  await client.from("chat_messages").insert({
-    player_id: deposit.player_id,
-    sender: "admin",
-    kind: "text",
-    body: {
-      text: `Deposit approved: $${deposit.amount}. Your balance has been loaded — enjoy the games!`,
-    },
-    is_read_by_player: false,
-    is_read_by_admin: true,
-  });
-
-  await client
-    .from("notifications")
-    .update({ is_read: true })
-    .eq("kind", "deposit")
-    .eq("ref_id", depositId);
+  // Independent writes — one parallel batch instead of two round trips.
+  await Promise.all([
+    client.from("chat_messages").insert({
+      player_id: deposit.player_id,
+      sender: "admin",
+      kind: "text",
+      body: {
+        text: `Deposit approved: $${deposit.amount}. Your balance has been loaded — enjoy the games!`,
+      },
+      is_read_by_player: false,
+      is_read_by_admin: true,
+    }),
+    client
+      .from("notifications")
+      .update({ is_read: true })
+      .eq("kind", "deposit")
+      .eq("ref_id", depositId),
+  ]);
 
   audit(adminId, "deposits.approve", `${depositId} amount=${deposit.amount}`);
-  revalidateAdmin();
 }
 
 export async function rejectDeposit(
@@ -1243,27 +1265,27 @@ export async function rejectDeposit(
     .eq("id", depositId);
   if (error) throw new Error("Could not reject deposit");
 
-  await client.from("chat_messages").insert({
-    player_id: deposit.player_id,
-    sender: "admin",
-    kind: "text",
-    body: {
-      text: note
-        ? `Deposit rejected: ${note}`
-        : "Deposit rejected. Please contact support for details.",
-    },
-    is_read_by_player: false,
-    is_read_by_admin: true,
-  });
-
-  await client
-    .from("notifications")
-    .update({ is_read: true })
-    .eq("kind", "deposit")
-    .eq("ref_id", depositId);
+  await Promise.all([
+    client.from("chat_messages").insert({
+      player_id: deposit.player_id,
+      sender: "admin",
+      kind: "text",
+      body: {
+        text: note
+          ? `Deposit rejected: ${note}`
+          : "Deposit rejected. Please contact support for details.",
+      },
+      is_read_by_player: false,
+      is_read_by_admin: true,
+    }),
+    client
+      .from("notifications")
+      .update({ is_read: true })
+      .eq("kind", "deposit")
+      .eq("ref_id", depositId),
+  ]);
 
   audit(adminId, "deposits.reject", depositId);
-  revalidateAdmin();
 }
 
 /** Mint a 1-hour signed URL for a private deposit screenshot. */
@@ -1373,7 +1395,7 @@ export async function upsertGame(
   const { error } = await svc().from("games").upsert(row, { onConflict: "id" });
   if (error) throw new Error("Could not save game");
   audit(adminId, "games.upsert", g.id);
-  revalidateAdmin();
+  revalidateSection("/admin/games");
 }
 
 /** Delete a game — blocked when players hold accounts for it. */
@@ -1393,7 +1415,7 @@ export async function deleteGame(adminId: string, gameId: string): Promise<void>
   const { error } = await client.from("games").delete().eq("id", gameId);
   if (error) throw new Error("Could not delete game");
   audit(adminId, "games.delete", gameId);
-  revalidateAdmin();
+  revalidateSection("/admin/games");
 }
 
 const MAX_UPLOAD_BYTES = 8 * 1024 * 1024;
@@ -1421,7 +1443,7 @@ export async function uploadGameIcon(
 
   await svc().from("games").update({ icon_path: path }).eq("id", gameId);
   audit(adminId, "games.upload_icon", gameId);
-  revalidateAdmin();
+  revalidateSection("/admin/games");
   return { path, url: publicUrl("game-icons", path) };
 }
 
@@ -1503,7 +1525,7 @@ export async function upsertPaymentMethod(
     .upsert(row, { onConflict: "id" });
   if (error) throw new Error("Could not save payment method");
   audit(adminId, "methods.upsert", m.id);
-  revalidateAdmin();
+  revalidateSection("/admin/methods");
 }
 
 /** Delete a payment method — blocked while deposits reference it. */
@@ -1526,7 +1548,7 @@ export async function deletePaymentMethod(
   const { error } = await client.from("payment_methods").delete().eq("id", methodId);
   if (error) throw new Error("Could not delete payment method");
   audit(adminId, "methods.delete", methodId);
-  revalidateAdmin();
+  revalidateSection("/admin/methods");
 }
 
 /* ── Branding ──────────────────────────────────────────────────────────── */
@@ -1565,7 +1587,7 @@ export async function updateBranding(
   });
   if (error) throw new Error("Could not save branding");
   audit(adminId, "branding.update");
-  revalidateAdmin();
+  revalidateSection("/admin/branding");
 }
 
 /** Upload the brand logo to the public brand-logos bucket. Returns its public URL. */
@@ -1589,7 +1611,7 @@ export async function uploadBrandLogo(
 
   await svc().from("branding").upsert({ id: 1, logo_path: path });
   audit(adminId, "branding.upload_logo");
-  revalidateAdmin();
+  revalidateSection("/admin/branding");
   return { url: publicUrl("brand-logos", path) };
 }
 
@@ -1708,7 +1730,7 @@ export async function createAgent(
     throw new Error("Could not register agent — try again");
   }
   audit(adminId, "agents.create", email);
-  revalidateAdmin();
+  revalidateSection("/admin/agents");
 }
 
 const updateAgentSchema = z.object({
@@ -1741,7 +1763,7 @@ export async function updateAgent(
     .eq("id", id);
   if (error) throw new Error("Could not update agent");
   audit(adminId, "agents.update", id);
-  revalidateAdmin();
+  revalidateSection("/admin/agents");
 }
 
 export async function toggleAgentActive(
@@ -1758,7 +1780,7 @@ export async function toggleAgentActive(
     .eq("id", targetId);
   if (error) throw new Error("Could not change agent status");
   audit(adminId, isActive ? "agents.enable" : "agents.disable", targetId);
-  revalidateAdmin();
+  revalidateSection("/admin/agents");
 }
 
 /* ── Create game account for player (from details panel) ── */
@@ -1793,7 +1815,6 @@ export async function createGameAccountForPlayer(
   if (error) throw new Error("Could not create account");
 
   audit(adminId, "accounts.create", `${playerId}/${gameId}`);
-  revalidateAdmin();
 }
 
 /** SEND bar: push a single game to the player's chat. */
@@ -1825,5 +1846,4 @@ export async function sendSingleGame(
   });
   if (error) throw new Error("Could not send game");
   audit(adminId, "chat.send_single_game", `${playerId}/${gameId}`);
-  revalidateAdmin();
 }
