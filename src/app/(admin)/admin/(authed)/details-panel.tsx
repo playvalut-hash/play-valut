@@ -2,7 +2,11 @@
 
 import { useState } from "react";
 
-import type { AdminInfo, PlayerDetailView } from "../../_actions";
+import type {
+  AdminInfo,
+  PendingDepositView,
+  PlayerDetailView,
+} from "../../_actions";
 import {
   addPlayerNote,
   addPlayerTag,
@@ -369,6 +373,119 @@ function AccountCard({
 
 /* ── Main details panel ── */
 
+/* ── Pending deposit card: screenshot + Verify / Reject (Build 45) ── */
+function PendingDepositCard({
+  admin,
+  deposit,
+  playerName,
+  busy,
+  run,
+  onView,
+}: {
+  admin: AdminInfo;
+  deposit: PendingDepositView;
+  playerName: string;
+  busy: boolean;
+  run: (fn: () => Promise<void>) => Promise<void>;
+  onView: (src: string, caption: string) => void;
+}) {
+  const [rejecting, setRejecting] = useState(false);
+  const [note, setNote] = useState("");
+  return (
+    <div className="rounded-xl border border-gold/40 bg-surface-card p-3">
+      <div className="flex items-start justify-between gap-2">
+        <div>
+          <p className="text-[15px] font-extrabold text-text-primary">
+            ${deposit.amount}
+            <span className="ml-1.5 text-[12px] font-semibold text-text-muted">
+              via {deposit.methodName}
+            </span>
+          </p>
+          <p className="mt-0.5 text-[11px] text-text-muted">
+            {timeAgo(deposit.createdAt)} · waiting for verification
+          </p>
+        </div>
+        <span className="rounded-full bg-gold/15 px-2 py-0.5 text-[10px] font-bold text-gold">
+          PENDING
+        </span>
+      </div>
+
+      {deposit.screenshotUrl && (
+        <button
+          type="button"
+          onClick={() =>
+            onView(deposit.screenshotUrl!, `${playerName} · $${deposit.amount} via ${deposit.methodName}`)
+          }
+          className="mt-2.5 block w-full overflow-hidden rounded-lg border border-surface-border"
+          aria-label="Open payment screenshot full screen"
+        >
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={deposit.screenshotUrl}
+            alt="Payment screenshot"
+            className="max-h-44 w-full object-cover"
+          />
+        </button>
+      )}
+
+      {!rejecting ? (
+        <div className="mt-2.5 flex gap-2">
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => run(() => approveDeposit(admin.id, deposit.id))}
+            className="flex-1 rounded-lg bg-emerald-600 px-3 py-2.5 text-[13px] font-bold text-white hover:bg-emerald-500 disabled:opacity-40"
+          >
+            ✓ Verify
+          </button>
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => setRejecting(true)}
+            className="flex-1 rounded-lg border border-red-500/50 bg-red-500/10 px-3 py-2.5 text-[13px] font-bold text-red-400 hover:bg-red-500/20 disabled:opacity-40"
+          >
+            ✗ Reject
+          </button>
+        </div>
+      ) : (
+        <div className="mt-2.5 space-y-2">
+          <input
+            value={note}
+            onChange={(e) => setNote(e.target.value)}
+            placeholder="Reason (optional) — sent to the player"
+            className="w-full rounded-lg border border-surface-border bg-surface-input px-3 py-2 text-[13px] text-text-primary placeholder:text-text-muted"
+          />
+          <div className="flex gap-2">
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => setRejecting(false)}
+              className="flex-1 rounded-lg border border-surface-border px-3 py-2.5 text-[13px] font-semibold text-text-secondary hover:text-text-primary disabled:opacity-40"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() =>
+                run(() =>
+                  rejectDeposit(admin.id, {
+                    depositId: deposit.id,
+                    note: note.trim(),
+                  }),
+                )
+              }
+              className="flex-1 rounded-lg bg-red-600 px-3 py-2.5 text-[13px] font-bold text-white hover:opacity-90 disabled:opacity-40"
+            >
+              Confirm reject
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function DetailsPanel({
   admin,
   detail,
@@ -448,6 +565,30 @@ export default function DetailsPanel({
           </div>
         </div>
       </div>
+
+      {/* Pending deposits — action needed (Build 45) */}
+      {detail.pendingDeposits.length > 0 && (
+        <Collapsible
+          title="Pending deposits"
+          count={detail.pendingDeposits.length}
+          attention
+          defaultOpen
+        >
+          <div className="space-y-2">
+            {detail.pendingDeposits.map((d) => (
+              <PendingDepositCard
+                key={d.id}
+                admin={admin}
+                deposit={d}
+                playerName={detail.player.displayName}
+                busy={busy}
+                run={run}
+                onView={(src, caption) => setViewer({ src, caption })}
+              />
+            ))}
+          </div>
+        </Collapsible>
+      )}
 
       {/* Tags — minimized by default */}
       <Collapsible title="Tags">
