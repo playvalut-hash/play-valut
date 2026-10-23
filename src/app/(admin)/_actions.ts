@@ -1985,17 +1985,43 @@ export async function setPlayerBlocked(
 export async function clearPlayerChat(
   adminId: string,
   playerId: string,
+  olderThanDays?: number,
 ): Promise<void> {
   await requirePermission(adminId, "chat_clear");
   z.string().uuid().parse(playerId);
+  const days =
+    olderThanDays === undefined
+      ? undefined
+      : z.number().int().min(1).max(3650).parse(olderThanDays);
   const client = svc();
+
+  // Clear EVERYTHING (accounts/deposits are kept either way).
+  if (days === undefined) {
+    const { error } = await client
+      .from("chat_messages")
+      .delete()
+      .eq("player_id", playerId);
+    if (error) throw new Error("Could not clear chat");
+    await client.from("notifications").delete().eq("player_id", playerId);
+    audit(adminId, "player.clear_chat", `${playerId}:all`);
+    return;
+  }
+
+  // Partial clear (Build 55): only rows OLDER than the cutoff are deleted
+  // from the database — the recent days stay in chat and in the DB.
+  const cutoff = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
   const { error } = await client
     .from("chat_messages")
     .delete()
-    .eq("player_id", playerId);
+    .eq("player_id", playerId)
+    .lt("created_at", cutoff);
   if (error) throw new Error("Could not clear chat");
-  await client.from("notifications").delete().eq("player_id", playerId);
-  audit(adminId, "player.clear_chat", playerId);
+  await client
+    .from("notifications")
+    .delete()
+    .eq("player_id", playerId)
+    .lt("created_at", cutoff);
+  audit(adminId, "player.clear_chat", `${playerId}:older_than_${days}d`);
 }
 
 /**

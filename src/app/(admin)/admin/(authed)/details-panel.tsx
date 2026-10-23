@@ -502,6 +502,8 @@ export default function DetailsPanel({
   const [busy, setBusy] = useState(false);
   const [viewer, setViewer] = useState<{ src: string; caption: string } | null>(null);
   const [pending, setPending] = useState<null | "block" | "clear" | "delete">(null);
+  const [clearMode, setClearMode] = useState<"all" | "5" | "10" | "custom">("all");
+  const [customDays, setCustomDays] = useState("");
   const [selectedGame, setSelectedGame] = useState(games[0]?.id ?? "");
   const [creating, setCreating] = useState(false);
 
@@ -802,7 +804,11 @@ export default function DetailsPanel({
               <button
                 type="button"
                 disabled={busy}
-                onClick={() => setPending("clear")}
+                onClick={() => {
+                  setClearMode("all");
+                  setCustomDays("");
+                  setPending("clear");
+                }}
                 className="w-full rounded-lg border border-amber-500/50 bg-amber-500/10 px-3 py-2.5 text-[13px] font-bold text-amber-400 hover:bg-amber-500/20 disabled:opacity-40"
               >
                 Clear chat history
@@ -842,16 +848,63 @@ export default function DetailsPanel({
               {pending === "block"
                 ? "Block this player?"
                 : pending === "clear"
-                  ? "Clear the whole chat?"
+                  ? "Clear chat history?"
                   : "Delete this player forever?"}
             </h3>
             <p className="mt-2 text-[13px] leading-relaxed text-text-muted">
               {pending === "block"
                 ? `${detail.player.displayName} will be locked out of the app until you unblock them.`
                 : pending === "clear"
-                  ? `All messages with ${detail.player.displayName} will be permanently deleted from the database. Game accounts and deposits stay.`
+                  ? clearMode === "all"
+                    ? `ALL messages with ${detail.player.displayName} will be permanently deleted from the database. Game accounts and deposits stay.`
+                    : `Messages older than ${clearMode === "custom" ? customDays || "…" : clearMode} days will be permanently deleted from the database — the recent days stay. Game accounts and deposits stay.`
                   : `${detail.player.displayName}'s account, game logins, deposits and chat will be permanently deleted from the database. This cannot be undone.`}
             </p>
+            {pending === "clear" && (
+              <div className="mt-3 space-y-1.5" role="radiogroup" aria-label="How much chat to clear">
+                {(
+                  [
+                    { key: "all", label: "Clear all — everything" },
+                    { key: "5", label: "Older than 5 days (keep last 5 days)" },
+                    { key: "10", label: "Older than 10 days (keep last 10 days)" },
+                    { key: "custom", label: "Custom" },
+                  ] as const
+                ).map((opt) => (
+                  <div
+                    key={opt.key}
+                    role="radio"
+                    aria-checked={clearMode === opt.key}
+                    onClick={() => setClearMode(opt.key)}
+                    className={`flex cursor-pointer items-center justify-between gap-2 rounded-lg border px-3 py-2 text-[13px] transition ${
+                      clearMode === opt.key
+                        ? "border-amber-500/70 bg-amber-500/10 font-semibold text-amber-300"
+                        : "border-surface-border text-text-secondary hover:text-text-primary"
+                    }`}
+                  >
+                    <span>{opt.label}</span>
+                    {opt.key === "custom" && (
+                      <span className="flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
+                        <input
+                          type="number"
+                          min={1}
+                          max={3650}
+                          value={customDays}
+                          onChange={(e) => {
+                            setCustomDays(e.target.value);
+                            setClearMode("custom");
+                          }}
+                          onFocus={() => setClearMode("custom")}
+                          placeholder="30"
+                          aria-label="Custom days"
+                          className="w-16 rounded-md border border-surface-border bg-surface-input px-2 py-1 text-[13px] text-text-primary"
+                        />
+                        <span className="text-[12px] text-text-muted">days</span>
+                      </span>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
             <div className="mt-4 flex gap-2">
               <button
                 type="button"
@@ -862,14 +915,27 @@ export default function DetailsPanel({
               </button>
               <button
                 type="button"
-                disabled={busy}
+                disabled={
+                  busy ||
+                  (pending === "clear" &&
+                    clearMode === "custom" &&
+                    (!Number.isFinite(Number.parseInt(customDays, 10)) ||
+                      Number.parseInt(customDays, 10) < 1 ||
+                      Number.parseInt(customDays, 10) > 3650))
+                }
                 onClick={async () => {
                   const action = pending;
                   setPending(null);
                   if (action === "block") {
                     await run(() => setPlayerBlocked(admin.id, detail.player.id, true));
                   } else if (action === "clear") {
-                    await run(() => clearPlayerChat(admin.id, detail.player.id));
+                    const days =
+                      clearMode === "all"
+                        ? undefined
+                        : clearMode === "custom"
+                          ? Number.parseInt(customDays, 10)
+                          : Number.parseInt(clearMode, 10);
+                    await run(() => clearPlayerChat(admin.id, detail.player.id, days));
                   } else {
                     await run(() => deletePlayer(admin.id, detail.player.id));
                   }
@@ -883,7 +949,9 @@ export default function DetailsPanel({
                 {pending === "block"
                   ? "Block player"
                   : pending === "clear"
-                    ? "Clear chat"
+                    ? clearMode === "all"
+                      ? "Clear everything"
+                      : `Clear older than ${clearMode === "custom" ? customDays || "…" : clearMode} days`
                     : "Delete player"}
               </button>
             </div>
