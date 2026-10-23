@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { XIcon } from "@/components/icons";
+import { ChevronDownIcon, XIcon } from "@/components/icons";
 import type { AdminInfo } from "../../_actions";
 import { AdminProvider } from "./admin-context";
 import SideNav from "./side-nav";
@@ -43,6 +43,28 @@ export default function AdminShell({
     }
   });
 
+  // Top bar minimize (Build 52) — default OPEN; hiding it gives the
+  // inbox/chat the full height. Choice persists like the other prefs.
+  const [topBarHidden, setTopBarHidden] = useState<boolean>(() => {
+    try {
+      return window.localStorage.getItem("pv-topbar-hidden") === "1";
+    } catch {
+      return false;
+    }
+  });
+
+  function toggleTopBar() {
+    setTopBarHidden((v) => {
+      const next = !v;
+      try {
+        window.localStorage.setItem("pv-topbar-hidden", next ? "1" : "0");
+      } catch {
+        // ignore
+      }
+      return next;
+    });
+  }
+
   function toggleCollapsed() {
     setCollapsed((v) => {
       const next = !v;
@@ -65,6 +87,21 @@ export default function AdminShell({
   return (
     <AdminProvider value={session}>
       <div className="flex h-dvh flex-col overflow-hidden bg-near-black">
+        {topBarHidden ? (
+          /* Pull-tab: hangs at the top edge, right above the inbox —
+             takes zero layout space; click to bring the bar back. */
+          <div className="relative z-30 h-0">
+            <button
+              type="button"
+              onClick={toggleTopBar}
+              aria-label="Show top bar"
+              title="Show top bar"
+              className="admin-focus absolute left-1/2 top-0 flex h-5 -translate-x-1/2 items-center rounded-b-xl border border-t-0 border-gold/50 bg-navy px-4 text-gold shadow-lg shadow-black/40 transition hover:bg-surface-elevated"
+            >
+              <ChevronDownIcon className="h-3.5 w-3.5" />
+            </button>
+          </div>
+        ) : (
         <div className="flex items-center gap-2">
           {/* Mobile menu button */}
           <button
@@ -88,7 +125,18 @@ export default function AdminShell({
           <div className="min-w-0 flex-1">
             <TopBar admin={session} notifications={[]} unreadCount={0} />
           </div>
+          {/* Minimize the top bar — more room for the inbox */}
+          <button
+            type="button"
+            onClick={toggleTopBar}
+            className="mr-2 shrink-0 rounded-lg p-2 text-text-secondary transition hover:text-gold"
+            aria-label="Hide top bar"
+            title="Hide top bar (more room for the inbox)"
+          >
+            <ChevronDownIcon className="h-4 w-4 rotate-180" />
+          </button>
         </div>
+        )}
         <div className="flex min-h-0 flex-1">
           {/* Sidebar — hidden on mobile unless open */}
           <aside
