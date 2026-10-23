@@ -278,11 +278,16 @@ export default function InboxShell({
     );
   }, []);
 
+  const refreshSeqRef = useRef(0);
   const refreshSelected = useCallback(async () => {
     const id = selectedIdRef.current;
     if (!id) return;
+    const seq = ++refreshSeqRef.current;
     try {
       const [t, d] = await Promise.all([getThread(id), getPlayerDetail(id)]);
+      // A newer refresh started while this one was in flight — it owns
+      // the view now; dropping this stale result (Build 54).
+      if (seq !== refreshSeqRef.current) return;
       cache.set(id, { thread: t, detail: d });
       if (selectedIdRef.current === id) {
         setThread(t);
@@ -468,10 +473,20 @@ export default function InboxShell({
         void refreshOverview();
         void refreshSelected();
       }
-    }, 30000);
+    }, 10000);
+    const onVisible = () => {
+      if (document.visibilityState === "visible") {
+        void refreshOverview();
+        void refreshSelected();
+      }
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    window.addEventListener("focus", onVisible);
     return () => {
       channel?.unsubscribe();
       clearInterval(poll);
+      document.removeEventListener("visibilitychange", onVisible);
+      window.removeEventListener("focus", onVisible);
     };
   }, [refreshSelected, refreshOverview, scheduleOverview, scheduleSelected]);
 

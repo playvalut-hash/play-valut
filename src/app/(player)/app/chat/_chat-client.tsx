@@ -783,10 +783,15 @@ export default function ChatClient({
 
 
   const refreshInFlightRef = useRef(false);
+  const refreshQueuedRef = useRef(false);
   const refresh = useCallback(async () => {
-    // Refresh triggers (realtime, poll, sends, picks) can pile up — one
-    // in flight at a time; the next event re-runs it if anything changed.
-    if (refreshInFlightRef.current) return;
+    // One refresh in flight at a time — but an event that arrives DURING
+    // a refresh queues one more run instead of being dropped (Build 54;
+    // a dropped event used to leave the chat stale until the slow poll).
+    if (refreshInFlightRef.current) {
+      refreshQueuedRef.current = true;
+      return;
+    }
     refreshInFlightRef.current = true;
     try {
       const thread = await getThread();
@@ -798,6 +803,10 @@ export default function ChatClient({
       void markThreadRead();
     } finally {
       refreshInFlightRef.current = false;
+      if (refreshQueuedRef.current) {
+        refreshQueuedRef.current = false;
+        void refresh();
+      }
     }
   }, []);
 
@@ -806,13 +815,23 @@ export default function ChatClient({
     void markThreadRead();
   }, []);
 
-  // Safety net only: Realtime does the live work; a slow 30s poll (visible
-  // tab only) covers anything it might miss.
+  // Safety net: Realtime does the live work; a 15s poll (visible tab
+  // only) plus an instant refresh when the player returns to this
+  // window/tab cover anything it might miss (Build 54).
   useEffect(() => {
     const poll = setInterval(() => {
       if (document.visibilityState === "visible") void refresh();
-    }, 30000);
-    return () => clearInterval(poll);
+    }, 15000);
+    const onVisible = () => {
+      if (document.visibilityState === "visible") void refresh();
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    window.addEventListener("focus", onVisible);
+    return () => {
+      clearInterval(poll);
+      document.removeEventListener("visibilitychange", onVisible);
+      window.removeEventListener("focus", onVisible);
+    };
   }, [refresh]);
 
   useEffect(() => {
