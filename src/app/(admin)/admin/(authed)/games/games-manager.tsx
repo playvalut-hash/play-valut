@@ -370,49 +370,103 @@ export default function GamesManager({
         </div>
       )}
 
-      <div className="overflow-x-auto rounded-lg border border-surface-border">
-        <table className="w-full min-w-[880px] text-left text-[13px]">
-          <thead>
-            <tr className="border-b border-surface-border bg-surface-card text-[11px] uppercase tracking-wide text-text-muted">
-              <th className="px-3 py-2 font-medium">Game</th>
-              <th className="px-3 py-2 font-medium">Access</th>
-              <th className="px-3 py-2 font-medium">Signup / Reload %</th>
-              <th className="px-3 py-2 font-medium">Load range</th>
-              <th className="px-3 py-2 font-medium">Order</th>
-              <th className="px-3 py-2 font-medium">Visible</th>
-              <th className="px-3 py-2 font-medium">Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {games.map((g) => (
-              <tr key={g.id} className="border-b border-surface-border/50 last:border-0 hover:bg-surface-card/40">
-                <td className="px-3 py-2">
-                  <div className="flex items-center gap-2">
-                    {g.iconUrl ? (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img src={g.iconUrl} alt="" className="h-8 w-8 rounded object-cover" />
-                    ) : (
-                      <span className="flex h-8 w-8 items-center justify-center rounded bg-surface-elevated text-text-muted">
-                        <ImageIcon className="h-4 w-4" />
-                      </span>
-                    )}
-                    <div>
-                      <p className="font-medium text-text-primary">{g.name}</p>
-                      <p className="font-mono text-[10px] text-text-muted">{g.id}</p>
-                    </div>
-                  </div>
-                </td>
-                <td className="px-3 py-2 text-text-secondary">{g.access}</td>
-                <td className="px-3 py-2 text-text-secondary">
+      {/* Card grid — same format as Payment Methods (Build 60) */}
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+        {games.map((g) => (
+          <div
+            key={g.id}
+            className={cn(
+              "admin-lift rounded-lg border border-surface-border bg-surface-card p-4",
+              !g.isActive && "opacity-60",
+            )}
+          >
+            <div className="flex items-start justify-between gap-2">
+              <div className="flex items-center gap-2.5">
+                {g.iconUrl ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={g.iconUrl}
+                    alt=""
+                    className="h-9 w-9 rounded-md object-cover"
+                  />
+                ) : (
+                  <span className="flex h-9 w-9 items-center justify-center rounded-md bg-surface-elevated text-text-muted">
+                    <ImageIcon className="h-4 w-4" />
+                  </span>
+                )}
+                <div>
+                  <p className="text-sm font-semibold text-text-primary">{g.name}</p>
+                  <p className="font-mono text-[10px] text-text-muted">{g.id}</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-1">
+                <button
+                  type="button"
+                  onClick={() => setFormFor(g)}
+                  aria-label={`Edit ${g.name}`}
+                  className="admin-focus rounded p-1.5 text-text-muted hover:text-gold"
+                >
+                  <EditIcon className="h-4 w-4" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (confirmId === g.id) void doDelete(g);
+                    else {
+                      setConfirmId(g.id);
+                      setTimeout(() => setConfirmId((c) => (c === g.id ? null : c)), 3000);
+                    }
+                  }}
+                  aria-label={confirmId === g.id ? "Confirm delete" : `Delete ${g.name}`}
+                  className={cn(
+                    "admin-focus rounded px-1.5 py-1 text-[11px] font-medium",
+                    confirmId === g.id
+                      ? "bg-danger/15 text-danger"
+                      : "text-text-muted hover:text-danger",
+                  )}
+                >
+                  {confirmId === g.id ? "Confirm?" : <TrashIcon className="h-4 w-4" />}
+                </button>
+              </div>
+            </div>
+            <dl className="mt-3 space-y-1 text-xs">
+              <div className="flex justify-between gap-2">
+                <dt className="text-text-muted">Access</dt>
+                <dd className="text-text-primary">
+                  {g.access === "both"
+                    ? "App + Web"
+                    : g.access === "app"
+                      ? "App only"
+                      : "Web only"}
+                </dd>
+              </div>
+              <div className="flex justify-between gap-2">
+                <dt className="text-text-muted">Signup / Reload</dt>
+                <dd className="text-text-primary">
                   +{g.firstBonusPct}% / +{g.regBonusPct}%
-                </td>
-                <td className="px-3 py-2 text-text-secondary">
-                  {g.minLoad != null || g.maxLoad != null
-                    ? `$${g.minLoad ?? "?"} – $${g.maxLoad ?? "?"}`
-                    : "—"}
-                </td>
-                <td className="px-3 py-2 text-text-secondary">{g.sortOrder}</td>
-                <td className="px-3 py-2">
+                </dd>
+              </div>
+              {(g.minLoad != null || g.maxLoad != null) && (
+                <div className="flex justify-between gap-2">
+                  <dt className="text-text-muted">Load range</dt>
+                  <dd className="text-text-primary">
+                    ${g.minLoad ?? "?"} – ${g.maxLoad ?? "?"}
+                  </dd>
+                </div>
+              )}
+              {g.category && (
+                <div className="flex justify-between gap-2">
+                  <dt className="text-text-muted">Category</dt>
+                  <dd className="max-w-[60%] text-right text-text-secondary">{g.category}</dd>
+                </div>
+              )}
+              <div className="flex justify-between gap-2">
+                <dt className="text-text-muted">Order</dt>
+                <dd className="text-text-primary">{g.sortOrder}</dd>
+              </div>
+              <div className="flex justify-between gap-2">
+                <dt className="text-text-muted">Visible</dt>
+                <dd>
                   {g.isActive ? (
                     <span className="inline-flex items-center gap-1 text-success">
                       <CheckIcon className="h-3.5 w-3.5" /> Yes
@@ -420,49 +474,16 @@ export default function GamesManager({
                   ) : (
                     <span className="text-text-muted">No</span>
                   )}
-                </td>
-                <td className="px-3 py-2">
-                  <div className="flex items-center gap-1">
-                    <button
-                      type="button"
-                      onClick={() => setFormFor(g)}
-                      aria-label={`Edit ${g.name}`}
-                      className="admin-focus rounded p-1.5 text-text-muted hover:text-gold"
-                    >
-                      <EditIcon className="h-4 w-4" />
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        if (confirmId === g.id) void doDelete(g);
-                        else {
-                          setConfirmId(g.id);
-                          setTimeout(() => setConfirmId((c) => (c === g.id ? null : c)), 3000);
-                        }
-                      }}
-                      aria-label={confirmId === g.id ? "Confirm delete" : `Delete ${g.name}`}
-                      className={cn(
-                        "admin-focus rounded px-1.5 py-1 text-[11px] font-medium",
-                        confirmId === g.id
-                          ? "bg-danger/15 text-danger"
-                          : "text-text-muted hover:text-danger",
-                      )}
-                    >
-                      {confirmId === g.id ? "Confirm?" : <TrashIcon className="h-4 w-4" />}
-                    </button>
-                  </div>
-                </td>
-              </tr>
-            ))}
-            {games.length === 0 && (
-              <tr>
-                <td colSpan={7} className="px-3 py-8 text-center text-xs text-text-muted">
-                  No games yet — add the first one above.
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
+                </dd>
+              </div>
+            </dl>
+          </div>
+        ))}
+        {games.length === 0 && (
+          <p className="col-span-full rounded-lg border border-dashed border-surface-border px-4 py-10 text-center text-xs text-text-muted">
+            No games yet — add the first one above.
+          </p>
+        )}
       </div>
 
       <div className="mt-3 flex items-center gap-1 text-[11px] text-text-muted">
