@@ -83,14 +83,23 @@ function ImageViewer({ src, onClose }: { src: string; onClose: () => void }) {
 
 /* ── screenshot message ───────────────────────────────────────────────────── */
 
-function ShotMessage({ message }: { message: ChatMessage }) {
+function ShotMessage({
+  message,
+  resolvedUrl,
+}: {
+  message: ChatMessage;
+  resolvedUrl?: string | null;
+}) {
   const path = str(message.body["screenshot_path"]);
   const caption = str(message.body["caption"]);
   const mine = message.sender === "player";
-  const [url, setUrl] = useState<string | null>(null);
+  const [url, setUrl] = useState<string | null>(resolvedUrl ?? null);
   const [viewerOpen, setViewerOpen] = useState(false);
 
   useEffect(() => {
+    // Server batch-resolved most URLs (page.tsx); only fetch when missing
+    // (e.g. a screenshot that arrived live after the page loaded).
+    if (resolvedUrl) return;
     let cancelled = false;
     if (path) {
       getScreenshotUrl(path).then((u) => {
@@ -100,7 +109,7 @@ function ShotMessage({ message }: { message: ChatMessage }) {
     return () => {
       cancelled = true;
     };
-  }, [path]);
+  }, [path, resolvedUrl]);
 
   return (
     <div className={`flex ${mine ? "justify-end" : "justify-start"}`}>
@@ -140,14 +149,26 @@ function ShotMessage({ message }: { message: ChatMessage }) {
 
 /* ── account credential card ──────────────────────────────────────────────── */
 
-function AccountCardMessage({ message }: { message: ChatMessage }) {
+function AccountCardMessage({
+  message,
+  resolvedCard,
+}: {
+  message: ChatMessage;
+  resolvedCard?: AccountCard | null;
+}) {
   const accountId = str(message.body["account_id"]);
   const bodyStatus = message.body["status"] === "active" ? "active" : "creating";
-  const [card, setCard] = useState<AccountCard | null>(null);
+  const [card, setCard] = useState<AccountCard | null>(resolvedCard ?? null);
   const [showPassword, setShowPassword] = useState(false);
   const [copied, setCopied] = useState(false);
 
   useEffect(() => {
+    // Server batch-resolved this card (page.tsx) and its status matches the
+    // message body — nothing to fetch. Otherwise fetch (live-arrived cards,
+    // and the approve flip: bodyStatus changes -> fresh credentials).
+    if (resolvedCard && resolvedCard.status === bodyStatus) {
+      return; // state was initialized from resolvedCard — already current
+    }
     let cancelled = false;
     if (accountId) {
       getAccountCard(accountId).then((c) => {
@@ -157,9 +178,7 @@ function AccountCardMessage({ message }: { message: ChatMessage }) {
     return () => {
       cancelled = true;
     };
-    // bodyStatus is a dependency ON PURPOSE: when the admin approves, the
-    // message body flips to "active" and the card must refetch fresh state.
-  }, [accountId, bodyStatus]);
+  }, [accountId, bodyStatus, resolvedCard]);
 
   // R2: the same card flips Creating… → Active in place (no second card).
   const status = card?.status ?? bodyStatus;
@@ -574,15 +593,21 @@ function MessageView({
   message,
   onPicked,
   receipt,
+  resolvedCard,
+  resolvedShotUrl,
 }: {
   message: ChatMessage;
   onPicked: () => void;
   receipt?: "sent" | "seen";
+  resolvedCard?: AccountCard | null;
+  resolvedShotUrl?: string | null;
 }) {
   const mine = message.sender === "player";
 
-  if (message.kind === "shot") return <ShotMessage message={message} />;
-  if (message.kind === "account") return <AccountCardMessage message={message} />;
+  if (message.kind === "shot")
+    return <ShotMessage message={message} resolvedUrl={resolvedShotUrl} />;
+  if (message.kind === "account")
+    return <AccountCardMessage message={message} resolvedCard={resolvedCard} />;
   if (message.kind === "system") {
     return (
       <div className="flex justify-center">
@@ -659,9 +684,20 @@ function MessageView({
 
 /* ── the chat screen ──────────────────────────────────────────────────────── */
 
-export default function ChatClient({ playerId }: { playerId: string }) {
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
-  const [loading, setLoading] = useState(true);
+export default function ChatClient({
+  playerId,
+  initialMessages,
+  initialCards,
+  initialShotUrls,
+}: {
+  playerId: string;
+  initialMessages: ChatMessage[];
+  initialCards: Record<string, AccountCard>;
+  initialShotUrls: Record<string, string>;
+}) {
+  // Thread arrives server-rendered (see page.tsx) — no loading spinner.
+  const [messages, setMessages] = useState<ChatMessage[]>(initialMessages);
+  const [loading, setLoading] = useState(false);
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -689,36 +725,37 @@ export default function ChatClient({ playerId }: { playerId: string }) {
   }, []);
 
 
+  const refreshInFlightRef = useRef(false);
   const refresh = useCallback(async () => {
-    const thread = await getThread();
-    setMessages(thread);
-    setLoading(false);
-    // A non-player message landing ends the "typing" beat.
-    const last = thread[thread.length - 1];
-    if (last && last.sender !== "player") setAwaitingReply(false);
-    void markThreadRead();
+    // Refresh triggers (realtime, poll, sends, picks) can pile up — one
+    // in flight at a time; the next event re-runs it if anything changed.
+    if (refreshInFlightRef.current) return;
+    refreshInFlightRef.current = true;
+    try {
+      const thread = await getThread();
+      setMessages(thread);
+      setLoading(false);
+      // A non-player message landing ends the "typing" beat.
+      const last = thread[thread.length - 1];
+      if (last && last.sender !== "player") setAwaitingReply(false);
+      void markThreadRead();
+    } finally {
+      refreshInFlightRef.current = false;
+    }
   }, []);
 
   useEffect(() => {
-    // Initial load: syncing React state with the external chat store.
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    void refresh();
-  }, [refresh]);
+    // Initial messages came with the page; just mark the thread read.
+    void markThreadRead();
+  }, []);
 
+  // Safety net only: Realtime does the live work; a slow 30s poll (visible
+  // tab only) covers anything it might miss.
   useEffect(() => {
     const poll = setInterval(() => {
       if (document.visibilityState === "visible") void refresh();
-    }, 10000);
-    const onVisible = () => {
-      if (document.visibilityState === "visible") void refresh();
-    };
-    document.addEventListener("visibilitychange", onVisible);
-    window.addEventListener("focus", onVisible);
-    return () => {
-      clearInterval(poll);
-      document.removeEventListener("visibilitychange", onVisible);
-      window.removeEventListener("focus", onVisible);
-    };
+    }, 30000);
+    return () => clearInterval(poll);
   }, [refresh]);
 
   useEffect(() => {
@@ -865,6 +902,16 @@ export default function ChatClient({ playerId }: { playerId: string }) {
             <MessageView
               key={m.id}
               message={m}
+              resolvedCard={
+                m.kind === "account"
+                  ? (initialCards[str(m.body["account_id"])] ?? null)
+                  : null
+              }
+              resolvedShotUrl={
+                m.kind === "shot"
+                  ? (initialShotUrls[str(m.body["screenshot_path"])] ?? null)
+                  : null
+              }
               onPicked={() => {
                 noteAwaiting();
                 void refresh();
