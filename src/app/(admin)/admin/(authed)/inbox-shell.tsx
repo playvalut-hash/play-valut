@@ -195,6 +195,15 @@ export default function InboxShell({
   // Silent refetch of the open conversation — actions (approve, send, tags…)
   // call this instead of router.refresh() so updates appear INSTANTLY
   // without a manual page refresh.
+  // An OPEN conversation is a READ conversation (Build 48): clear the
+  // player's unread badge in the list instantly, don't wait for the
+  // overview refetch / realtime cycle to catch up.
+  const clearUnreadLocal = useCallback((id: string) => {
+    setOverview((prev) =>
+      prev.map((p) => (p.id === id && p.unreadCount !== 0 ? { ...p, unreadCount: 0 } : p)),
+    );
+  }, []);
+
   const refreshSelected = useCallback(async () => {
     const id = selectedIdRef.current;
     if (!id) return;
@@ -204,11 +213,15 @@ export default function InboxShell({
       if (selectedIdRef.current === id) {
         setThread(t);
         setDetail(d);
+        // The admin is looking at this thread: anything in it — including
+        // messages that arrived while it was open — counts as read.
+        markThreadRead(admin.id, id).catch(() => {});
+        clearUnreadLocal(id);
       }
     } catch {
       // keep current view on transient errors
     }
-  }, [cache]);
+  }, [cache, admin.id, clearUnreadLocal]);
 
   // Persist a compact snapshot whenever the open conversation changes,
   // so a remount (section navigation and back) restores it instantly.
@@ -285,6 +298,7 @@ export default function InboxShell({
       setThread(cached.thread);
       setDetail(cached.detail);
       setLoadingThread(false);
+      clearUnreadLocal(id);
       void refreshSelected();
       markThreadRead(admin.id, id).catch(() => {});
       return;
@@ -298,6 +312,7 @@ export default function InboxShell({
       if (selectedIdRef.current !== id) return;
       setThread(t);
       setLoadingThread(false);
+      clearUnreadLocal(id);
       markThreadRead(admin.id, id).catch(() => {});
       const d = await getPlayerDetail(id);
       cache.set(id, { thread: t, detail: d });
