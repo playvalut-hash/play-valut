@@ -173,6 +173,59 @@ export default function InboxShell({
       return next;
     });
   }
+
+  // Mouse-drag resize for the details panel (Build 51) — drag its left
+  // edge; width persists like the collapse choice. Desktop only.
+  const PANEL_MIN_W = 280;
+  const PANEL_MAX_W = 560;
+  const PANEL_DEFAULT_W = 336;
+  const [panelWidth, setPanelWidth] = useState<number>(() => {
+    try {
+      const v = Number(window.localStorage.getItem("pv-details-width"));
+      return Number.isFinite(v) && v >= PANEL_MIN_W && v <= PANEL_MAX_W
+        ? v
+        : PANEL_DEFAULT_W;
+    } catch {
+      return PANEL_DEFAULT_W;
+    }
+  });
+  const panelRef = useRef<HTMLDivElement | null>(null);
+
+  function persistPanelWidth(w: number) {
+    try {
+      window.localStorage.setItem("pv-details-width", String(Math.round(w)));
+    } catch {
+      // ignore
+    }
+  }
+
+  function onPanelDragStart(e: { clientX: number; preventDefault: () => void }) {
+    e.preventDefault();
+    const startX = e.clientX;
+    const startW = panelRef.current?.offsetWidth ?? panelWidth;
+    const onMove = (ev: MouseEvent) => {
+      const w = Math.min(
+        PANEL_MAX_W,
+        Math.max(PANEL_MIN_W, startW + (startX - ev.clientX)),
+      );
+      setPanelWidth(w);
+    };
+    const onUp = () => {
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+      document.body.style.userSelect = "";
+      const w = panelRef.current?.offsetWidth;
+      if (w) persistPanelWidth(w);
+    };
+    document.body.style.userSelect = "none";
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+  }
+
+  function resetPanelWidth() {
+    setPanelWidth(PANEL_DEFAULT_W);
+    persistPanelWidth(PANEL_DEFAULT_W);
+  }
   const [selectedId, setSelectedId] = useState<string | null>(
     () => initialSelectedId ?? restored?.selectedId ?? null,
   );
@@ -593,9 +646,11 @@ export default function InboxShell({
           gives DetailsPanel a bounded height and its own scroll works. */}
       {selected && detail && (
         <div
+          ref={panelRef}
+          style={{ "--pv-pw": `${panelWidth}px` } as React.CSSProperties}
           className={cn(
-            "shrink-0 border-l border-surface-border",
-            "w-full md:w-[336px]",
+            "relative shrink-0 border-l border-surface-border",
+            "w-full md:w-[var(--pv-pw,336px)]",
             mobileView === "details"
               ? "flex flex-col"
               : panelCollapsed
@@ -603,6 +658,15 @@ export default function InboxShell({
                 : "hidden md:flex md:flex-col",
           )}
         >
+          {/* Drag handle — mouse resize (desktop only) */}
+          <div
+            role="separator"
+            aria-label="Resize details panel"
+            title="Drag to resize · double-click to reset"
+            onMouseDown={onPanelDragStart}
+            onDoubleClick={resetPanelWidth}
+            className="absolute inset-y-0 left-0 z-20 hidden w-2 -translate-x-1/2 cursor-col-resize rounded-full transition-colors hover:bg-gold/30 active:bg-gold/50 md:block"
+          />
           {/* Mobile back button */}
           <div className="flex shrink-0 items-center gap-2 border-b border-surface-border bg-navy px-2 py-1.5 md:hidden">
             <button
