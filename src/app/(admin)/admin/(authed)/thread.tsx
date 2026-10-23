@@ -105,7 +105,7 @@ function AccountCard({
   }
 
   return (
-    <div className="w-[400px] max-w-full rounded-lg border border-gold/30 bg-surface-elevated p-3 shadow-[0_4px_16px_rgba(0,0,0,0.35)]">
+    <div className="w-[400px] max-w-full rounded-2xl border border-gold/30 bg-surface-elevated p-3 shadow-[0_4px_16px_rgba(0,0,0,0.35)]">
       <div className="flex items-center justify-between gap-2">
         <span className="text-xs font-semibold text-gold">{account.gameName}</span>
         <StatusChip status={status} />
@@ -195,7 +195,7 @@ function MessageItem({
   if (msg.kind === "system") {
     return (
       <div className="admin-msg-in flex justify-center py-1">
-        <span className="max-w-[80%] rounded-full bg-surface-elevated px-3 py-1 text-center text-[11px] text-text-secondary">
+        <span className="max-w-[80%] rounded-full border border-surface-border bg-surface-elevated px-3 py-1 text-center text-[11px] text-text-secondary">
           {msg.text}
         </span>
       </div>
@@ -219,7 +219,7 @@ function MessageItem({
   if (msg.kind === "games_list" || msg.kind === "pay_list") {
     return (
       <div className="admin-msg-in flex justify-end py-1">
-        <div className="w-[400px] max-w-full rounded-lg border border-surface-border bg-surface-card p-3">
+        <div className="w-[400px] max-w-full rounded-2xl border border-surface-border bg-surface-card p-3.5">
           <p className="text-xs font-semibold text-text-primary">{msg.listTitle}</p>
           <p className="mt-1 text-[11px] text-text-secondary">
             {msg.picked
@@ -235,7 +235,7 @@ function MessageItem({
     const card = msg.paymentCard;
     return (
       <div className="admin-msg-in flex justify-end py-1">
-        <div className="w-[400px] max-w-full overflow-hidden rounded-lg border border-gold/30 bg-surface-card shadow-[0_4px_16px_rgba(0,0,0,0.35)]">
+        <div className="w-[400px] max-w-full overflow-hidden rounded-2xl border border-gold/30 bg-surface-card shadow-[0_4px_16px_rgba(0,0,0,0.35)]">
           {/* Header band — brand tile + label + Deposit tag */}
           <div
             className="flex items-center gap-2.5 px-3 py-2.5"
@@ -326,7 +326,7 @@ function MessageItem({
         <button
           type="button"
           onClick={() => onViewShot(msg.screenshotUrl!, msg.screenshotCaption)}
-          className="admin-focus overflow-hidden rounded-lg border border-surface-border"
+          className="admin-focus overflow-hidden rounded-2xl border border-surface-border"
           aria-label="Open screenshot full screen"
         >
           {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -347,11 +347,13 @@ function MessageItem({
       {!mine && <Avatar name={playerName} size="sm" />}
       <div
         className={cn(
-          "max-w-[75%] rounded-lg px-2.5 py-1.5",
-          mine ? "bg-gold text-navy" : "bg-surface-card text-text-primary",
+          "max-w-[78%] rounded-2xl px-3 py-2 shadow-sm shadow-black/20",
+          mine
+            ? "rounded-br-md bg-gold text-navy"
+            : "rounded-bl-md border border-surface-border bg-surface-card text-text-primary",
         )}
       >
-        <p className="whitespace-pre-wrap break-words text-[13px] leading-snug">
+        <p className="whitespace-pre-wrap break-words text-[13.5px] leading-normal">
           {msg.text}
         </p>
         <p
@@ -384,6 +386,8 @@ export default function ThreadView({
   methods,
   methodsCount,
   onMutated,
+  onBack,
+  onShowDetails,
 }: {
   admin: AdminInfo;
   player: PlayerOverview;
@@ -393,6 +397,11 @@ export default function ThreadView({
   methods: Array<{ id: string; name: string; brandColor: string | null }>;
   methodsCount: number;
   onMutated?: () => Promise<void>;
+  /** Mobile only: back to the player list / open the details panel. The
+   *  thread header owns these now (Build 39 merged the shell's separate
+   *  mobile nav bar into this one bar). */
+  onBack?: () => void;
+  onShowDetails?: () => void;
 }) {
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
@@ -532,33 +541,51 @@ export default function ThreadView({
 
   return (
     <div className="flex h-full min-w-0 flex-1 flex-col">
-      {/* Thread header */}
-      <div className="flex shrink-0 items-center justify-between border-b border-surface-border bg-navy px-4 py-2.5">
-        <div className="flex min-w-0 items-center gap-2.5">
-          <Avatar name={player.displayName} />
-          <div className="min-w-0">
-            <p className="truncate text-[13px] font-semibold text-text-primary">
-              {player.displayName}
-              {player.isOnline && (
-                <span className="ml-1.5 inline-block h-1.5 w-1.5 rounded-full bg-success align-middle" />
-              )}
-            </p>
-            <p className="truncate text-[11px] text-text-muted">
-              {player.tags.length > 0 ? player.tags.join(" · ") : "No tags"}
-            </p>
-          </div>
+      {/* Thread header — ONE merged bar (Build 39): mobile back + details
+          live here; the shell's separate mobile nav bar is gone. */}
+      <div className="flex shrink-0 items-center gap-2 border-b border-surface-border bg-navy px-2.5 py-2 md:px-4">
+        {onBack ? (
+          <button
+            type="button"
+            onClick={onBack}
+            aria-label="Back to player list"
+            className="admin-focus -ml-1 flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-[22px] leading-none text-gold transition hover:bg-surface-elevated md:hidden"
+          >
+            ‹
+          </button>
+        ) : null}
+        <Avatar name={player.displayName} />
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-[13.5px] font-bold text-text-primary">
+            {player.displayName}
+            {player.isOnline && (
+              <span className="ml-1.5 inline-block h-1.5 w-1.5 rounded-full bg-success align-middle" />
+            )}
+          </p>
+          <p className="truncate text-[11px] text-text-muted">
+            {player.tags.length > 0 ? player.tags.join(" · ") : "No tags"}
+          </p>
         </div>
         {(player.pendingDeposits > 0 || player.creatingAccounts > 0) && (
-          <span className="rounded-full bg-gold/15 px-2 py-0.5 text-[10px] font-semibold text-gold">
+          <span className="hidden shrink-0 rounded-full bg-gold/15 px-2 py-0.5 text-[10px] font-semibold text-gold min-[420px]:inline-block">
             Needs your action
           </span>
         )}
+        {onShowDetails ? (
+          <button
+            type="button"
+            onClick={onShowDetails}
+            className="admin-focus shrink-0 rounded-full border border-gold/40 px-3 py-1.5 text-xs font-semibold text-gold transition hover:bg-gold/10 md:hidden"
+          >
+            Details
+          </button>
+        ) : null}
       </div>
 
-      {/* SEND bar — expandable games + payment methods */}
-      <div className="shrink-0 border-b border-surface-border bg-surface-card/60 px-4 py-2">
-        <div className="flex items-center gap-2">
-          <span className="text-[11px] font-medium uppercase tracking-wide text-text-muted">
+      {/* SEND bar — expandable games + payment methods (compact toolbar) */}
+      <div className="shrink-0 border-b border-surface-border bg-surface-card/60 px-3 py-1.5 md:px-4">
+        <div className="no-scrollbar flex items-center gap-1.5 overflow-x-auto">
+          <span className="hidden shrink-0 text-[10px] font-medium uppercase tracking-wide text-text-muted min-[420px]:block">
             Send
           </span>
           <button
@@ -568,7 +595,7 @@ export default function ThreadView({
               setPayOpen(false);
             }}
             disabled={sendListBusy !== null || gamesCount === 0}
-            className="flex items-center gap-1.5 rounded-full border border-gold/50 px-3 py-1.5 text-xs font-semibold text-gold transition hover:bg-gold/10 disabled:opacity-40"
+            className="flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border border-gold/50 px-2.5 py-1 text-[11px] font-semibold text-gold transition hover:bg-gold/10 disabled:opacity-40"
           >
             🎮 Games
             <span className={cn("transition-transform", gamesOpen && "rotate-180")}>▾</span>
@@ -580,14 +607,14 @@ export default function ThreadView({
               setGamesOpen(false);
             }}
             disabled={sendListBusy !== null || methodsCount === 0}
-            className="flex items-center gap-1.5 rounded-full border border-surface-border px-3 py-1.5 text-xs font-semibold text-text-secondary transition hover:border-gold/50 hover:text-gold disabled:opacity-40"
+            className="flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border border-surface-border px-2.5 py-1 text-[11px] font-semibold text-text-secondary transition hover:border-gold/50 hover:text-gold disabled:opacity-40"
           >
             💳 Payment methods
             <span className={cn("transition-transform", payOpen && "rotate-180")}>▾</span>
           </button>
         </div>
         {gamesOpen && (
-          <div className="mt-2 flex flex-wrap gap-1.5 rounded-xl border border-surface-border bg-navy p-2.5">
+          <div className="mt-1.5 flex flex-wrap gap-1.5 rounded-xl border border-surface-border bg-navy p-2">
             <button
               type="button"
               onClick={() => sendList("games")}
@@ -610,7 +637,7 @@ export default function ThreadView({
           </div>
         )}
         {payOpen && (
-          <div className="mt-2 flex flex-wrap gap-1.5 rounded-xl border border-surface-border bg-navy p-2.5">
+          <div className="mt-1.5 flex flex-wrap gap-1.5 rounded-xl border border-surface-border bg-navy p-2">
             <button
               type="button"
               onClick={() => sendList("pay")}
@@ -645,7 +672,7 @@ export default function ThreadView({
       <div
         ref={scrollRef}
         aria-live="polite"
-        className="admin-chat-scroll min-h-0 flex-1 overflow-y-auto bg-near-black px-4 py-3"
+        className="admin-chat-scroll min-h-0 flex-1 overflow-y-auto bg-near-black px-3 py-3 md:px-4"
       >
         {thread.length === 0 ? (
           <p className="mt-8 text-center text-xs text-text-muted">
@@ -701,8 +728,11 @@ export default function ThreadView({
         </div>
       ) : null}
 
-      {/* Composer */}
-      <div className="flex shrink-0 items-center gap-2 border-t border-surface-border bg-navy px-3 py-2">
+      {/* Composer — round pill input + round send, player-chat parity */}
+      <div
+        className="flex shrink-0 items-center gap-2 border-t border-surface-border bg-navy px-3 py-2"
+        style={{ paddingBottom: "calc(0.5rem + env(safe-area-inset-bottom))" }}
+      >
         <input
           type="text"
           value={draft}
@@ -718,16 +748,16 @@ export default function ThreadView({
           }}
           placeholder={`Message ${player.displayName}…`}
           aria-label="Message"
-          className="admin-focus min-w-0 flex-1 rounded-md border border-surface-border bg-surface-input px-3 py-2 text-[13px] text-text-primary placeholder:text-text-muted"
+          className="admin-focus min-h-[42px] min-w-0 flex-1 rounded-full border border-surface-border bg-surface-input px-3.5 text-[13.5px] text-text-primary placeholder:text-text-muted"
         />
         <button
           type="button"
           onClick={sendText}
           disabled={sending || !draft.trim()}
           aria-label="Send message"
-          className="admin-focus rounded-md bg-gold p-2 text-navy transition-opacity hover:opacity-90 disabled:opacity-40"
+          className="admin-focus flex h-[42px] w-[42px] shrink-0 items-center justify-center rounded-full bg-gold text-navy transition-opacity hover:opacity-90 disabled:opacity-40"
         >
-          <SendIcon className="h-4 w-4" />
+          <SendIcon className="h-[18px] w-[18px]" />
         </button>
       </div>
 
