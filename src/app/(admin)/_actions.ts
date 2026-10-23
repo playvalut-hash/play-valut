@@ -23,11 +23,43 @@ import { QUICK_REPLIES } from "./_quick-replies";
 
 export type AdminRole = "super_admin" | "agent";
 
+/** Grantable staff permissions (Build 43). Super admin always has all. */
+export type StaffPermissionKey = "player_block" | "chat_clear" | "player_delete";
+
+export interface StaffPermissions {
+  player_block: boolean;
+  chat_clear: boolean;
+  player_delete: boolean;
+}
+
+const NO_PERMISSIONS: StaffPermissions = {
+  player_block: false,
+  chat_clear: false,
+  player_delete: false,
+};
+
+const ALL_PERMISSIONS: StaffPermissions = {
+  player_block: true,
+  chat_clear: true,
+  player_delete: true,
+};
+
+function parsePermissions(raw: unknown, role: AdminRole): StaffPermissions {
+  if (role === "super_admin") return { ...ALL_PERMISSIONS };
+  const r = (raw ?? {}) as Record<string, unknown>;
+  return {
+    player_block: r.player_block === true,
+    chat_clear: r.chat_clear === true,
+    player_delete: r.player_delete === true,
+  };
+}
+
 export interface AdminInfo {
   id: string;
   role: AdminRole;
   displayName: string;
   email: string;
+  permissions: StaffPermissions;
 }
 
 export interface PlayerOverview {
@@ -125,6 +157,8 @@ export interface PlayerDetailView {
     email: string | null;
     avatarUrl: string | null;
     isOnline: boolean;
+    isBlocked: boolean;
+    blockedAt: string | null;
   };
   tags: string[];
   notes: AdminNoteView[];
@@ -196,6 +230,7 @@ export interface AgentRow {
   role: AdminRole;
   isActive: boolean;
   createdAt: string;
+  permissions: StaffPermissions;
 }
 
 /* ── Audit + auth guards ───────────────────────────────────────────────── */
@@ -219,18 +254,32 @@ function svc() {
 async function requireAdmin(adminId: string): Promise<AdminInfo> {
   const { data, error } = await svc()
     .from("admin_users")
-    .select("id, role, display_name, email, is_active")
+    .select("id, role, display_name, email, is_active, permissions")
     .eq("id", adminId)
     .single();
   if (error || !data || data.is_active !== true) {
     throw new Error("Not authorized");
   }
+  const role = data.role as AdminRole;
   return {
     id: data.id as string,
-    role: data.role as AdminRole,
+    role,
     displayName: (data.display_name as string) || (data.email as string),
     email: data.email as string,
+    permissions: parsePermissions(data.permissions, role),
   };
+}
+
+/** Guard for a single grantable permission (super admin always passes). */
+async function requirePermission(
+  adminId: string,
+  key: StaffPermissionKey,
+): Promise<AdminInfo> {
+  const me = await requireAdmin(adminId);
+  if (!me.permissions[key]) {
+    throw new Error("Not authorized — this permission is not granted to your account");
+  }
+  return me;
 }
 
 async function requireSuperAdmin(adminId: string): Promise<AdminInfo> {
@@ -318,15 +367,17 @@ export const getAdminSession = cache(
   if (!user) return null;
   const { data } = await svc()
     .from("admin_users")
-    .select("id, role, display_name, email, is_active")
+    .select("id, role, display_name, email, is_active, permissions")
     .eq("id", user.id)
     .single();
     if (!data || data.is_active !== true) return null;
+    const role = data.role as AdminRole;
     return {
       id: data.id as string,
-      role: data.role as AdminRole,
+      role,
       displayName: (data.display_name as string) || (data.email as string),
       email: data.email as string,
+      permissions: parsePermissions(data.permissions, role),
     };
   },
 );
@@ -913,7 +964,7 @@ export async function getPlayerDetail(
   const client = svc();
   const { data: player } = await client
     .from("players")
-    .select("id, display_name, email, avatar_url, is_online")
+    .select("id, display_name, email, avatar_url, is_online, is_blocked, blocked_at")
     .eq("id", playerId)
     .single();
   if (!player) return null;
@@ -1002,6 +1053,8 @@ export async function getPlayerDetail(
       email: (player.email as string | null) ?? null,
       avatarUrl: (player.avatar_url as string | null) ?? null,
       isOnline: (player.is_online as boolean) ?? false,
+      isBlocked: (player.is_blocked as boolean) ?? false,
+      blockedAt: (player.blocked_at as string | null) ?? null,
     },
     tags: ((tags ?? []) as Array<{ tag: string }>)
       .map((t) => t.tag)
@@ -1753,7 +1806,7 @@ export async function getAgents(adminId: string): Promise<AgentRow[]> {
   await requireSuperAdmin(adminId);
   const { data } = await svc()
     .from("admin_users")
-    .select("id, email, display_name, role, is_active, created_at")
+    .select("id, email, display_name, role, is_active, created_at, permissions")
     .order("created_at", { ascending: true });
   return ((data ?? []) as Array<{
     id: string;
@@ -1762,6 +1815,7 @@ export async function getAgents(adminId: string): Promise<AgentRow[]> {
     role: string;
     is_active: boolean;
     created_at: string;
+    permissions: unknown;
   }>).map((a) => ({
     id: a.id,
     email: a.email,
@@ -1769,6 +1823,7 @@ export async function getAgents(adminId: string): Promise<AgentRow[]> {
     role: a.role as AdminRole,
     isActive: a.is_active,
     createdAt: a.created_at,
+    permissions: parsePermissions(a.permissions, a.role as AdminRole),
   }));
 }
 
@@ -1860,6 +1915,103 @@ export async function toggleAgentActive(
   if (error) throw new Error("Could not change agent status");
   audit(adminId, isActive ? "agents.enable" : "agents.disable", targetId);
   revalidateSection("/admin/agents");
+}
+
+const permissionsSchema = z.object({
+  player_block: z.boolean(),
+  chat_clear: z.boolean(),
+  player_delete: z.boolean(),
+});
+
+/** Super admin grants/revokes an AGENT's moderation permissions. */
+export async function setAgentPermissions(
+  adminId: string,
+  targetId: string,
+  perms: z.input<typeof permissionsSchema>,
+): Promise<void> {
+  await requireSuperAdmin(adminId);
+  z.string().uuid().parse(targetId);
+  if (targetId === adminId) {
+    throw new Error("Super admin always has all permissions");
+  }
+  const parsed = permissionsSchema.parse(perms);
+  const client = svc();
+  const { data: target } = await client
+    .from("admin_users")
+    .select("role")
+    .eq("id", targetId)
+    .single();
+  if (!target || target.role !== "agent") {
+    throw new Error("Permissions can only be set for agents");
+  }
+  const { error } = await client
+    .from("admin_users")
+    .update({ permissions: parsed })
+    .eq("id", targetId);
+  if (error) throw new Error("Could not save permissions");
+  audit(adminId, "agents.permissions", `${targetId}:${JSON.stringify(parsed)}`);
+  revalidateSection("/admin/agents");
+}
+
+/* ── Player moderation (Build 43 — permission-gated) ───────────────────── */
+
+/** Block or unblock a player. Blocked players are locked out of the app. */
+export async function setPlayerBlocked(
+  adminId: string,
+  playerId: string,
+  blocked: boolean,
+): Promise<void> {
+  await requirePermission(adminId, "player_block");
+  z.string().uuid().parse(playerId);
+  const client = svc();
+  const { error } = await client
+    .from("players")
+    .update(
+      blocked
+        ? {
+            is_blocked: true,
+            blocked_at: new Date().toISOString(),
+            blocked_by: adminId,
+            is_online: false,
+          }
+        : { is_blocked: false, blocked_at: null, blocked_by: null },
+    )
+    .eq("id", playerId);
+  if (error) throw new Error("Could not update player");
+  audit(adminId, blocked ? "player.block" : "player.unblock", playerId);
+}
+
+/** Delete a player's ENTIRE chat history (accounts/deposits are kept). */
+export async function clearPlayerChat(
+  adminId: string,
+  playerId: string,
+): Promise<void> {
+  await requirePermission(adminId, "chat_clear");
+  z.string().uuid().parse(playerId);
+  const client = svc();
+  const { error } = await client
+    .from("chat_messages")
+    .delete()
+    .eq("player_id", playerId);
+  if (error) throw new Error("Could not clear chat");
+  await client.from("notifications").delete().eq("player_id", playerId);
+  audit(adminId, "player.clear_chat", playerId);
+}
+
+/**
+ * Permanently delete a player: removing the auth user cascades the
+ * players row, chat, game accounts, deposits, tags and notes.
+ */
+export async function deletePlayer(
+  adminId: string,
+  playerId: string,
+): Promise<void> {
+  await requirePermission(adminId, "player_delete");
+  z.string().uuid().parse(playerId);
+  const client = svc();
+  const { error } = await client.auth.admin.deleteUser(playerId);
+  if (error) throw new Error("Could not delete player");
+  audit(adminId, "player.delete", playerId);
 }
 
 /* ── Create game account for player (from details panel) ── */

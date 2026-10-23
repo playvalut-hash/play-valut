@@ -14,8 +14,11 @@ import {
   editGameAccount,
   getGames,
   markAccountActive,
+  clearPlayerChat,
+  deletePlayer,
   rejectDeposit,
   removePlayerTag,
+  setPlayerBlocked,
 } from "../../_actions";
 import { cn, normalizeTag } from "@/lib/utils";
 import {
@@ -381,6 +384,7 @@ export default function DetailsPanel({
   const [noteBody, setNoteBody] = useState("");
   const [busy, setBusy] = useState(false);
   const [viewer, setViewer] = useState<{ src: string; caption: string } | null>(null);
+  const [confirming, setConfirming] = useState<null | "clear" | "delete">(null);
   const [selectedGame, setSelectedGame] = useState(games[0]?.id ?? "");
   const [creating, setCreating] = useState(false);
 
@@ -415,6 +419,11 @@ export default function DetailsPanel({
           @{detail.player.displayName.toLowerCase().replace(/\s+/g, "")} ·{" "}
           {detail.tags.includes("vip") ? "Gold VIP" : detail.tags.includes("new player") ? "Silver VIP" : "Player"}
         </p>
+        {detail.player.isBlocked && (
+          <span className="mt-1.5 rounded-full border border-red-500/50 bg-red-500/10 px-2.5 py-0.5 text-[11px] font-bold text-red-400">
+            BLOCKED
+          </span>
+        )}
       </div>
 
       {/* Wallet */}
@@ -612,6 +621,87 @@ export default function DetailsPanel({
           to the player as a card in this chat.
         </p>
       </Collapsible>
+
+      {/* Moderation — permission-gated (Build 43) */}
+      {(admin.permissions.player_block ||
+        admin.permissions.chat_clear ||
+        admin.permissions.player_delete) && (
+        <Collapsible title="Moderation" defaultOpen={detail.player.isBlocked}>
+          <div className="space-y-2">
+            {detail.player.isBlocked && (
+              <p className="rounded-lg border border-red-500/30 bg-red-500/5 px-3 py-2 text-[12px] leading-relaxed text-red-300">
+                This player is blocked
+                {detail.player.blockedAt
+                  ? ` since ${fullDateTime(detail.player.blockedAt)}`
+                  : ""}
+                . They cannot use the app until unblocked.
+              </p>
+            )}
+            {admin.permissions.player_block &&
+              (detail.player.isBlocked ? (
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={() => run(() => setPlayerBlocked(admin.id, detail.player.id, false))}
+                  className="w-full rounded-lg border border-emerald-500/50 bg-emerald-500/10 px-3 py-2.5 text-[13px] font-bold text-emerald-400 hover:bg-emerald-500/20 disabled:opacity-40"
+                >
+                  Unblock player
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={() => run(() => setPlayerBlocked(admin.id, detail.player.id, true))}
+                  className="w-full rounded-lg border border-red-500/50 bg-red-500/10 px-3 py-2.5 text-[13px] font-bold text-red-400 hover:bg-red-500/20 disabled:opacity-40"
+                >
+                  Block player
+                </button>
+              ))}
+            {admin.permissions.chat_clear && (
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => {
+                  if (confirming !== "clear") {
+                    setConfirming("clear");
+                    return;
+                  }
+                  setConfirming(null);
+                  void run(() => clearPlayerChat(admin.id, detail.player.id));
+                }}
+                className="w-full rounded-lg border border-amber-500/50 bg-amber-500/10 px-3 py-2.5 text-[13px] font-bold text-amber-400 hover:bg-amber-500/20 disabled:opacity-40"
+              >
+                {confirming === "clear"
+                  ? "Tap again to CLEAR the whole chat"
+                  : "Clear chat history"}
+              </button>
+            )}
+            {admin.permissions.player_delete && (
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => {
+                  if (confirming !== "delete") {
+                    setConfirming("delete");
+                    return;
+                  }
+                  setConfirming(null);
+                  void run(() => deletePlayer(admin.id, detail.player.id));
+                }}
+                className="w-full rounded-lg border border-red-600/60 bg-red-600/15 px-3 py-2.5 text-[13px] font-bold text-red-400 hover:bg-red-600/25 disabled:opacity-40"
+              >
+                {confirming === "delete"
+                  ? `Tap again to DELETE ${detail.player.displayName} forever`
+                  : "Delete player (permanent)"}
+              </button>
+            )}
+            <p className="px-1 text-[11px] leading-relaxed text-text-muted">
+              Clear chat removes messages only. Delete removes the player, their game
+              accounts, deposits and chat — it cannot be undone.
+            </p>
+          </div>
+        </Collapsible>
+      )}
 
       {viewer && (
         <ScreenshotViewer

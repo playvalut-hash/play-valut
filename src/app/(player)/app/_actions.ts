@@ -270,6 +270,17 @@ export async function signOut(): Promise<void> {
   redirect("/login");
 }
 
+/* ── blocking (Build 43) ─────────────────────────────────────────────────── */
+
+async function isPlayerBlocked(userId: string): Promise<boolean> {
+  const { data } = await createServiceClient()
+    .from("players")
+    .select("is_blocked")
+    .eq("id", userId)
+    .single();
+  return data?.is_blocked === true;
+}
+
 /* ── chat ────────────────────────────────────────────────────────────────── */
 
 const WARM_THANKS = [
@@ -315,6 +326,15 @@ export async function sendChatMessage(
     },
     { onConflict: "id" },
   );
+
+  // Blocked players cannot send (Build 43) — the app shell also locks
+  // them out, this is the server-side enforcement.
+  if (await isPlayerBlocked(user.id)) {
+    return {
+      ok: false,
+      error: "Your account has been blocked. Please contact support.",
+    };
+  }
 
   // 1. The player's message (RLS: sender='player' only).
   const { error: msgError } = await supabase.from("chat_messages").insert({
@@ -425,6 +445,9 @@ export async function chatPick(
     data: { user },
   } = await supabase.auth.getUser();
   if (!user) return { ok: false, error: "You're signed out. Please sign in again." };
+  if (await isPlayerBlocked(user.id)) {
+    return { ok: false, error: "Your account has been blocked. Please contact support." };
+  }
 
   const { data: msgRow } = await supabase
     .from("chat_messages")
@@ -629,6 +652,10 @@ export async function submitDeposit(formData: FormData): Promise<ActionResult> {
   } = await supabase.auth.getUser();
   if (!user) return { ok: false, error: "You're signed out. Please sign in again." };
 
+  if (await isPlayerBlocked(user.id)) {
+    return { ok: false, error: "Your account has been blocked. Please contact support." };
+  }
+
   const methods = await fetchActiveMethods();
   const method = methods.find((m) => m.id === methodId);
   if (!method) return { ok: false, error: "Unknown payment method." };
@@ -677,6 +704,10 @@ export async function submitChatDeposit(formData: FormData): Promise<ActionResul
     data: { user },
   } = await supabase.auth.getUser();
   if (!user) return { ok: false, error: "You're signed out. Please sign in again." };
+
+  if (await isPlayerBlocked(user.id)) {
+    return { ok: false, error: "Your account has been blocked. Please contact support." };
+  }
 
   const methods = await fetchActiveMethods();
   const method = methods.find((m) => m.id === methodId);

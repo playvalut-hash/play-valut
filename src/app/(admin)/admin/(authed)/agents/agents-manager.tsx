@@ -3,9 +3,16 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 
-import type { AdminInfo, AgentRow } from "../../../_actions";
+import type {
+  AdminInfo,
+  AgentRow,
+  StaffPermissionKey,
+  StaffPermissions,
+} from "../../../_actions";
+import { STAFF_PERMISSION_META } from "../../../_permissions";
 import {
   createAgent,
+  setAgentPermissions,
   toggleAgentActive,
   updateAgent,
 } from "../../../_actions";
@@ -28,6 +35,24 @@ function AgentCard({
   const [newPassword, setNewPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [perms, setPerms] = useState<StaffPermissions>(agent.permissions);
+  const [permBusy, setPermBusy] = useState(false);
+
+  async function togglePerm(key: StaffPermissionKey) {
+    const next = { ...perms, [key]: !perms[key] };
+    setPerms(next);
+    setPermBusy(true);
+    setError(null);
+    try {
+      await setAgentPermissions(admin.id, agent.id, next);
+      router.refresh();
+    } catch (err) {
+      setPerms(perms);
+      setError(err instanceof Error ? err.message : "Could not save permissions");
+    } finally {
+      setPermBusy(false);
+    }
+  }
 
   async function save() {
     setBusy(true);
@@ -185,6 +210,51 @@ function AgentCard({
             </button>
           </div>
         </div>
+      )}
+
+      {/* Permissions (Build 43) — super admin grants per agent */}
+      {agent.role === "super_admin" ? (
+        <div className="mt-3 border-t border-surface-border pt-3">
+          <p className="text-[11px] font-semibold text-text-secondary">Permissions</p>
+          <p className="mt-1 text-[11px] text-text-muted">
+            Super admin — all permissions, always on.
+          </p>
+        </div>
+      ) : (
+        !isSelf && (
+          <div className="mt-3 border-t border-surface-border pt-3">
+            <p className="text-[11px] font-semibold text-text-secondary">Permissions</p>
+            <div className="mt-2 space-y-2">
+              {STAFF_PERMISSION_META.map((meta) => (
+                <div key={meta.key} className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="text-[12px] font-medium text-text-primary">{meta.label}</p>
+                    <p className="text-[11px] leading-snug text-text-muted">{meta.hint}</p>
+                  </div>
+                  <button
+                    type="button"
+                    role="switch"
+                    aria-checked={perms[meta.key]}
+                    aria-label={meta.label}
+                    disabled={permBusy}
+                    onClick={() => togglePerm(meta.key)}
+                    className={cn(
+                      "admin-focus mt-0.5 h-5 w-9 shrink-0 rounded-full p-0.5 transition-colors disabled:opacity-50",
+                      perms[meta.key] ? "bg-gold" : "bg-surface-border",
+                    )}
+                  >
+                    <span
+                      className={cn(
+                        "block h-4 w-4 rounded-full bg-white transition-transform",
+                        perms[meta.key] && "translate-x-4",
+                      )}
+                    />
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+        )
       )}
     </div>
   );
