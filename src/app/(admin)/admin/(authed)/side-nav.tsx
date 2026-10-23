@@ -35,13 +35,24 @@ const AGENTS_ITEM: NavItem = {
   icon: UsersIcon,
 };
 
-/** Left nav for the admin shell. Agents link only renders for super_admins. */
-export default function SideNav({ role }: { role: AdminRole }) {
+/** Left nav for the admin shell. Agents link only renders for super_admins.
+ *  `collapsed` (desktop rail) hides labels at md+ only — the mobile drawer
+ *  always shows full labels. */
+export default function SideNav({
+  role,
+  collapsed = false,
+}: {
+  role: AdminRole;
+  collapsed?: boolean;
+}) {
   const pathname = usePathname();
   const items = role === "super_admin" ? [...ITEMS, AGENTS_ITEM] : ITEMS;
 
   return (
-    <nav aria-label="Admin sections" className="flex flex-col gap-1 p-3">
+    <nav
+      aria-label="Admin sections"
+      className={cn("flex flex-col gap-1 p-3", collapsed && "md:p-2")}
+    >
       {items.map((item) => {
         const active = item.exact
           ? pathname === item.href
@@ -51,16 +62,18 @@ export default function SideNav({ role }: { role: AdminRole }) {
           <Link
             key={item.href}
             href={item.href}
+            title={item.label}
             aria-current={active ? "page" : undefined}
             className={cn(
               "admin-focus flex items-center gap-2.5 rounded-md px-3 py-2 text-[13px] transition-colors",
+              collapsed && "md:justify-center md:px-2",
               active
                 ? "bg-gold/15 font-medium text-gold"
                 : "text-text-secondary hover:bg-surface-elevated hover:text-text-primary",
             )}
           >
             <Icon className="h-4 w-4 shrink-0" />
-            {item.label}
+            <span className={cn(collapsed && "md:hidden")}>{item.label}</span>
           </Link>
         );
       })}
