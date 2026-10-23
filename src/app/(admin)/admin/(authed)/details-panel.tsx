@@ -384,7 +384,7 @@ export default function DetailsPanel({
   const [noteBody, setNoteBody] = useState("");
   const [busy, setBusy] = useState(false);
   const [viewer, setViewer] = useState<{ src: string; caption: string } | null>(null);
-  const [confirming, setConfirming] = useState<null | "clear" | "delete">(null);
+  const [pending, setPending] = useState<null | "block" | "clear" | "delete">(null);
   const [selectedGame, setSelectedGame] = useState(games[0]?.id ?? "");
   const [creating, setCreating] = useState(false);
 
@@ -651,7 +651,7 @@ export default function DetailsPanel({
                 <button
                   type="button"
                   disabled={busy}
-                  onClick={() => run(() => setPlayerBlocked(admin.id, detail.player.id, true))}
+                  onClick={() => setPending("block")}
                   className="w-full rounded-lg border border-red-500/50 bg-red-500/10 px-3 py-2.5 text-[13px] font-bold text-red-400 hover:bg-red-500/20 disabled:opacity-40"
                 >
                   Block player
@@ -661,38 +661,20 @@ export default function DetailsPanel({
               <button
                 type="button"
                 disabled={busy}
-                onClick={() => {
-                  if (confirming !== "clear") {
-                    setConfirming("clear");
-                    return;
-                  }
-                  setConfirming(null);
-                  void run(() => clearPlayerChat(admin.id, detail.player.id));
-                }}
+                onClick={() => setPending("clear")}
                 className="w-full rounded-lg border border-amber-500/50 bg-amber-500/10 px-3 py-2.5 text-[13px] font-bold text-amber-400 hover:bg-amber-500/20 disabled:opacity-40"
               >
-                {confirming === "clear"
-                  ? "Tap again to CLEAR the whole chat"
-                  : "Clear chat history"}
+                Clear chat history
               </button>
             )}
             {admin.permissions.player_delete && (
               <button
                 type="button"
                 disabled={busy}
-                onClick={() => {
-                  if (confirming !== "delete") {
-                    setConfirming("delete");
-                    return;
-                  }
-                  setConfirming(null);
-                  void run(() => deletePlayer(admin.id, detail.player.id));
-                }}
+                onClick={() => setPending("delete")}
                 className="w-full rounded-lg border border-red-600/60 bg-red-600/15 px-3 py-2.5 text-[13px] font-bold text-red-400 hover:bg-red-600/25 disabled:opacity-40"
               >
-                {confirming === "delete"
-                  ? `Tap again to DELETE ${detail.player.displayName} forever`
-                  : "Delete player (permanent)"}
+                Delete player (permanent)
               </button>
             )}
             <p className="px-1 text-[11px] leading-relaxed text-text-muted">
@@ -701,6 +683,71 @@ export default function DetailsPanel({
             </p>
           </div>
         </Collapsible>
+      )}
+
+      {/* Moderation confirmation popup (Build 44) */}
+      {pending && (
+        <div
+          className="fixed inset-0 z-[90] flex items-center justify-center bg-black/70 p-4"
+          role="dialog"
+          aria-modal="true"
+          onClick={() => setPending(null)}
+        >
+          <div
+            className="w-full max-w-sm rounded-2xl border border-surface-border bg-surface-card p-5 shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 className="text-[15px] font-bold text-text-primary">
+              {pending === "block"
+                ? "Block this player?"
+                : pending === "clear"
+                  ? "Clear the whole chat?"
+                  : "Delete this player forever?"}
+            </h3>
+            <p className="mt-2 text-[13px] leading-relaxed text-text-muted">
+              {pending === "block"
+                ? `${detail.player.displayName} will be locked out of the app until you unblock them.`
+                : pending === "clear"
+                  ? `All messages with ${detail.player.displayName} will be permanently deleted from the database. Game accounts and deposits stay.`
+                  : `${detail.player.displayName}'s account, game logins, deposits and chat will be permanently deleted from the database. This cannot be undone.`}
+            </p>
+            <div className="mt-4 flex gap-2">
+              <button
+                type="button"
+                onClick={() => setPending(null)}
+                className="flex-1 rounded-lg border border-surface-border px-3 py-2.5 text-[13px] font-semibold text-text-secondary hover:text-text-primary"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={busy}
+                onClick={async () => {
+                  const action = pending;
+                  setPending(null);
+                  if (action === "block") {
+                    await run(() => setPlayerBlocked(admin.id, detail.player.id, true));
+                  } else if (action === "clear") {
+                    await run(() => clearPlayerChat(admin.id, detail.player.id));
+                  } else {
+                    await run(() => deletePlayer(admin.id, detail.player.id));
+                  }
+                }}
+                className={
+                  pending === "clear"
+                    ? "flex-1 rounded-lg bg-amber-500 px-3 py-2.5 text-[13px] font-bold text-black hover:opacity-90 disabled:opacity-40"
+                    : "flex-1 rounded-lg bg-red-600 px-3 py-2.5 text-[13px] font-bold text-white hover:opacity-90 disabled:opacity-40"
+                }
+              >
+                {pending === "block"
+                  ? "Block player"
+                  : pending === "clear"
+                    ? "Clear chat"
+                    : "Delete player"}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {viewer && (
