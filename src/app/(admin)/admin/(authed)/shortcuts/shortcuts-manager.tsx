@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 
 import {
@@ -29,6 +29,8 @@ export default function ShortcutsManager({
   loadError: boolean;
 }) {
   const router = useRouter();
+  const [showForm, setShowForm] = useState(false);
+  const scrollRef = useRef<HTMLDivElement>(null);
   const [query, setQuery] = useState("");
   const [editingId, setEditingId] = useState<string | null>(null);
   const [key, setKey] = useState("");
@@ -63,6 +65,8 @@ export default function ShortcutsManager({
     setExpansion(s.expansion);
     setDescription(s.description ?? "");
     setError(null);
+    setShowForm(true);
+    scrollRef.current?.scrollTo({ top: 0, behavior: "smooth" });
   }
 
   async function save() {
@@ -77,6 +81,7 @@ export default function ShortcutsManager({
       if (editingId) await updateShortcut(admin.id, editingId, input);
       else await createShortcut(admin.id, input);
       resetForm();
+      setShowForm(false);
       router.refresh();
     } catch (e) {
       setError(
@@ -97,20 +102,35 @@ export default function ShortcutsManager({
   }
 
   return (
-    <div className="mx-auto w-full max-w-3xl p-4 md:p-6">
-      <header>
-        <h1 className="font-display text-xl font-extrabold text-text-primary">
-          Text Shortcuts
-        </h1>
-        <p className="mt-1 text-[13px] leading-relaxed text-text-muted">
-          Type a shortcut and a <strong className="text-text-secondary">space</strong> in
-          any player chat and it expands into the full text — e.g.{" "}
-          <code className="rounded bg-surface-elevated px-1 py-0.5 font-mono text-[12px] text-gold">
-            ty
-          </code>{" "}
-          → “Thank you!”. Every staff member can use the enabled shortcuts;
-          only managers can change them here.
-        </p>
+    <div ref={scrollRef} className="admin-thin-scroll h-full overflow-y-auto">
+      <div className="mx-auto w-full max-w-3xl p-4 md:p-6">
+      <header className="flex items-start justify-between gap-3">
+        <div>
+          <h1 className="font-display text-xl font-extrabold text-text-primary">
+            Text Shortcuts
+          </h1>
+          <p className="mt-1 text-[13px] leading-relaxed text-text-muted">
+            Type a shortcut and a <strong className="text-text-secondary">space</strong> in
+            any player chat and it expands into the full text — e.g.{" "}
+            <code className="rounded bg-surface-elevated px-1 py-0.5 font-mono text-[12px] text-gold">
+              ty
+            </code>{" "}
+            → “Thank you!”. Every staff member can use the enabled shortcuts;
+            only managers can change them here.
+          </p>
+        </div>
+        {!showForm && (
+          <button
+            type="button"
+            onClick={() => {
+              resetForm();
+              setShowForm(true);
+            }}
+            className="admin-focus mt-1 shrink-0 rounded-md bg-gold px-3 py-2 text-[13px] font-semibold text-navy hover:opacity-90"
+          >
+            + Add shortcut
+          </button>
+        )}
       </header>
 
       {loadError && (
@@ -120,7 +140,8 @@ export default function ShortcutsManager({
         </div>
       )}
 
-      {/* Create / edit form */}
+      {/* Create / edit form — opens on Add/Edit, closes after save (Build 61) */}
+      {showForm && (
       <section className="mt-5 rounded-2xl border border-surface-border bg-surface-card p-4">
         <h2 className="text-[13px] font-bold uppercase tracking-wide text-text-secondary">
           {editingId ? "Edit shortcut" : "Add a shortcut"}
@@ -191,17 +212,19 @@ export default function ShortcutsManager({
           >
             {busy ? "Saving…" : editingId ? "Save changes" : "Add shortcut"}
           </button>
-          {editingId && (
-            <button
-              type="button"
-              onClick={resetForm}
-              className="admin-focus rounded-lg border border-surface-border px-4 py-2 text-[13px] font-semibold text-text-secondary hover:text-text-primary"
-            >
-              Cancel edit
-            </button>
-          )}
+          <button
+            type="button"
+            onClick={() => {
+              resetForm();
+              setShowForm(false);
+            }}
+            className="admin-focus rounded-lg border border-surface-border px-4 py-2 text-[13px] font-semibold text-text-secondary hover:text-text-primary"
+          >
+            Cancel
+          </button>
         </div>
       </section>
+      )}
 
       {/* Search + list */}
       <div className="mt-6">
@@ -331,6 +354,7 @@ export default function ShortcutsManager({
           </div>
         </div>
       )}
+      </div>
     </div>
   );
 }
