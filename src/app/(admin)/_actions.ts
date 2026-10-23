@@ -1355,7 +1355,7 @@ export async function approveDeposit(
       sender: "admin",
       kind: "text",
       body: {
-        text: `Great news — your deposit of $${deposit.amount} is approved! 🎉 Give me a moment, I'm adding the credits to your account right now. If it's your first load, your signup bonus goes on top automatically 🍀`,
+        text: `Great news — your deposit of $${deposit.amount} is approved! 🎉 Give me a moment, I'm adding the credits to your account with the bonus right now 🍀`,
       },
       is_read_by_player: false,
       is_read_by_admin: true,
