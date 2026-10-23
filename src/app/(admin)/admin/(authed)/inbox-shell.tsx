@@ -152,6 +152,27 @@ export default function InboxShell({
   // Overview lives in state so Realtime can update it WITHOUT
   // router.refresh() (a full page re-render per event was a top speed killer).
   const [overview, setOverview] = useState<PlayerOverview[]>(initialOverview);
+  // Desktop details-panel collapse (Build 50) — persisted, same pattern
+  // as the sidebar rail in admin-shell.
+  const [panelCollapsed, setPanelCollapsed] = useState<boolean>(() => {
+    try {
+      return window.localStorage.getItem("pv-details-collapsed") === "1";
+    } catch {
+      return false;
+    }
+  });
+
+  function togglePanel() {
+    setPanelCollapsed((v) => {
+      const next = !v;
+      try {
+        window.localStorage.setItem("pv-details-collapsed", next ? "1" : "0");
+      } catch {
+        // ignore
+      }
+      return next;
+    });
+  }
   const [selectedId, setSelectedId] = useState<string | null>(
     () => initialSelectedId ?? restored?.selectedId ?? null,
   );
@@ -547,6 +568,8 @@ export default function InboxShell({
                   void selectPlayer(null);
                 }}
                 onShowDetails={() => setMobilePanel("details")}
+                panelCollapsed={panelCollapsed}
+                onTogglePanel={togglePanel}
               />
             )}
           </>
@@ -573,7 +596,11 @@ export default function InboxShell({
           className={cn(
             "shrink-0 border-l border-surface-border",
             "w-full md:w-[336px]",
-            mobileView === "details" ? "flex flex-col" : "hidden md:flex md:flex-col",
+            mobileView === "details"
+              ? "flex flex-col"
+              : panelCollapsed
+                ? "hidden"
+                : "hidden md:flex md:flex-col",
           )}
         >
           {/* Mobile back button */}

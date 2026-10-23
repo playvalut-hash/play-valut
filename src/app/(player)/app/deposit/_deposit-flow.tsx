@@ -94,6 +94,8 @@ export default function DepositFlow({ methods }: { methods: PaymentMethod[] }) {
       } else {
         setError(result.error);
       }
+    } catch {
+      setError("Upload failed — check your connection and try again.");
     } finally {
       setSubmitting(false);
     }

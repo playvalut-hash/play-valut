@@ -377,6 +377,15 @@ function MessageItem({
 
 /* ── Thread ────────────────────────────────────────────────────────────── */
 
+function PanelRightIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="3" y="4" width="18" height="16" rx="2" />
+      <path d="M14.5 4v16" />
+    </svg>
+  );
+}
+
 export default function ThreadView({
   admin,
   player,
@@ -388,6 +397,8 @@ export default function ThreadView({
   onMutated,
   onBack,
   onShowDetails,
+  panelCollapsed,
+  onTogglePanel,
 }: {
   admin: AdminInfo;
   player: PlayerOverview;
@@ -402,6 +413,9 @@ export default function ThreadView({
    *  mobile nav bar into this one bar). */
   onBack?: () => void;
   onShowDetails?: () => void;
+  /** Desktop: details-panel collapse (Build 50). */
+  panelCollapsed?: boolean;
+  onTogglePanel?: () => void;
 }) {
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
@@ -578,6 +592,19 @@ export default function ThreadView({
             className="admin-focus shrink-0 rounded-full border border-gold/40 px-3 py-1.5 text-xs font-semibold text-gold transition hover:bg-gold/10 md:hidden"
           >
             Details
+          </button>
+        ) : null}
+        {onTogglePanel ? (
+          <button
+            type="button"
+            onClick={onTogglePanel}
+            aria-label={panelCollapsed ? "Show player details panel" : "Hide player details panel"}
+            title={panelCollapsed ? "Show details panel" : "Hide details panel"}
+            className={`admin-focus hidden h-9 w-9 shrink-0 items-center justify-center rounded-full transition hover:bg-surface-elevated md:flex ${
+              panelCollapsed ? "text-gold" : "text-text-muted hover:text-gold"
+            }`}
+          >
+            <PanelRightIcon className="h-5 w-5" />
           </button>
         ) : null}
       </div>

@@ -449,6 +449,10 @@ function PaymentCardMessage({ message }: { message: ChatMessage }) {
       setError("Attach your payment screenshot.");
       return;
     }
+    if (file.size > 8 * 1024 * 1024) {
+      setError("Screenshot must be under 8 MB.");
+      return;
+    }
     setSubmitting(true);
     try {
       const formData = new FormData();
@@ -462,6 +466,9 @@ function PaymentCardMessage({ message }: { message: ChatMessage }) {
       } else {
         setError(result.error);
       }
+    } catch {
+      // Never fail silently — the player must always see what happened.
+      setError("Upload failed — check your connection and try again.");
     } finally {
       setSubmitting(false);
     }
