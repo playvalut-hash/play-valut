@@ -1,7 +1,6 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
 
 import type {
   AdminInfo,
@@ -9,7 +8,12 @@ import type {
   PlayerDetailView,
   PlayerOverview,
 } from "../../_actions";
-import { getPlayerDetail, getThread, markThreadRead } from "../../_actions";
+import {
+  getInboxOverview,
+  getPlayerDetail,
+  getThread,
+  markThreadRead,
+} from "../../_actions";
 import { cn } from "@/lib/utils";
 import { ChatIcon, ChevronDownIcon, SearchIcon } from "@/components/icons";
 import ThreadView from "./thread";
@@ -35,7 +39,6 @@ function PlayerRow({
       type="button"
       onClick={onSelect}
       onMouseEnter={onPrefetch}
-      onTouchStart={onPrefetch}
       aria-current={selected ? "true" : undefined}
       className={cn(
         "admin-focus admin-lift block w-full border-b border-surface-border/50 px-3 py-2.5 text-left",
@@ -88,7 +91,7 @@ function PlayerRow({
  */
 export default function InboxShell({
   admin,
-  overview,
+  overview: initialOverview,
   selectedId: initialSelectedId,
   thread: initialThread,
   detail: initialDetail,
@@ -107,13 +110,15 @@ export default function InboxShell({
   methodsCount: number;
   tagOptions: string[];
 }) {
-  const router = useRouter();
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<Filter>("all");
   const [tag, setTag] = useState<string>("");
 
   // Client-side selection: instant, no page reload
-  const [selectedId, setSelectedId] = useState<string | null>(initialSelectedId);
+    // Overview lives in state so Realtime can update it WITHOUT
+  // router.refresh() (a full page re-render per event was a top speed killer).
+  const [overview, setOverview] = useState<PlayerOverview[]>(initialOverview);
+const [selectedId, setSelectedId] = useState<string | null>(initialSelectedId);
   const [thread, setThread] = useState<ChatMessageView[]>(initialThread);
   const [detail, setDetail] = useState<PlayerDetailView | null>(initialDetail);
   const [loadingThread, setLoadingThread] = useState(false);
@@ -154,19 +159,29 @@ export default function InboxShell({
     }
   }, [cache]);
 
-  // Background prefetch (hover/touch on a row) — fills the cache so the
-  // click that follows opens instantly.
-  const prefetchPlayer = useCallback((id: string) => {
-    if (cache.has(id)) return;
-    void (async () => {
-      try {
-        const [t, d] = await Promise.all([getThread(id), getPlayerDetail(id)]);
-        cache.set(id, { thread: t, detail: d });
-      } catch {
-        // prefetch is best-effort
-      }
-    })();
-  }, [cache]);
+  // Background prefetch — THREAD ONLY, after a 200ms hover pause, one
+  // pending slot (sweeping the mouse across rows no longer fires a query
+  // storm). Detail loads on click; touch devices skip prefetch entirely.
+  const prefetchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const prefetchPlayer = useCallback(
+    (id: string) => {
+      if (cache.has(id)) return;
+      if (prefetchTimerRef.current) clearTimeout(prefetchTimerRef.current);
+      prefetchTimerRef.current = setTimeout(() => {
+        prefetchTimerRef.current = null;
+        if (cache.has(id)) return;
+        void (async () => {
+          try {
+            const t = await getThread(id);
+            if (!cache.has(id)) cache.set(id, { thread: t, detail: null });
+          } catch {
+            // prefetch is best-effort
+          }
+        })();
+      }, 200);
+    },
+    [cache],
+  );
 
   async function selectPlayer(id: string | null) {
     if (id === selectedId) {
@@ -210,52 +225,84 @@ export default function InboxShell({
     }
   }
 
-  // Realtime: refresh on new messages/deposits without full polling.
-  // (Polling every 8s caused flicker; realtime is instant.)
+  // Realtime: TARGETED updates only — no router.refresh() storms.
+  // - Event for the OPEN player  -> refresh that thread (250ms coalesce).
+  // - Any event                  -> refresh the overview list (1.5s coalesce).
+  // - A slow 30s safety poll covers anything Realtime might miss.
+  const overviewTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const selectedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const refreshOverview = useCallback(async () => {
+    try {
+      setOverview(await getInboxOverview());
+    } catch {
+      // keep current list on transient errors
+    }
+  }, []);
+
+  const scheduleOverview = useCallback(() => {
+    if (overviewTimerRef.current) return;
+    overviewTimerRef.current = setTimeout(() => {
+      overviewTimerRef.current = null;
+      void refreshOverview();
+    }, 1500);
+  }, [refreshOverview]);
+
+  const scheduleSelected = useCallback(() => {
+    if (selectedTimerRef.current) return;
+    selectedTimerRef.current = setTimeout(() => {
+      selectedTimerRef.current = null;
+      void refreshSelected();
+    }, 250);
+  }, [refreshSelected]);
+
   useEffect(() => {
     let channel: { unsubscribe: () => void } | null = null;
-    let timer: ReturnType<typeof setInterval> | null = null;
 
     async function setup() {
       try {
         const { createClient } = await import("@/lib/supabase/client");
         const supabase = createClient();
+        const onEvent = (table: string) => (payload: { new?: unknown; old?: unknown }) => {
+          if (document.hidden) return;
+          const rec = (payload.new ?? payload.old) as
+            | { player_id?: string }
+            | undefined;
+          if (rec?.player_id && rec.player_id === selectedIdRef.current) {
+            scheduleSelected();
+          }
+          scheduleOverview();
+          void table; // (handler factory arg, kept for clarity)
+        };
         channel = supabase
           .channel("admin-inbox")
           .on(
             "postgres_changes",
             { event: "*", schema: "public", table: "chat_messages" },
-            () => {
-              if (!document.hidden) {
-                router.refresh();
-                void refreshSelected();
-              }
-            },
+            onEvent("chat_messages"),
           )
           .on(
             "postgres_changes",
             { event: "*", schema: "public", table: "deposits" },
-            () => {
-              if (!document.hidden) {
-                router.refresh();
-                void refreshSelected();
-              }
-            },
+            onEvent("deposits"),
           )
           .subscribe() as unknown as { unsubscribe: () => void };
       } catch {
-        // Fallback: slow poll if realtime fails
-        timer = setInterval(() => {
-          if (!document.hidden) router.refresh();
-        }, 30000);
+        // realtime unavailable — the safety poll below still runs
       }
     }
     void setup();
+    const poll = setInterval(() => {
+      if (!document.hidden) {
+        void refreshOverview();
+        void refreshSelected();
+      }
+    }, 30000);
     return () => {
       channel?.unsubscribe();
-      if (timer) clearInterval(timer);
+      clearInterval(poll);
     };
-  }, [router, refreshSelected]);
+  }, [refreshSelected, refreshOverview, scheduleOverview, scheduleSelected]);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
