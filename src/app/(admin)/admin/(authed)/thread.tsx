@@ -9,6 +9,7 @@ import {
   decryptAccountPassword,
   markAccountActive,
   sendAdminMessage,
+  adminSendChatImage,
   sendGamesList,
   sendPayList,
   sendQuickReply,
@@ -24,6 +25,7 @@ import {
   EyeOffIcon,
   LinkIcon,
   SendIcon,
+  ImageIcon,
 } from "@/components/icons";
 import ScreenshotViewer from "./screenshot-viewer";
 import { Avatar, StatusChip, bubbleTime, fullDateTime } from "./ui-bits";
@@ -203,7 +205,7 @@ function MessageItem({
   }
 
   if (msg.kind === "account" && msg.account) {
-    const mine = msg.sender === "admin";
+    const mine = msg.sender !== "player"; // support side = admin-typed AND system auto messages (Build 58 separation fix)
     return (
       <div className={cn("admin-msg-in flex py-1", mine ? "justify-end" : "justify-start")}>
         <AccountCard
@@ -320,7 +322,7 @@ function MessageItem({
   }
 
   if (msg.kind === "shot" && msg.screenshotUrl) {
-    const mine = msg.sender === "admin";
+    const mine = msg.sender !== "player"; // support side = admin-typed AND system auto messages (Build 58 separation fix)
     return (
       <div className={cn("admin-msg-in flex py-1", mine ? "justify-end" : "justify-start")}>
         <button
@@ -341,7 +343,7 @@ function MessageItem({
   }
 
   // text
-  const mine = msg.sender === "admin";
+  const mine = msg.sender !== "player"; // support side = admin-typed AND system auto messages (Build 58 separation fix)
   return (
     <div className={cn("admin-msg-in flex items-end gap-1.5 py-0.5", mine ? "justify-end" : "justify-start")}>
       {!mine && <Avatar name={playerName} size="sm" />}
@@ -483,6 +485,24 @@ export default function ThreadView({
       await changed();
     } catch {
       // keep draft
+    } finally {
+      setSending(false);
+    }
+  }
+
+  const imageInputRef = useRef<HTMLInputElement>(null);
+
+  async function sendImageFile(file: File) {
+    if (sending) return;
+    if (!file.type.startsWith("image/") || file.size > 8 * 1024 * 1024) return;
+    setSending(true);
+    try {
+      const fd = new FormData();
+      fd.append("screenshot", file);
+      await adminSendChatImage(admin.id, player.id, fd);
+      await changed();
+    } catch {
+      // keep composer state
     } finally {
       setSending(false);
     }
@@ -761,11 +781,39 @@ export default function ThreadView({
         style={{ paddingBottom: "calc(0.5rem + env(safe-area-inset-bottom))" }}
       >
         <input
+          ref={imageInputRef}
+          type="file"
+          accept="image/*"
+          className="hidden"
+          onChange={(e) => {
+            const f = e.target.files?.[0];
+            e.target.value = "";
+            if (f) void sendImageFile(f);
+          }}
+        />
+        <button
+          type="button"
+          onClick={() => imageInputRef.current?.click()}
+          disabled={sending}
+          aria-label="Send an image"
+          title="Send an image (or paste one)"
+          className="admin-focus flex h-[42px] w-[42px] shrink-0 items-center justify-center rounded-full border border-surface-border text-text-secondary transition hover:text-gold disabled:opacity-40"
+        >
+          <ImageIcon className="h-[18px] w-[18px]" />
+        </button>
+        <input
           type="text"
           value={draft}
           onChange={(e) => {
             setDraft(e.target.value);
             broadcastAdminTyping();
+          }}
+          onPaste={(e) => {
+            const file = e.clipboardData?.files?.[0];
+            if (file && file.type.startsWith("image/")) {
+              e.preventDefault();
+              void sendImageFile(file);
+            }
           }}
           onKeyDown={(e) => {
             if (e.key === "Enter" && !e.shiftKey) {

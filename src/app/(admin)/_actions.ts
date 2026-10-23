@@ -1229,6 +1229,46 @@ export async function deleteGameAccount(
  * Mark an account as active (dual update): flip the game_accounts row,
  * flip the in-chat account card in place, and notify the player.
  */
+/**
+ * Send an image into a player's chat (Build 58 — attach button / paste).
+ * Stored in the same screenshots bucket as deposit shots; renders as a
+ * normal photo message on both sides.
+ */
+export async function adminSendChatImage(
+  adminId: string,
+  playerId: string,
+  formData: FormData,
+): Promise<void> {
+  await requireAdmin(adminId);
+  z.string().uuid().parse(playerId);
+  const entry = formData.get("screenshot");
+  if (!(entry instanceof File) || entry.size === 0) {
+    throw new Error("No image attached");
+  }
+  if (!entry.type.startsWith("image/")) throw new Error("That file isn't an image");
+  if (entry.size > 8 * 1024 * 1024) throw new Error("Image must be under 8 MB");
+  const client = svc();
+  const ext = entry.type.includes("png") ? "png" : "jpg";
+  const path = `${playerId}/${crypto.randomUUID()}.${ext}`;
+  const buffer = Buffer.from(await entry.arrayBuffer());
+  const { error: upError } = await client.storage
+    .from("screenshots")
+    .upload(path, buffer, {
+      contentType: entry.type || "image/jpeg",
+      upsert: false,
+    });
+  if (upError) throw new Error("Couldn't upload the image. Try again.");
+  const { error } = await client.from("chat_messages").insert({
+    player_id: playerId,
+    sender: "admin",
+    kind: "shot",
+    body: { screenshot_path: path, caption: "Image from support" },
+    is_read_by_player: false,
+    is_read_by_admin: true,
+  });
+  if (error) throw new Error("Couldn't send the image. Try again.");
+}
+
 export async function markAccountActive(
   adminId: string,
   accountId: string,

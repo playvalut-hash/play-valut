@@ -787,3 +787,51 @@ export async function submitChatDeposit(formData: FormData): Promise<ActionResul
 
   return { ok: true };
 }
+
+/**
+ * Send a plain image into the support chat (Build 58 — attach button /
+ * paste). Same bucket + message shape as a deposit screenshot, but not
+ * tied to any deposit.
+ */
+export async function sendChatImage(formData: FormData): Promise<ActionResult> {
+  const file = getFormFile(formData);
+  if (!file) return { ok: false, error: "No image selected." };
+  if (!file.type.startsWith("image/")) {
+    return { ok: false, error: "That file isn't an image." };
+  }
+  if (file.size > MAX_SCREENSHOT_BYTES) {
+    return { ok: false, error: "Image must be under 8 MB." };
+  }
+
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { ok: false, error: "You're signed out. Please sign in again." };
+  if (await isPlayerBlocked(user.id)) {
+    return { ok: false, error: "Your account has been blocked. Please contact support." };
+  }
+
+  let screenshotPath: string;
+  try {
+    screenshotPath = await uploadScreenshot(user.id, file);
+  } catch (err) {
+    return {
+      ok: false,
+      error: err instanceof Error ? err.message : "Upload failed.",
+    };
+  }
+
+  const service = createServiceClient();
+  const { error } = await service.from("chat_messages").insert({
+    player_id: user.id,
+    sender: "player",
+    kind: "shot",
+    body: { screenshot_path: screenshotPath, caption: "Image from player" },
+    is_read_by_admin: false,
+    is_read_by_player: true,
+  });
+  if (error) return { ok: false, error: "Couldn't send the image. Try again." };
+  await notifyAdmin("message", user.id, "Sent an image in chat");
+  return { ok: true };
+}

@@ -21,6 +21,7 @@ import {
   getThread,
   markThreadRead,
   sendChatMessage,
+  sendChatImage,
   submitChatDeposit,
 } from "../_actions";
 import type { AccountCard, ChatMessage } from "../_types";
@@ -969,6 +970,32 @@ export default function ChatClient({
     }
   }
 
+  const imageInputRef = useRef<HTMLInputElement>(null);
+
+  async function sendImage(file: File) {
+    if (sending) return;
+    if (!file.type.startsWith("image/")) {
+      setError("That file isn't an image.");
+      return;
+    }
+    if (file.size > 8 * 1024 * 1024) {
+      setError("Image must be under 8 MB.");
+      return;
+    }
+    setSending(true);
+    setError(null);
+    noteAwaiting();
+    try {
+      const fd = new FormData();
+      fd.append("screenshot", file);
+      const result = await sendChatImage(fd);
+      if (!result.ok) setError(result.error);
+      void refresh();
+    } finally {
+      setSending(false);
+    }
+  }
+
   function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     void send(input);
@@ -1098,12 +1125,40 @@ export default function ChatClient({
             Type a message
           </label>
           <input
+            ref={imageInputRef}
+            type="file"
+            accept="image/*"
+            className="hidden"
+            onChange={(e) => {
+              const f = e.target.files?.[0];
+              e.target.value = "";
+              if (f) void sendImage(f);
+            }}
+          />
+          <button
+            type="button"
+            onClick={() => imageInputRef.current?.click()}
+            disabled={sending}
+            aria-label="Send an image"
+            title="Send an image (or paste one)"
+            className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full border border-surface-border text-text-secondary transition hover:text-gold disabled:opacity-50"
+          >
+            <ImageIcon className="h-5 w-5" />
+          </button>
+          <input
             id="chat-input"
             type="text"
             value={input}
             onChange={(e) => {
               setInput(e.target.value);
               broadcastTyping();
+            }}
+            onPaste={(e) => {
+              const file = e.clipboardData?.files?.[0];
+              if (file && file.type.startsWith("image/")) {
+                e.preventDefault();
+                void sendImage(file);
+              }
             }}
             placeholder="Type a message…"
             autoComplete="off"
