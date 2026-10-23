@@ -85,6 +85,32 @@ function PlayerRow({
   );
 }
 
+/* ── Inbox state persistence ──────────────────────────────────────────────
+ * Navigating to another admin section and back REMOUNTS this shell, which
+ * used to wipe the conversation cache and the open player (live-test find,
+ * Build 37). A small sessionStorage snapshot (open player + a few cached
+ * threads) is restored on mount and silently revalidated, so coming back
+ * to the inbox is instant and keeps your place. */
+const INBOX_SNAP_KEY = "pv-inbox-v1";
+type InboxSnap = {
+  v: 1;
+  selectedId: string | null;
+  entries: Array<
+    [string, { thread: ChatMessageView[]; detail: PlayerDetailView | null }]
+  >;
+};
+function loadInboxSnapshot(): InboxSnap | null {
+  try {
+    const raw = sessionStorage.getItem(INBOX_SNAP_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as InboxSnap;
+    if (parsed.v !== 1 || !Array.isArray(parsed.entries)) return null;
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Business Inbox: 320px player list · flexible WhatsApp-style thread ·
  * 336px details panel. Uses Supabase Realtime for instant updates.
@@ -114,13 +140,33 @@ export default function InboxShell({
   const [filter, setFilter] = useState<Filter>("all");
   const [tag, setTag] = useState<string>("");
 
+  // Snapshot from a previous mount of this shell (section navigation
+  // remounts it) — restores the open conversation + cache instantly.
+  const [restored] = useState<InboxSnap | null>(loadInboxSnapshot);
+  const restoredEntry = (id: string | null) =>
+    id ? restored?.entries.find(([k]) => k === id)?.[1] : undefined;
+
   // Client-side selection: instant, no page reload
-    // Overview lives in state so Realtime can update it WITHOUT
+  // Overview lives in state so Realtime can update it WITHOUT
   // router.refresh() (a full page re-render per event was a top speed killer).
   const [overview, setOverview] = useState<PlayerOverview[]>(initialOverview);
-const [selectedId, setSelectedId] = useState<string | null>(initialSelectedId);
-  const [thread, setThread] = useState<ChatMessageView[]>(initialThread);
-  const [detail, setDetail] = useState<PlayerDetailView | null>(initialDetail);
+  const [selectedId, setSelectedId] = useState<string | null>(
+    () => initialSelectedId ?? restored?.selectedId ?? null,
+  );
+  const [thread, setThread] = useState<ChatMessageView[]>(() => {
+    if (initialThread.length > 0) return initialThread;
+    return (
+      restoredEntry(initialSelectedId ?? restored?.selectedId ?? null)
+        ?.thread ?? initialThread
+    );
+  });
+  const [detail, setDetail] = useState<PlayerDetailView | null>(() => {
+    if (initialDetail) return initialDetail;
+    return (
+      restoredEntry(initialSelectedId ?? restored?.selectedId ?? null)
+        ?.detail ?? initialDetail
+    );
+  });
   const [loadingThread, setLoadingThread] = useState(false);
   const selectedIdRef = useRef<string | null>(initialSelectedId);
   useEffect(() => {
@@ -135,6 +181,9 @@ const [selectedId, setSelectedId] = useState<string | null>(initialSelectedId);
       string,
       { thread: ChatMessageView[]; detail: PlayerDetailView | null }
     >();
+    if (restored) {
+      for (const [id, entry] of restored.entries) m.set(id, entry);
+    }
     if (initialSelectedId) {
       m.set(initialSelectedId, { thread: initialThread, detail: initialDetail });
     }
@@ -158,6 +207,37 @@ const [selectedId, setSelectedId] = useState<string | null>(initialSelectedId);
       // keep current view on transient errors
     }
   }, [cache]);
+
+  // Persist a compact snapshot whenever the open conversation changes,
+  // so a remount (section navigation and back) restores it instantly.
+  useEffect(() => {
+    try {
+      const entries = [...cache.entries()]
+        .slice(-6)
+        .map(
+          ([id, v]) =>
+            [
+              id,
+              { thread: v.thread.slice(-150), detail: v.detail },
+            ] as InboxSnap["entries"][number],
+        );
+      const snap: InboxSnap = { v: 1, selectedId, entries };
+      sessionStorage.setItem(INBOX_SNAP_KEY, JSON.stringify(snap));
+    } catch {
+      // storage full / unavailable — persistence is best-effort
+    }
+  }, [cache, selectedId, thread, detail]);
+
+  // If this mount restored a conversation the server did not load, silently
+  // revalidate it once so the restored view is also fresh.
+  const restoredOnceRef = useRef(false);
+  useEffect(() => {
+    if (restoredOnceRef.current) return;
+    restoredOnceRef.current = true;
+    if (!initialSelectedId && restored?.selectedId) {
+      void refreshSelected();
+    }
+  }, [initialSelectedId, restored, refreshSelected]);
 
   // Background prefetch — THREAD ONLY, after a 200ms hover pause, one
   // pending slot (sweeping the mouse across rows no longer fires a query
