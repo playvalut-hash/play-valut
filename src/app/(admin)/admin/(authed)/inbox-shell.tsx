@@ -123,6 +123,7 @@ export default function InboxShell({
   detail: initialDetail,
   games,
   gamesCount,
+  methods,
   methodsCount,
   tagOptions,
 }: {
@@ -133,6 +134,7 @@ export default function InboxShell({
   detail: PlayerDetailView | null;
   games: Array<{ id: string; name: string }>;
   gamesCount: number;
+  methods: Array<{ id: string; name: string; brandColor: string | null }>;
   methodsCount: number;
   tagOptions: string[];
 }) {
@@ -558,6 +560,7 @@ export default function InboxShell({
                 thread={thread}
                 games={games}
                 gamesCount={gamesCount}
+                methods={methods}
                 methodsCount={methodsCount}
                 onMutated={refreshSelected}
               />
