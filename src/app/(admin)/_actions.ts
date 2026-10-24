@@ -2829,24 +2829,59 @@ export async function createGameAccountForPlayer(
 
   // Send it to the player in chat, exactly like a requested account:
   // a short setup note, a human beat, then the CREATING card.
-  await client.from("chat_messages").insert({
-    player_id: playerId,
-    sender: "system",
-    kind: "text",
-    body: { text: `Setting up your ${gameName} account — give me just a sec 👍` },
-    is_read_by_player: false,
-    is_read_by_admin: true,
-  });
-  void broadcastAgentTyping(playerId);
-  await sleep(900);
-  await client.from("chat_messages").insert({
-    player_id: playerId,
-    sender: "system",
-    kind: "account",
-    body: { game_id: gameId, account_id: accountId, status: "creating" },
-    is_read_by_player: false,
-    is_read_by_admin: true,
-  });
+  // Atomicity (v2 Phase 2, audit M4): the three writes used to run
+  // unchecked — a failed note/card insert succeeded SILENTLY, leaving an
+  // orphan "creating" account with no card (recoverable only from the
+  // panel, confusing for the player). Now every write is checked, and
+  // any failure after the account insert rolls the sequence back
+  // (note message + account row, best-effort) before the error surfaces.
+  // Residual gap, stated plainly: a process crash during the 900 ms beat
+  // still orphans — closing that needs a single-transaction RPC, which
+  // cannot encrypt the password (the key lives server-side only).
+  let noteId: string | null = null;
+  try {
+    const { data: note, error: noteError } = await client
+      .from("chat_messages")
+      .insert({
+        player_id: playerId,
+        sender: "system",
+        kind: "text",
+        body: { text: `Setting up your ${gameName} account — give me just a sec 👍` },
+        is_read_by_player: false,
+        is_read_by_admin: true,
+      })
+      .select("id")
+      .single();
+    if (noteError || !note) throw new Error("Could not send setup note");
+    noteId = (note as { id: string }).id;
+    void broadcastAgentTyping(playerId);
+    await sleep(900);
+    const { error: cardError } = await client.from("chat_messages").insert({
+      player_id: playerId,
+      sender: "system",
+      kind: "account",
+      body: { game_id: gameId, account_id: accountId, status: "creating" },
+      is_read_by_player: false,
+      is_read_by_admin: true,
+    });
+    if (cardError) throw new Error("Could not send account card");
+  } catch (err) {
+    if (noteId) {
+      await client.from("chat_messages").delete().eq("id", noteId);
+    }
+    const { error: cleanupError } = await client
+      .from("game_accounts")
+      .delete()
+      .eq("id", accountId);
+    if (cleanupError) {
+      await audit(
+        adminId,
+        "accounts.create_cleanup_failed",
+        `${playerId}/${gameId}/${accountId}`,
+      );
+    }
+    throw err;
+  }
 
   await audit(adminId, "accounts.create", `${playerId}/${gameId}`);
 }
