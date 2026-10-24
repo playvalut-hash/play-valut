@@ -1524,6 +1524,8 @@ export async function approveDeposit(
   ]);
 
   audit(adminId, "deposits.approve", `${depositId} amount=${deposit.amount}`);
+  // Retention sweep, best-effort — never blocks the decision (audit H7).
+  await sweepScreenshotRetentionBestEffort();
 }
 
 export async function rejectDeposit(
@@ -1574,6 +1576,8 @@ export async function rejectDeposit(
   ]);
 
   audit(adminId, "deposits.reject", depositId);
+  // Retention sweep, best-effort — never blocks the decision (audit H7).
+  await sweepScreenshotRetentionBestEffort();
 }
 
 /** Mint a 1-hour signed URL for a private deposit screenshot. */
@@ -2146,6 +2150,246 @@ export async function setPlayerBlocked(
   audit(adminId, blocked ? "player.block" : "player.unblock", playerId);
 }
 
+/* ── Screenshot storage lifecycle (v2 Phase 1, audit H7) ─────────────── */
+
+/**
+ * User decision (2026-10-24): EVERY screenshot — deposit proofs and chat
+ * images alike — is deleted 30 days after its owning event (deposit
+ * decision / message share). Clearing a chat deletes its screenshots
+ * IMMEDIATELY, both kinds, from storage and from the database references.
+ * Sharp edge, recorded deliberately: clearing a player who has a PENDING
+ * deposit deletes that deposit's proof too (the row stays, the screenshot
+ * is gone, the player must resend). That is the user's explicit
+ * instruction, not an oversight — do not "fix" it back.
+ */
+const SCREENSHOT_RETENTION_DAYS = 30;
+const STORAGE_REMOVE_CHUNK = 100;
+
+function retentionCutoffIso(): string {
+  return new Date(
+    Date.now() - SCREENSHOT_RETENTION_DAYS * 24 * 60 * 60 * 1000,
+  ).toISOString();
+}
+
+/** screenshot_path values out of chat shot-message bodies. */
+function shotPaths(rows: Array<{ body: unknown }>): string[] {
+  const out: string[] = [];
+  for (const row of rows ?? []) {
+    const body = row.body as { screenshot_path?: unknown } | null;
+    if (body && typeof body.screenshot_path === "string" && body.screenshot_path) {
+      out.push(body.screenshot_path);
+    }
+  }
+  return out;
+}
+
+/**
+ * Best-effort batch removal from the private screenshots bucket. Never
+ * throws: a money/user action must not fail because cleanup failed —
+ * leftovers are caught by the next sweep. Returns the paths actually
+ * removed, so callers null only references that are really gone.
+ */
+async function removeScreenshotObjects(paths: string[]): Promise<string[]> {
+  const unique = [...new Set(paths.filter((p) => p.length > 0))];
+  if (unique.length === 0) return [];
+  const client = svc();
+  const removed: string[] = [];
+  for (let i = 0; i < unique.length; i += STORAGE_REMOVE_CHUNK) {
+    const chunk = unique.slice(i, i + STORAGE_REMOVE_CHUNK);
+    const { error } = await client.storage.from("screenshots").remove(chunk);
+    if (!error) removed.push(...chunk);
+  }
+  return removed;
+}
+
+/**
+ * Deletes screenshots of deposits decided more than 30 days ago and nulls
+ * their deposit references. Pending deposits are NEVER touched here.
+ * Bounded: one batch per call; the manual sweep loops. Returns the number
+ * of screenshots deleted.
+ */
+async function sweepDecidedDepositScreenshots(batchSize = 500): Promise<number> {
+  const client = svc();
+  const { data: rows } = await client
+    .from("deposits")
+    .select("id, screenshot_path")
+    .in("status", ["approved", "rejected"])
+    .lt("decided_at", retentionCutoffIso())
+    .not("screenshot_path", "is", null)
+    .limit(batchSize);
+  const list = (rows ?? []) as Array<{ id: string; screenshot_path: string }>;
+  if (list.length === 0) return 0;
+  const removed = await removeScreenshotObjects(
+    list.map((d) => d.screenshot_path),
+  );
+  if (removed.length === 0) return 0;
+  const removedSet = new Set(removed);
+  const ids = list
+    .filter((d) => removedSet.has(d.screenshot_path))
+    .map((d) => d.id);
+  if (ids.length > 0) {
+    await client
+      .from("deposits")
+      .update({ screenshot_path: null })
+      .in("id", ids);
+  }
+  return removed.length;
+}
+
+/**
+ * Deletes objects of shot messages shared more than 30 days ago, EXCEPT
+ * paths still referenced by a deposit row — those belong to the deposit
+ * sweep, so a pending deposit's proof survives its chat message aging out.
+ * The message rows stay (caption intact); only the image goes — both chat
+ * UIs already render a placeholder for a missing screenshot. Bounded: one
+ * batch per call. Returns the number of screenshots deleted.
+ */
+async function sweepOldChatScreenshots(batchSize = 200): Promise<number> {
+  const client = svc();
+  const { data: rows } = await client
+    .from("chat_messages")
+    .select("body")
+    .eq("kind", "shot")
+    .lt("created_at", retentionCutoffIso())
+    .limit(batchSize);
+  const paths = shotPaths((rows ?? []) as Array<{ body: unknown }>);
+  if (paths.length === 0) return 0;
+  const { data: owned } = await client
+    .from("deposits")
+    .select("screenshot_path")
+    .in("screenshot_path", paths);
+  const ownedSet = new Set(
+    ((owned ?? []) as Array<{ screenshot_path: string }>).map(
+      (d) => d.screenshot_path,
+    ),
+  );
+  const free = paths.filter((p) => !ownedSet.has(p));
+  const removed = await removeScreenshotObjects(free);
+  return removed.length;
+}
+
+/**
+ * Retention sweep after a deposit decision. Best-effort by design: a sweep
+ * failure must never fail the decision itself — the next decision or the
+ * manual sweep retries.
+ */
+async function sweepScreenshotRetentionBestEffort(): Promise<void> {
+  try {
+    await sweepDecidedDepositScreenshots(500);
+    await sweepOldChatScreenshots(200);
+  } catch {
+    // Next decision / manual sweep retries.
+  }
+}
+
+/**
+ * Objects in the screenshots bucket with no live reference (left behind by
+ * pre-fix clears/deletes, when rows were removed but objects were not).
+ * Bucket layout: every upload lives under its owner's id folder
+ * (`<playerId>/<uuid>.<ext>`), so root entries without a "." are folders
+ * and entries with one are stray root files. List order is by name, so a
+ * capped run still makes progress: deleted orphans are gone on re-run.
+ */
+async function findOrphanScreenshotPaths(
+  cap: number,
+): Promise<{ paths: string[]; capped: boolean }> {
+  const client = svc();
+  const referenced = new Set<string>();
+  for (let offset = 0; ; offset += 1000) {
+    const { data } = await client
+      .from("deposits")
+      .select("screenshot_path")
+      .not("screenshot_path", "is", null)
+      .range(offset, offset + 999);
+    const rows = (data ?? []) as Array<{ screenshot_path: string }>;
+    for (const r of rows) referenced.add(r.screenshot_path);
+    if (rows.length < 1000) break;
+  }
+  for (let offset = 0; ; offset += 1000) {
+    const { data } = await client
+      .from("chat_messages")
+      .select("body")
+      .eq("kind", "shot")
+      .range(offset, offset + 999);
+    const rows = (data ?? []) as Array<{ body: unknown }>;
+    for (const path of shotPaths(rows)) referenced.add(path);
+    if (rows.length < 1000) break;
+  }
+  const orphans: string[] = [];
+  let capped = false;
+  for (let rootOffset = 0; !capped; rootOffset += 100) {
+    const { data: root } = await client.storage
+      .from("screenshots")
+      .list("", { limit: 100, offset: rootOffset });
+    const entries = (root ?? []) as Array<{ name: string }>;
+    if (entries.length === 0) break;
+    for (const entry of entries) {
+      if (!entry.name) continue;
+      if (entry.name.includes(".")) {
+        if (!referenced.has(entry.name)) orphans.push(entry.name);
+        continue;
+      }
+      for (let offset = 0; !capped; offset += 100) {
+        const { data: files } = await client.storage
+          .from("screenshots")
+          .list(entry.name, { limit: 100, offset });
+        const names = (files ?? []).map((f) => f.name).filter(Boolean);
+        for (const name of names) {
+          const path = `${entry.name}/${name}`;
+          if (!referenced.has(path)) orphans.push(path);
+          if (orphans.length >= cap) {
+            capped = true;
+            break;
+          }
+        }
+        if (names.length < 100) break;
+      }
+      if (capped) break;
+    }
+    if (entries.length < 100) break;
+  }
+  return { paths: orphans, capped };
+}
+
+/**
+ * Manual storage cleanup (super-admin only, Storage page): retention
+ * sweeps looped to completion plus the orphan diff. Reports counts and
+ * whether a cap stopped the run early (run again to continue).
+ */
+export async function runStorageCleanup(adminId: string): Promise<{
+  decided: number;
+  chat: number;
+  orphans: number;
+  capped: boolean;
+}> {
+  await requireSuperAdmin(adminId);
+  let decided = 0;
+  let chat = 0;
+  let capped = false;
+  for (let i = 0; i < 20; i++) {
+    const n = await sweepDecidedDepositScreenshots(1000);
+    decided += n;
+    if (n < 1000) break;
+    if (i === 19) capped = true;
+  }
+  for (let i = 0; i < 20; i++) {
+    const n = await sweepOldChatScreenshots(500);
+    chat += n;
+    if (n < 500) break;
+    if (i === 19) capped = true;
+  }
+  const { paths, capped: orphanCapped } =
+    await findOrphanScreenshotPaths(1000);
+  if (orphanCapped) capped = true;
+  const removed = await removeScreenshotObjects(paths);
+  audit(
+    adminId,
+    "storage.cleanup",
+    `decided=${decided} chat=${chat} orphans=${removed.length} capped=${capped}`,
+  );
+  return { decided, chat, orphans: removed.length, capped };
+}
+
 /** Delete a player's ENTIRE chat history (accounts/deposits are kept). */
 export async function clearPlayerChat(
   adminId: string,
@@ -2160,7 +2404,25 @@ export async function clearPlayerChat(
       : z.number().int().min(1).max(3650).parse(olderThanDays);
   const client = svc();
 
-  // Clear EVERYTHING (accounts/deposits are kept either way).
+  // Shot paths in scope FIRST (audit H7, user decision 2026-10-24): the
+  // rows are about to disappear, and with them the only record of which
+  // objects to delete. Clearing deletes the screenshots IMMEDIATELY, both
+  // deposit proofs and chat images — not after 30 days.
+  let shotQuery = client
+    .from("chat_messages")
+    .select("body")
+    .eq("player_id", playerId)
+    .eq("kind", "shot");
+  if (days !== undefined) {
+    shotQuery = shotQuery.lt(
+      "created_at",
+      new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString(),
+    );
+  }
+  const { data: shots } = await shotQuery;
+  const paths = shotPaths((shots ?? []) as Array<{ body: unknown }>);
+
+  // Clear EVERYTHING (deposit/game-account ROWS are kept either way).
   if (days === undefined) {
     const { error } = await client
       .from("chat_messages")
@@ -2169,24 +2431,37 @@ export async function clearPlayerChat(
     if (error) throw new Error("Could not clear chat");
     await client.from("notifications").delete().eq("player_id", playerId);
     audit(adminId, "player.clear_chat", `${playerId}:all`);
-    return;
+  } else {
+    // Partial clear (Build 55): only rows OLDER than the cutoff are deleted
+    // from the database — the recent days stay in chat and in the DB.
+    const cutoff = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
+    const { error } = await client
+      .from("chat_messages")
+      .delete()
+      .eq("player_id", playerId)
+      .lt("created_at", cutoff);
+    if (error) throw new Error("Could not clear chat");
+    await client
+      .from("notifications")
+      .delete()
+      .eq("player_id", playerId)
+      .lt("created_at", cutoff);
+    audit(adminId, "player.clear_chat", `${playerId}:older_than_${days}d`);
   }
 
-  // Partial clear (Build 55): only rows OLDER than the cutoff are deleted
-  // from the database — the recent days stay in chat and in the DB.
-  const cutoff = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
-  const { error } = await client
-    .from("chat_messages")
-    .delete()
-    .eq("player_id", playerId)
-    .lt("created_at", cutoff);
-  if (error) throw new Error("Could not clear chat");
-  await client
-    .from("notifications")
-    .delete()
-    .eq("player_id", playerId)
-    .lt("created_at", cutoff);
-  audit(adminId, "player.clear_chat", `${playerId}:older_than_${days}d`);
+  // Storage, best-effort after the rows are gone: delete the objects and
+  // null the deposit references that pointed at them (a cleared pending
+  // deposit keeps its row but loses its proof — see the H7 decision note).
+  if (paths.length > 0) {
+    const removed = await removeScreenshotObjects(paths);
+    if (removed.length > 0) {
+      await client
+        .from("deposits")
+        .update({ screenshot_path: null })
+        .eq("player_id", playerId)
+        .in("screenshot_path", removed);
+    }
+  }
 }
 
 /**
@@ -2203,6 +2478,27 @@ export async function deletePlayer(
   const { error } = await client.auth.admin.deleteUser(playerId);
   if (error) throw new Error("Could not delete player");
   audit(adminId, "player.delete", playerId);
+  // Storage (audit H7): the auth cascade removes the rows but not the
+  // player's screenshots — delete the whole prefix, best-effort. Re-list
+  // from the start after each batch: offset pagination would skip entries
+  // as rows shift under deletion.
+  try {
+    for (let i = 0; i < 50; i++) {
+      const { data: files } = await client.storage
+        .from("screenshots")
+        .list(playerId, { limit: 100 });
+      const names = (files ?? [])
+        .map((f) => f.name)
+        .filter((n) => n && !n.endsWith("/"));
+      if (names.length === 0) break;
+      await client.storage
+        .from("screenshots")
+        .remove(names.map((n) => `${playerId}/${n}`));
+      if (names.length < 100) break;
+    }
+  } catch {
+    // Leftovers are caught by the manual storage sweep.
+  }
 }
 
 /* ── Create game account for player (from details panel) ── */

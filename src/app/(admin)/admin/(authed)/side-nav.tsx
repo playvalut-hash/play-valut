@@ -11,6 +11,7 @@ import {
   GamepadIcon,
   NoteIcon,
   SparklesIcon,
+  TrashIcon,
   UsersIcon,
 } from "@/components/icons";
 
@@ -35,6 +36,12 @@ const AGENTS_ITEM: NavItem = {
   icon: UsersIcon,
 };
 
+const STORAGE_ITEM: NavItem = {
+  href: "/admin/storage",
+  label: "Storage",
+  icon: TrashIcon,
+};
+
 const SHORTCUTS_ITEM: NavItem = {
   href: "/admin/shortcuts",
   label: "Text Shortcuts",
@@ -57,7 +64,7 @@ export default function SideNav({
   const items = [
     ...ITEMS,
     ...(canShortcuts ? [SHORTCUTS_ITEM] : []),
-    ...(role === "super_admin" ? [AGENTS_ITEM] : []),
+    ...(role === "super_admin" ? [AGENTS_ITEM, STORAGE_ITEM] : []),
   ];
 
   return (
