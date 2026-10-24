@@ -36,6 +36,12 @@ const AGENTS_ITEM: NavItem = {
   icon: UsersIcon,
 };
 
+const AUDIT_ITEM: NavItem = {
+  href: "/admin/audit-log",
+  label: "Audit Log",
+  icon: NoteIcon,
+};
+
 const STORAGE_ITEM: NavItem = {
   href: "/admin/storage",
   label: "Storage",
@@ -64,7 +70,7 @@ export default function SideNav({
   const items = [
     ...ITEMS,
     ...(canShortcuts ? [SHORTCUTS_ITEM] : []),
-    ...(role === "super_admin" ? [AGENTS_ITEM, STORAGE_ITEM] : []),
+    ...(role === "super_admin" ? [AGENTS_ITEM, STORAGE_ITEM, AUDIT_ITEM] : []),
   ];
 
   return (

@@ -246,7 +246,19 @@ export interface AgentRow {
 
 /* ── Audit + auth guards ───────────────────────────────────────────────── */
 
-function audit(adminId: string, action: string, detail?: string): void {
+/**
+ * Admin audit record (v2 Phase 1, audit H9). Writes to stdout AND, since
+ * migration 0017, to the audit_log table. Best-effort by design: a failed
+ * insert must never break the action being audited — and before the
+ * migration runs, the insert simply fails silently while stdout still has
+ * the record. Callers MUST await this (durability in serverless is not
+ * guaranteed for fire-and-forget writes).
+ */
+async function audit(
+  adminId: string,
+  action: string,
+  detail?: string,
+): Promise<void> {
   console.info(
     JSON.stringify({
       scope: "admin",
@@ -256,6 +268,17 @@ function audit(adminId: string, action: string, detail?: string): void {
       at: new Date().toISOString(),
     }),
   );
+  try {
+    await svc()
+      .from("audit_log")
+      .insert({
+        admin_id: adminId,
+        action,
+        detail: detail ?? null,
+      });
+  } catch {
+    // stdout above still has the record.
+  }
 }
 
 /* ── Presence (Build 63) ───────────────────────────────────────────────
@@ -423,7 +446,7 @@ export async function adminSignIn(
     await supabase.auth.signOut();
     throw new Error("This account is not authorized for admin access");
   }
-  audit(user.id, "admin.sign_in");
+  await audit(user.id, "admin.sign_in");
   return { ok: true };
 }
 
@@ -529,7 +552,7 @@ export async function markNotificationRead(
 ): Promise<void> {
   await requireAdmin(adminId);
   await svc().from("notifications").update({ is_read: true }).eq("id", notificationId);
-  audit(adminId, "notifications.mark_read", notificationId);
+  await audit(adminId, "notifications.mark_read", notificationId);
 }
 
 /* ── Inbox: players overview ───────────────────────────────────────────── */
@@ -569,6 +592,66 @@ function messagePreview(kind: string, body: Record<string, unknown>): string {
 }
 
 /** Full player list for the inbox, with tags, unread counts, last message and action flags. */
+export type AuditLogRow = {
+  id: string;
+  adminId: string;
+  adminName: string;
+  action: string;
+  detail: string | null;
+  createdAt: string;
+};
+
+/**
+ * Audit trail viewer rows (v2 Phase 1, audit H9). Super-admin only — the
+ * log records every admin's actions. Paged newest-first. Before migration
+ * 0017 runs, the table does not exist and this returns [] (same safe
+ * pattern as the H5 RPC fallback).
+ */
+export async function getAuditLog(
+  adminId: string,
+  opts?: { limit?: number; offset?: number },
+): Promise<AuditLogRow[]> {
+  await requireSuperAdmin(adminId);
+  const limit = Math.min(Math.max(opts?.limit ?? 50, 1), 200);
+  const offset = Math.max(opts?.offset ?? 0, 0);
+  const client = svc();
+  const { data: rows } = await client
+    .from("audit_log")
+    .select("id, admin_id, action, detail, created_at")
+    .order("created_at", { ascending: false })
+    .range(offset, offset + limit - 1);
+  const list = (rows ?? []) as Array<{
+    id: string;
+    admin_id: string;
+    action: string;
+    detail: string | null;
+    created_at: string;
+  }>;
+  if (list.length === 0) return [];
+  const adminIds = [...new Set(list.map((r) => r.admin_id))];
+  const { data: admins } = await client
+    .from("admin_users")
+    .select("id, display_name, email")
+    .in("id", adminIds);
+  const names = new Map(
+    ((admins ?? []) as Array<{
+      id: string;
+      display_name: string;
+      email: string;
+    }>).map(
+      (a) => [a.id, a.display_name || a.email] as const,
+    ),
+  );
+  return list.map((r) => ({
+    id: r.id,
+    adminId: r.admin_id,
+    adminName: names.get(r.admin_id) ?? "Unknown",
+    action: r.action,
+    detail: r.detail,
+    createdAt: r.created_at,
+  }));
+}
+
 /**
  * Per-player inbox counts (v2 Phase 1, audit H5). One grouped RPC instead
  * of three unbounded row fetches (unread messages, pending deposits,
@@ -970,7 +1053,7 @@ export async function sendAdminMessage(
   await requireAdmin(adminId);
   const { playerId, text } = textSchema.parse(input);
   await insertAdminText(adminId, playerId, text);
-  audit(adminId, "chat.send_message", playerId);
+  await audit(adminId, "chat.send_message", playerId);
 }
 
 const quickReplySchema = z.object({
@@ -988,7 +1071,7 @@ export async function sendQuickReply(
   const preset = QUICK_REPLIES[key];
   if (!preset) throw new Error("Unknown quick reply");
   await insertAdminText(adminId, playerId, preset.message);
-  audit(adminId, "chat.quick_reply", `${playerId}:${key}`);
+  await audit(adminId, "chat.quick_reply", `${playerId}:${key}`);
 }
 
 /** SEND bar: push the full active games list to the player's chat. The items
@@ -1021,7 +1104,7 @@ export async function sendGamesList(
     is_read_by_admin: true,
   });
   if (error) throw new Error("Could not send game list");
-  audit(adminId, "chat.send_games_list", playerId);
+  await audit(adminId, "chat.send_games_list", playerId);
 }
 
 /** SEND bar: push the full active payment-methods list to the player's chat.
@@ -1055,7 +1138,7 @@ export async function sendPayList(
     is_read_by_admin: true,
   });
   if (error) throw new Error("Could not send payment list");
-  audit(adminId, "chat.send_pay_list", playerId);
+  await audit(adminId, "chat.send_pay_list", playerId);
 }
 
 /** SEND bar: push ONE payment method's detail card straight to the chat —
@@ -1102,7 +1185,7 @@ export async function sendSingleMethod(
     is_read_by_admin: true,
   });
   if (error) throw new Error("Could not send payment method");
-  audit(adminId, "chat.send_single_method", `${playerId}/${methodId}`);
+  await audit(adminId, "chat.send_single_method", `${playerId}/${methodId}`);
 }
 
 /* ── Inbox: player detail (tags, notes, accounts, deposits) ─────────────── */
@@ -1260,7 +1343,7 @@ export async function addPlayerTag(
     .from("player_tags")
     .upsert({ player_id: playerId, tag: normalized }, { onConflict: "player_id,tag" });
   if (error) throw new Error("Could not add tag");
-  audit(adminId, "tags.add", `${playerId}:${normalized}`);
+  await audit(adminId, "tags.add", `${playerId}:${normalized}`);
 }
 
 export async function removePlayerTag(
@@ -1276,7 +1359,7 @@ export async function removePlayerTag(
     .eq("player_id", playerId)
     .eq("tag", normalized);
   if (error) throw new Error("Could not remove tag");
-  audit(adminId, "tags.remove", `${playerId}:${normalized}`);
+  await audit(adminId, "tags.remove", `${playerId}:${normalized}`);
 }
 
 const noteSchema = z.object({
@@ -1296,7 +1379,7 @@ export async function addPlayerNote(
     created_by: adminId,
   });
   if (error) throw new Error("Could not add note");
-  audit(adminId, "notes.add", playerId);
+  await audit(adminId, "notes.add", playerId);
 }
 
 export async function deletePlayerNote(
@@ -1307,7 +1390,7 @@ export async function deletePlayerNote(
   z.string().uuid().parse(noteId);
   const { error } = await svc().from("player_notes").delete().eq("id", noteId);
   if (error) throw new Error("Could not delete note");
-  audit(adminId, "notes.delete", noteId);
+  await audit(adminId, "notes.delete", noteId);
 }
 
 /* ── Inbox: game accounts (edit / delete / mark active) ─────────────────── */
@@ -1339,7 +1422,7 @@ export async function editGameAccount(
     .update(patch)
     .eq("id", accountId);
   if (error) throw new Error("Could not update account");
-  audit(adminId, "accounts.edit", `${accountId} player=${existing.player_id}`);
+  await audit(adminId, "accounts.edit", `${accountId} player=${existing.player_id}`);
 }
 
 export async function deleteGameAccount(
@@ -1357,7 +1440,7 @@ export async function deleteGameAccount(
   if (!existing) throw new Error("Account not found");
   const { error } = await client.from("game_accounts").delete().eq("id", accountId);
   if (error) throw new Error("Could not delete account");
-  audit(adminId, "accounts.delete", `${accountId} player=${existing.player_id}`);
+  await audit(adminId, "accounts.delete", `${accountId} player=${existing.player_id}`);
 }
 
 /**
@@ -1494,7 +1577,7 @@ export async function markAccountActive(
     is_read_by_admin: true,
   });
 
-  audit(adminId, `accounts.mark_active by=${me.displayName}`, accountId);
+  await audit(adminId, `accounts.mark_active by=${me.displayName}`, accountId);
 }
 
 /**
@@ -1513,7 +1596,7 @@ export async function decryptAccountPassword(
     .eq("id", accountId)
     .single();
   if (!data) throw new Error("Account not found");
-  audit(adminId, "accounts.reveal_password", accountId);
+  await audit(adminId, "accounts.reveal_password", accountId);
   return decryptPassword(data.password_enc as string);
 }
 
@@ -1578,7 +1661,7 @@ export async function approveDeposit(
       .eq("ref_id", depositId),
   ]);
 
-  audit(adminId, "deposits.approve", `${depositId} amount=${deposit.amount}`);
+  await audit(adminId, "deposits.approve", `${depositId} amount=${deposit.amount}`);
   // Retention sweep, best-effort — never blocks the decision (audit H7).
   await sweepScreenshotRetentionBestEffort();
 }
@@ -1636,7 +1719,7 @@ export async function rejectDeposit(
       .eq("ref_id", depositId),
   ]);
 
-  audit(adminId, "deposits.reject", depositId);
+  await audit(adminId, "deposits.reject", depositId);
   // Retention sweep, best-effort — never blocks the decision (audit H7).
   await sweepScreenshotRetentionBestEffort();
 }
@@ -1650,7 +1733,7 @@ export async function mintScreenshotUrl(
   z.string().min(1).max(500).parse(path);
   const url = await signedScreenshotUrl(path);
   if (!url) throw new Error("Could not load screenshot");
-  audit(adminId, "screenshots.mint_url", path);
+  await audit(adminId, "screenshots.mint_url", path);
   return url;
 }
 
@@ -1754,7 +1837,7 @@ export async function upsertGame(
   };
   const { error } = await svc().from("games").upsert(row, { onConflict: "id" });
   if (error) throw new Error("Could not save game");
-  audit(adminId, "games.upsert", g.id);
+  await audit(adminId, "games.upsert", g.id);
   revalidateSection("/admin/games");
 }
 
@@ -1774,7 +1857,7 @@ export async function deleteGame(adminId: string, gameId: string): Promise<void>
   }
   const { error } = await client.from("games").delete().eq("id", gameId);
   if (error) throw new Error("Could not delete game");
-  audit(adminId, "games.delete", gameId);
+  await audit(adminId, "games.delete", gameId);
   revalidateSection("/admin/games");
 }
 
@@ -1798,7 +1881,7 @@ export async function uploadGameIcon(
   if (uploadError) throw new Error("Could not upload icon");
 
   await svc().from("games").update({ icon_path: path }).eq("id", gameId);
-  audit(adminId, "games.upload_icon", gameId);
+  await audit(adminId, "games.upload_icon", gameId);
   revalidateSection("/admin/games");
   return { path, url: publicUrl("game-icons", path) };
 }
@@ -1884,7 +1967,7 @@ export async function upsertPaymentMethod(
     .from("payment_methods")
     .upsert(row, { onConflict: "id" });
   if (error) throw new Error("Could not save payment method");
-  audit(adminId, "methods.upsert", m.id);
+  await audit(adminId, "methods.upsert", m.id);
   revalidateSection("/admin/methods");
 }
 
@@ -1907,7 +1990,7 @@ export async function deletePaymentMethod(
   }
   const { error } = await client.from("payment_methods").delete().eq("id", methodId);
   if (error) throw new Error("Could not delete payment method");
-  audit(adminId, "methods.delete", methodId);
+  await audit(adminId, "methods.delete", methodId);
   revalidateSection("/admin/methods");
 }
 
@@ -1950,7 +2033,7 @@ export async function updateBranding(
     signin_subtext: b.signinSubtext,
   });
   if (error) throw new Error("Could not save branding");
-  audit(adminId, "branding.update");
+  await audit(adminId, "branding.update");
   revalidateSection("/admin/branding");
 }
 
@@ -1970,7 +2053,7 @@ export async function uploadBrandLogo(
   if (uploadError) throw new Error("Could not upload logo");
 
   await svc().from("branding").upsert({ id: 1, logo_path: path });
-  audit(adminId, "branding.upload_logo");
+  await audit(adminId, "branding.upload_logo");
   revalidateSection("/admin/branding");
   return { url: publicUrl("brand-logos", path) };
 }
@@ -2092,7 +2175,7 @@ export async function createAgent(
     await client.auth.admin.deleteUser(created.user.id);
     throw new Error("Could not register agent — try again");
   }
-  audit(adminId, "agents.create", email);
+  await audit(adminId, "agents.create", email);
   revalidateSection("/admin/agents");
 }
 
@@ -2125,7 +2208,7 @@ export async function updateAgent(
     .update({ display_name: displayName })
     .eq("id", id);
   if (error) throw new Error("Could not update agent");
-  audit(adminId, "agents.update", id);
+  await audit(adminId, "agents.update", id);
   revalidateSection("/admin/agents");
 }
 
@@ -2142,7 +2225,7 @@ export async function toggleAgentActive(
     .update({ is_active: isActive })
     .eq("id", targetId);
   if (error) throw new Error("Could not change agent status");
-  audit(adminId, isActive ? "agents.enable" : "agents.disable", targetId);
+  await audit(adminId, isActive ? "agents.enable" : "agents.disable", targetId);
   revalidateSection("/admin/agents");
 }
 
@@ -2179,7 +2262,7 @@ export async function setAgentPermissions(
     .update({ permissions: parsed })
     .eq("id", targetId);
   if (error) throw new Error("Could not save permissions");
-  audit(adminId, "agents.permissions", `${targetId}:${JSON.stringify(parsed)}`);
+  await audit(adminId, "agents.permissions", `${targetId}:${JSON.stringify(parsed)}`);
   revalidateSection("/admin/agents");
 }
 
@@ -2208,7 +2291,7 @@ export async function setPlayerBlocked(
     )
     .eq("id", playerId);
   if (error) throw new Error("Could not update player");
-  audit(adminId, blocked ? "player.block" : "player.unblock", playerId);
+  await audit(adminId, blocked ? "player.block" : "player.unblock", playerId);
 }
 
 /* ── Screenshot storage lifecycle (v2 Phase 1, audit H7) ─────────────── */
@@ -2443,7 +2526,7 @@ export async function runStorageCleanup(adminId: string): Promise<{
     await findOrphanScreenshotPaths(1000);
   if (orphanCapped) capped = true;
   const removed = await removeScreenshotObjects(paths);
-  audit(
+  await audit(
     adminId,
     "storage.cleanup",
     `decided=${decided} chat=${chat} orphans=${removed.length} capped=${capped}`,
@@ -2491,7 +2574,7 @@ export async function clearPlayerChat(
       .eq("player_id", playerId);
     if (error) throw new Error("Could not clear chat");
     await client.from("notifications").delete().eq("player_id", playerId);
-    audit(adminId, "player.clear_chat", `${playerId}:all`);
+    await audit(adminId, "player.clear_chat", `${playerId}:all`);
   } else {
     // Partial clear (Build 55): only rows OLDER than the cutoff are deleted
     // from the database — the recent days stay in chat and in the DB.
@@ -2507,7 +2590,7 @@ export async function clearPlayerChat(
       .delete()
       .eq("player_id", playerId)
       .lt("created_at", cutoff);
-    audit(adminId, "player.clear_chat", `${playerId}:older_than_${days}d`);
+    await audit(adminId, "player.clear_chat", `${playerId}:older_than_${days}d`);
   }
 
   // Storage, best-effort after the rows are gone: delete the objects and
@@ -2538,7 +2621,7 @@ export async function deletePlayer(
   const client = svc();
   const { error } = await client.auth.admin.deleteUser(playerId);
   if (error) throw new Error("Could not delete player");
-  audit(adminId, "player.delete", playerId);
+  await audit(adminId, "player.delete", playerId);
   // Storage (audit H7): the auth cascade removes the rows but not the
   // player's screenshots — delete the whole prefix, best-effort. Re-list
   // from the start after each batch: offset pagination would skip entries
@@ -2658,7 +2741,7 @@ export async function createGameAccountForPlayer(
     is_read_by_admin: true,
   });
 
-  audit(adminId, "accounts.create", `${playerId}/${gameId}`);
+  await audit(adminId, "accounts.create", `${playerId}/${gameId}`);
 }
 
 /** SEND bar: push a single game to the player's chat. */
@@ -2689,7 +2772,7 @@ export async function sendSingleGame(
     is_read_by_admin: true,
   });
   if (error) throw new Error("Could not send game");
-  audit(adminId, "chat.send_single_game", `${playerId}/${gameId}`);
+  await audit(adminId, "chat.send_single_game", `${playerId}/${gameId}`);
 }
 
 /* ── Text shortcuts (Build 59) ───────────────────────────────────────────
