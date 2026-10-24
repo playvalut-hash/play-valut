@@ -18,6 +18,7 @@ import { createServiceClient } from "@/lib/supabase/service";
 import { decryptPassword, encryptPassword } from "@/lib/crypto";
 import { normalizeTag } from "@/lib/utils";
 import { QUICK_REPLIES } from "./_quick-replies";
+import { assertSessionMatches, getSessionUserId } from "./_auth";
 
 /* ── Types ─────────────────────────────────────────────────────────────── */
 
@@ -305,7 +306,7 @@ async function broadcastAgentTyping(playerId: string): Promise<void> {
   }
 }
 
-async function requireAdmin(adminId: string): Promise<AdminInfo> {
+async function requireAdminRow(adminId: string): Promise<AdminInfo> {
   const { data, error } = await svc()
     .from("admin_users")
     .select("id, role, display_name, email, is_active, permissions")
@@ -322,6 +323,28 @@ async function requireAdmin(adminId: string): Promise<AdminInfo> {
     email: data.email as string,
     permissions: parsePermissions(data.permissions, role),
   };
+}
+
+/**
+ * Session-bound admin check (v2 Phase 1, audit C1). Every mutating admin
+ * action funnels through here: the caller must BE the admin id it claims
+ * to be, and that admin must be active. requirePermission and
+ * requireSuperAdmin delegate to this, so they inherit the binding.
+ */
+async function requireAdmin(adminId: string): Promise<AdminInfo> {
+  await assertSessionMatches(adminId);
+  return requireAdminRow(adminId);
+}
+
+/**
+ * Session-derived admin check for read actions that take no adminId
+ * (v2 Phase 1, audit C2). Proves the caller is a signed-in, active admin
+ * without trusting anything the client sent.
+ */
+async function requireSessionAdmin(): Promise<AdminInfo> {
+  const sessionId = await getSessionUserId();
+  if (!sessionId) throw new Error("Not authorized");
+  return requireAdminRow(sessionId);
 }
 
 /** Guard for a single grantable permission (super admin always passes). */
@@ -441,6 +464,7 @@ export const getAdminSession = cache(
 const NOTIF_LIMIT = 30;
 
 export async function getNotifications(): Promise<NotificationView[]> {
+  await requireSessionAdmin();
   const { data: rows } = await svc()
     .from("notifications")
     .select("id, kind, player_id, preview, created_at")
@@ -479,6 +503,7 @@ export async function getNotifications(): Promise<NotificationView[]> {
 }
 
 export async function getUnreadNotificationCount(): Promise<number> {
+  await requireSessionAdmin();
   const { count } = await svc()
     .from("notifications")
     .select("id", { count: "exact", head: true })
@@ -533,6 +558,7 @@ function messagePreview(kind: string, body: Record<string, unknown>): string {
 
 /** Full player list for the inbox, with tags, unread counts, last message and action flags. */
 export async function getInboxOverview(): Promise<PlayerOverview[]> {
+  await requireSessionAdmin();
   const client = svc();
 
   const { data: players } = await client
@@ -661,6 +687,7 @@ async function signedScreenshotUrl(path: string | null): Promise<string | null> 
 
 /** Full chat thread for one player, with card/list payloads resolved server-side. */
 export async function getThread(playerId: string): Promise<ChatMessageView[]> {
+  await requireSessionAdmin();
   const client = svc();
 
   // Messages + games + methods in parallel (were sequential).
@@ -1016,6 +1043,7 @@ export async function sendSingleMethod(
 export async function getPlayerDetail(
   playerId: string,
 ): Promise<PlayerDetailView | null> {
+  await requireSessionAdmin();
   const client = svc();
   const { data: player } = await client
     .from("players")
@@ -1558,6 +1586,7 @@ function toGameRow(g: Record<string, unknown>): GameRow {
 }
 
 export async function getGames(): Promise<GameRow[]> {
+  await requireSessionAdmin();
   const { data } = await svc()
     .from("games")
     .select("*")
@@ -1683,6 +1712,7 @@ export async function uploadGameIcon(
 /* ── Payment Methods ───────────────────────────────────────────────────── */
 
 export async function getPaymentMethods(): Promise<PaymentMethodRow[]> {
+  await requireSessionAdmin();
   const { data } = await svc()
     .from("payment_methods")
     .select("*")
@@ -1786,6 +1816,10 @@ export async function deletePaymentMethod(
 
 /* ── Branding ──────────────────────────────────────────────────────────── */
 
+/* Intentionally public (audit C2 review): returns ONLY brand display fields
+ * (name, logo URL, sign-in heading/subtext) and is rendered by the public
+ * login/signup pages and the player app. No admin data, no secrets — gating
+ * it would break those pages, so it is excluded from requireSessionAdmin. */
 export async function getBranding(): Promise<BrandingRow> {
   const { data } = await svc().from("branding").select("*").eq("id", 1).single();
   const row = (data ?? {}) as Record<string, unknown>;
@@ -1851,6 +1885,7 @@ export async function uploadBrandLogo(
 /* ── Sheet Log ─────────────────────────────────────────────────────────── */
 
 export async function getSheetLog(): Promise<SheetLogRow[]> {
+  await requireSessionAdmin();
   const client = svc();
   const { data: accounts } = await client
     .from("game_accounts")
