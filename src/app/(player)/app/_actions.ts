@@ -14,6 +14,7 @@ import {
   validateDepositAmount,
 } from "@/lib/utils";
 import { validateImageFile } from "@/lib/uploads";
+import { CatalogCache } from "@/lib/catalog-cache";
 import { matchChatIntent } from "@/lib/chat-intent";
 import type {
   AccountCard,
@@ -45,45 +46,45 @@ function normalizeName(value: string): string {
 // Games + payment methods change rarely, yet they were re-queried on
 // EVERY chat message / pick / deposit step (each ~0.3-1s from the DB).
 // A 60-second in-memory cache (per warm server instance) removes those
-// round trips from the hot path; admin edits show up within a minute.
+// round trips from the hot path. Staleness contract (v2 Phase 2, audit
+// M5): TTL *is* the invalidation — no signal can reach other Vercel
+// instances, so an admin edit shows up for a player at most 60 s late
+// and two players can briefly disagree. Failures are LOGGED (not
+// silent) while stale rows still serve; a cold cache with a failed
+// fetch returns [].
 const CATALOG_TTL_MS = 60_000;
-let gamesCache: { at: number; rows: Game[] } | null = null;
-let methodsCache: { at: number; rows: PaymentMethod[] } | null = null;
+const gamesCache = new CatalogCache<Game>(CATALOG_TTL_MS, "games");
+const methodsCache = new CatalogCache<PaymentMethod>(
+  CATALOG_TTL_MS,
+  "payment_methods",
+);
 
 async function fetchActiveGames(): Promise<Game[]> {
-  if (gamesCache && Date.now() - gamesCache.at < CATALOG_TTL_MS) {
-    return gamesCache.rows;
-  }
-  const service = createServiceClient();
-  const { data, error } = await service
-    .from("games")
-    .select(
-      "id, name, category, icon_path, link, web_link, access, first_bonus_pct, reg_bonus_pct, min_load, max_load, redeem_info, sort_order",
-    )
-    .eq("is_active", true)
-    .order("sort_order", { ascending: true });
-  if (error || !data) return gamesCache?.rows ?? [];
-  const rows = data as unknown as Game[];
-  gamesCache = { at: Date.now(), rows };
-  return rows;
+  return gamesCache.get(async () => {
+    const service = createServiceClient();
+    const { data, error } = await service
+      .from("games")
+      .select(
+        "id, name, category, icon_path, link, web_link, access, first_bonus_pct, reg_bonus_pct, min_load, max_load, redeem_info, sort_order",
+      )
+      .eq("is_active", true)
+      .order("sort_order", { ascending: true });
+    return { data: data as unknown as Game[] | null, error };
+  });
 }
 
 async function fetchActiveMethods(): Promise<PaymentMethod[]> {
-  if (methodsCache && Date.now() - methodsCache.at < CATALOG_TTL_MS) {
-    return methodsCache.rows;
-  }
-  const service = createServiceClient();
-  const { data, error } = await service
-    .from("payment_methods")
-    .select(
-      "id, name, brand_color, account_name, handle, pay_link, note, sort_order",
-    )
-    .eq("is_active", true)
-    .order("sort_order", { ascending: true });
-  if (error || !data) return methodsCache?.rows ?? [];
-  const rows = data as unknown as PaymentMethod[];
-  methodsCache = { at: Date.now(), rows };
-  return rows;
+  return methodsCache.get(async () => {
+    const service = createServiceClient();
+    const { data, error } = await service
+      .from("payment_methods")
+      .select(
+        "id, name, brand_color, account_name, handle, pay_link, note, sort_order",
+      )
+      .eq("is_active", true)
+      .order("sort_order", { ascending: true });
+    return { data: data as unknown as PaymentMethod[] | null, error };
+  });
 }
 
 /**
