@@ -16,7 +16,7 @@ import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { createServiceClient } from "@/lib/supabase/service";
 import { decryptPassword, encryptPassword } from "@/lib/crypto";
-import { normalizeTag } from "@/lib/utils";
+import { escapeLikePattern, normalizeTag } from "@/lib/utils";
 import { isSafeHttpUrl } from "@/lib/urls";
 import { validateImageFile } from "@/lib/uploads";
 import { QUICK_REPLIES } from "./_quick-replies";
@@ -465,14 +465,24 @@ export const getAdminSession = cache(
 
 const NOTIF_LIMIT = 30;
 
-export async function getNotifications(): Promise<NotificationView[]> {
+/**
+ * Unread notifications, paged (v2 Phase 1, audit H3). The old hard cap of
+ * 30 with no way to see older alerts meant staff missed deposit/account
+ * alerts during bursts. Defaults preserve the old first page.
+ */
+export async function getNotifications(opts?: {
+  limit?: number;
+  offset?: number;
+}): Promise<NotificationView[]> {
   await requireSessionAdmin();
+  const limit = Math.min(Math.max(opts?.limit ?? NOTIF_LIMIT, 1), 100);
+  const offset = Math.max(opts?.offset ?? 0, 0);
   const { data: rows } = await svc()
     .from("notifications")
     .select("id, kind, player_id, preview, created_at")
     .eq("is_read", false)
     .order("created_at", { ascending: false })
-    .limit(NOTIF_LIMIT);
+    .range(offset, offset + limit - 1);
 
   const list = (rows ?? []) as Array<{
     id: string;
@@ -559,15 +569,33 @@ function messagePreview(kind: string, body: Record<string, unknown>): string {
 }
 
 /** Full player list for the inbox, with tags, unread counts, last message and action flags. */
-export async function getInboxOverview(): Promise<PlayerOverview[]> {
+/**
+ * Inbox player list (v2 Phase 1, audit H2). Defaults to the newest 100
+ * players; pass search/limit/offset to page through the whole base or to
+ * search server-side — the old client-only search could never find a
+ * player beyond the newest 100. Limit is clamped so a caller cannot ask
+ * for an unbounded window.
+ */
+export async function getInboxOverview(opts?: {
+  search?: string;
+  limit?: number;
+  offset?: number;
+}): Promise<PlayerOverview[]> {
   await requireSessionAdmin();
   const client = svc();
+  const limit = Math.min(Math.max(opts?.limit ?? 100, 1), 1000);
+  const offset = Math.max(opts?.offset ?? 0, 0);
+  const search = opts?.search?.trim();
 
-  const { data: players } = await client
+  let query = client
     .from("players")
     .select("id, display_name, email, avatar_url, is_online, created_at")
-    .order("created_at", { ascending: false })
-    .limit(100);
+    .order("created_at", { ascending: false });
+  if (search) {
+    const pattern = `%${escapeLikePattern(search)}%`;
+    query = query.or(`display_name.ilike.${pattern},email.ilike.${pattern}`);
+  }
+  const { data: players } = await query.range(offset, offset + limit - 1);
   const playerList = (players ?? []) as DbPlayer[];
   if (playerList.length === 0) return [];
 

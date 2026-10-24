@@ -165,6 +165,18 @@ export default function InboxShell({
   // Overview lives in state so Realtime can update it WITHOUT
   // router.refresh() (a full page re-render per event was a top speed killer).
   const [overview, setOverview] = useState<PlayerOverview[]>(initialOverview);
+  // Pagination (v2 Phase 1, audit H2): the list is a window, not the whole
+  // base. Search runs server-side; Load more pages through older players.
+  const [hasMore, setHasMore] = useState(initialOverview.length >= 100);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const queryRef = useRef("");
+  const overviewRef = useRef<PlayerOverview[]>(initialOverview);
+  useEffect(() => {
+    queryRef.current = query;
+  }, [query]);
+  useEffect(() => {
+    overviewRef.current = overview;
+  }, [overview]);
   // Desktop details-panel collapse (Build 50) — persisted, same pattern
   // as the sidebar rail in admin-shell.
   const [panelCollapsed, setPanelCollapsed] = useState<boolean>(() => {
@@ -423,7 +435,14 @@ export default function InboxShell({
 
   const refreshOverview = useCallback(async () => {
     try {
-      setOverview(await getInboxOverview());
+      const q = queryRef.current.trim();
+      const limit = Math.max(100, overviewRef.current.length);
+      const rows = await getInboxOverview({
+        search: q || undefined,
+        limit,
+      });
+      setOverview(rows);
+      setHasMore(rows.length >= limit);
     } catch {
       // keep current list on transient errors
     }
@@ -502,6 +521,56 @@ export default function InboxShell({
       window.removeEventListener("focus", onVisible);
     };
   }, [refreshSelected, refreshOverview, scheduleOverview, scheduleSelected]);
+
+  // Server-side search (audit H2): typing searches the whole player base,
+  // not just the loaded window. Clearing the search restores the default
+  // newest-first window. A sequence guard drops stale responses.
+  const searchSeqRef = useRef(0);
+  const firstQueryRef = useRef(true);
+  useEffect(() => {
+    if (firstQueryRef.current) {
+      firstQueryRef.current = false;
+      return;
+    }
+    const q = query.trim();
+    const seq = ++searchSeqRef.current;
+    const timer = setTimeout(async () => {
+      try {
+        const rows = await getInboxOverview({
+          search: q || undefined,
+          limit: 100,
+        });
+        if (seq !== searchSeqRef.current) return;
+        setOverview(rows);
+        setHasMore(rows.length >= 100);
+      } catch {
+        // keep current list on transient errors
+      }
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [query]);
+
+  const loadMore = useCallback(async () => {
+    if (loadingMore || !hasMore) return;
+    setLoadingMore(true);
+    try {
+      const q = queryRef.current.trim();
+      const rows = await getInboxOverview({
+        search: q || undefined,
+        limit: 100,
+        offset: overviewRef.current.length,
+      });
+      setOverview((prev) => {
+        const seen = new Set(prev.map((p) => p.id));
+        return [...prev, ...rows.filter((p) => !seen.has(p.id))];
+      });
+      setHasMore(rows.length >= 100);
+    } catch {
+      // keep current list on transient errors
+    } finally {
+      setLoadingMore(false);
+    }
+  }, [loadingMore, hasMore]);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -603,7 +672,11 @@ export default function InboxShell({
         <div className="admin-thin-scroll min-h-0 flex-1 overflow-y-auto" role="listbox" aria-label="Players">
           {filtered.length === 0 ? (
             <p className="px-4 py-8 text-center text-xs text-text-muted">
-              {overview.length === 0 ? "No players yet." : "No players match this filter."}
+              {overview.length === 0
+                ? query.trim()
+                  ? "No players match this search."
+                  : "No players yet."
+                : "No players match this filter."}
             </p>
           ) : (
             filtered.map((p) => (
@@ -617,6 +690,18 @@ export default function InboxShell({
                 }}
               />
             ))
+          )}
+          {hasMore && (
+            <div className="border-b border-surface-border/50 px-3 py-2">
+              <button
+                type="button"
+                onClick={() => void loadMore()}
+                disabled={loadingMore}
+                className="admin-focus w-full rounded-md border border-surface-border bg-surface-card py-2 text-xs font-semibold text-text-primary transition hover:text-gold disabled:opacity-40"
+              >
+                {loadingMore ? "Loading…" : "Load more players"}
+              </button>
+            </div>
           )}
         </div>
       </div>

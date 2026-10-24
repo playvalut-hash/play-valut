@@ -15,6 +15,15 @@ export function cn(
 /* ── Tags (PRD §3.7, Change 23) ─────────────────────────────────────────── */
 
 /** Normalize a player tag: lowercase, trimmed, single-spaced. */
+/**
+ * Escapes a user string for use inside a Postgres LIKE/ILIKE pattern
+ * (v2 Phase 1, audit H2): without this, a search for "100%" would match
+ * every name, and "_" would match any single character.
+ */
+export function escapeLikePattern(value: string): string {
+  return value.replace(/\\/g, "\\\\").replace(/%/g, "\\%").replace(/_/g, "\\_");
+}
+
 export function normalizeTag(tag: string): string {
   return tag.toLowerCase().trim().replace(/\s+/g, " ");
 }

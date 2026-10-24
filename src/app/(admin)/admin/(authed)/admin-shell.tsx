@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { ChevronDownIcon, XIcon } from "@/components/icons";
-import type { AdminInfo } from "../../_actions";
+import type { AdminInfo, NotificationView } from "../../_actions";
+import { getNotifications, getUnreadNotificationCount } from "../../_actions";
 import { AdminProvider } from "./admin-context";
 import SideNav from "./side-nav";
 import TopBar from "./top-bar";
@@ -25,6 +26,16 @@ function PanelIcon({ className }: { className?: string }) {
   );
 }
 
+// First page of the bell: newest 30 unread + exact unread count. Shared by
+// the mount effect and the poll/open refresh so the two stay identical.
+async function fetchFirstNotificationPage() {
+  const [rows, count] = await Promise.all([
+    getNotifications({ limit: 30 }),
+    getUnreadNotificationCount(),
+  ]);
+  return { rows, count };
+}
+
 export default function AdminShell({
   session,
   children,
@@ -33,6 +44,73 @@ export default function AdminShell({
   children: React.ReactNode;
 }) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  // Notifications (v2 Phase 1, audit H3): the bell was hardcoded empty —
+  // no loader existed at all. It now fetches on mount, polls every 30s,
+  // and pages through older alerts instead of capping at 30.
+  const [notifications, setNotifications] = useState<NotificationView[]>([]);
+  const [unreadCount, setUnreadCount] = useState(0);
+  const [notifHasMore, setNotifHasMore] = useState(false);
+  const [notifLoadingMore, setNotifLoadingMore] = useState(false);
+
+  const refreshNotifications = useCallback(async () => {
+    try {
+      const { rows, count } = await fetchFirstNotificationPage();
+      setNotifications(rows);
+      setUnreadCount(count);
+      setNotifHasMore(rows.length >= 30);
+    } catch {
+      // keep current bell state on transient errors
+    }
+  }, []);
+
+  const loadMoreNotifications = useCallback(async () => {
+    if (notifLoadingMore || !notifHasMore) return;
+    setNotifLoadingMore(true);
+    try {
+      const rows = await getNotifications({
+        limit: 30,
+        offset: notifications.length,
+      });
+      setNotifications((prev) => {
+        const seen = new Set(prev.map((n) => n.id));
+        return [...prev, ...rows.filter((n) => !seen.has(n.id))];
+      });
+      setNotifHasMore(rows.length >= 30);
+    } catch {
+      // keep current list on transient errors
+    } finally {
+      setNotifLoadingMore(false);
+    }
+  }, [notifLoadingMore, notifHasMore, notifications.length]);
+
+  const handleNotificationOpened = useCallback((id: string) => {
+    setNotifications((prev) => prev.filter((n) => n.id !== id));
+    setUnreadCount((c) => Math.max(0, c - 1));
+  }, []);
+
+  // Initial load lives in the effect as an inner async function (the
+  // standard fetch-then-set pattern) so the compiler lint accepts it;
+  // refreshNotifications above stays the single handler for poll/open.
+  useEffect(() => {
+    let cancelled = false;
+    async function initial() {
+      try {
+        const { rows, count } = await fetchFirstNotificationPage();
+        if (cancelled) return;
+        setNotifications(rows);
+        setUnreadCount(count);
+        setNotifHasMore(rows.length >= 30);
+      } catch {
+        // keep empty bell on transient errors
+      }
+    }
+    void initial();
+    const iv = setInterval(() => void refreshNotifications(), 30_000);
+    return () => {
+      cancelled = true;
+      clearInterval(iv);
+    };
+  }, [refreshNotifications]);
   // Desktop: collapsible icon rail (persisted). Mobile keeps the drawer.
   // Lazy init (same pattern as the inbox snapshot) — no effect needed.
   const [collapsed, setCollapsed] = useState<boolean>(() => {
@@ -123,7 +201,16 @@ export default function AdminShell({
             <PanelIcon className="h-5 w-5" />
           </button>
           <div className="min-w-0 flex-1">
-            <TopBar admin={session} notifications={[]} unreadCount={0} />
+            <TopBar
+              admin={session}
+              notifications={notifications}
+              unreadCount={unreadCount}
+              hasMoreNotifications={notifHasMore}
+              loadingMoreNotifications={notifLoadingMore}
+              onLoadMoreNotifications={() => void loadMoreNotifications()}
+              onNotificationsOpen={() => void refreshNotifications()}
+              onNotificationOpened={handleNotificationOpened}
+            />
           </div>
           {/* Minimize the top bar — more room for the inbox */}
           <button

@@ -35,10 +35,20 @@ export default function TopBar({
   admin,
   notifications,
   unreadCount,
+  hasMoreNotifications,
+  loadingMoreNotifications,
+  onLoadMoreNotifications,
+  onNotificationsOpen,
+  onNotificationOpened,
 }: {
   admin: AdminInfo;
   notifications: NotificationView[];
   unreadCount: number;
+  hasMoreNotifications?: boolean;
+  loadingMoreNotifications?: boolean;
+  onLoadMoreNotifications?: () => void;
+  onNotificationsOpen?: () => void;
+  onNotificationOpened?: (id: string) => void;
 }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
@@ -62,6 +72,7 @@ export default function TopBar({
     } catch {
       // Non-fatal: still navigate.
     }
+    onNotificationOpened?.(n.id);
     setOpen(false);
     router.push(`/admin?player=${n.playerId}`);
     router.refresh();
@@ -94,8 +105,9 @@ export default function TopBar({
           <button
             type="button"
             onClick={() => {
-              setOpen((v) => !v);
-              if (!open) router.refresh();
+              const willOpen = !open;
+              setOpen(willOpen);
+              if (willOpen) onNotificationsOpen?.();
             }}
             aria-label={`Notifications${unreadCount > 0 ? `, ${unreadCount} unread` : ""}`}
             aria-expanded={open}
@@ -157,6 +169,16 @@ export default function TopBar({
                       </p>
                     </button>
                   ))
+                )}
+                {hasMoreNotifications && (
+                  <button
+                    type="button"
+                    onClick={() => onLoadMoreNotifications?.()}
+                    disabled={loadingMoreNotifications}
+                    className="admin-focus block w-full px-3 py-2.5 text-center text-xs font-semibold text-gold hover:bg-surface-card disabled:opacity-40"
+                  >
+                    {loadingMoreNotifications ? "Loading…" : "Load older notifications"}
+                  </button>
                 )}
               </div>
             </div>

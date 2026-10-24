@@ -23,6 +23,8 @@ export function chainable(result: unknown) {
     "lte",
     "single",
     "maybeSingle",
+    "or",
+    "range",
     "upsert",
     "update",
     "insert",
