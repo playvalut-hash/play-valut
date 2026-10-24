@@ -291,6 +291,12 @@ export async function requestGameAccount(rawGameId: string): Promise<void> {
   } = await supabase.auth.getUser();
   if (!user) redirect("/login");
 
+  // Blocked players cannot request accounts (v2 Phase 1, audit H11) —
+  // the app shell also locks them out, but it fails open on a lookup
+  // hiccup, so the action must enforce it itself. Redirecting to /app
+  // lands on the shell's blocked screen.
+  if (await isPlayerBlocked(user.id)) redirect("/app");
+
   const games = await fetchActiveGames();
   const game = games.find((g) => g.id === gameId);
   if (!game) redirect("/app");
@@ -590,6 +596,10 @@ export async function getAccountCard(rawAccountId: string): Promise<AccountCard 
     data: { user },
   } = await supabase.auth.getUser();
   if (!user) return null;
+
+  // Blocked players cannot view account cards (audit H11) — checked
+  // before the row is even fetched, so no credential is decrypted.
+  if (await isPlayerBlocked(user.id)) return null;
 
   const { data } = await supabase
     .from("game_accounts")
