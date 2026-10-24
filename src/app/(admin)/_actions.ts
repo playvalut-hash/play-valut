@@ -567,6 +567,9 @@ interface DbPlayer {
 }
 
 function messagePreview(kind: string, body: Record<string, unknown>): string {
+  // A malformed row must never break the whole inbox (the M2 RPC feeds
+  // this same renderer, so guard the shape once, here).
+  if (!body || typeof body !== "object") return "—";
   const text = typeof body.text === "string" ? body.text : "";
   switch (kind) {
     case "text":
@@ -659,6 +662,50 @@ export async function getAuditLog(
  * the function is not deployed yet (migration 0015), so the inbox never
  * breaks between the code deploy and the SQL run.
  */
+/**
+ * Latest message per loaded player (v2 Phase 2, audit M2). One RPC call
+ * returns exactly one row per messaged player — the old newest-500 window
+ * let chatty players crowd quiet ones out, so their rows wrongly showed
+ * "No messages yet". Falls back to the old window when the RPC is missing
+ * (pre-migration), so the inbox never breaks between code deploy and
+ * SQL run.
+ */
+async function getLatestMessages(
+  client: ReturnType<typeof svc>,
+  ids: string[],
+): Promise<
+  Array<{
+    player_id: string;
+    kind: string;
+    body: Record<string, unknown>;
+    created_at: string;
+  }>
+> {
+  const { data, error } = await client.rpc("player_latest_messages", {
+    player_ids: ids,
+  });
+  if (!error && data) {
+    return data as Array<{
+      player_id: string;
+      kind: string;
+      body: Record<string, unknown>;
+      created_at: string;
+    }>;
+  }
+  const { data: recent } = await client
+    .from("chat_messages")
+    .select("player_id, kind, body, created_at")
+    .in("player_id", ids)
+    .order("created_at", { ascending: false })
+    .limit(500);
+  return (recent ?? []) as Array<{
+    player_id: string;
+    kind: string;
+    body: Record<string, unknown>;
+    created_at: string;
+  }>;
+}
+
 async function getOverviewCounts(
   client: ReturnType<typeof svc>,
   ids: string[],
@@ -752,20 +799,14 @@ export async function getInboxOverview(opts?: {
   const ids = playerList.map((p) => p.id);
 
   // All independent queries in parallel (was 5 sequential round-trips).
-  const [tagsRes, recentRes, lastSeenMap, countMaps] = await Promise.all([
+  const [tagsRes, recent, lastSeenMap, countMaps] = await Promise.all([
     client.from("player_tags").select("player_id, tag").in("player_id", ids),
-    client
-      .from("chat_messages")
-      .select("player_id, kind, body, created_at")
-      .in("player_id", ids)
-      .order("created_at", { ascending: false })
-      .limit(500),
+    getLatestMessages(client, ids),
     fetchLastSeenMap(client, ids),
     getOverviewCounts(client, ids),
   ]);
 
   const { data: tags } = tagsRes;
-  const { data: recent } = recentRes;
   const tagMap = new Map<string, string[]>();
   for (const t of ((tags ?? []) as Array<{ player_id: string; tag: string }>)) {
     const arr = tagMap.get(t.player_id) ?? [];
@@ -777,7 +818,8 @@ export async function getInboxOverview(opts?: {
   const pendingMap = countMaps.pending;
   const creatingMap = countMaps.creating;
 
-  // Latest message per player (recent window, then take first per player).
+  // Latest message per player (one RPC row each; the fallback window
+  // still takes the first per player from its 500 rows).
   const lastMap = new Map<
     string,
     { kind: string; body: Record<string, unknown>; created_at: string }
