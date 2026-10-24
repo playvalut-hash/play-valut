@@ -14,11 +14,13 @@ import {
   XIcon,
 } from "@/components/icons";
 import { validateDepositAmount } from "@/lib/utils";
+import { mergeThreadMessages } from "@/lib/thread-merge";
 import {
   chatPick,
   getAccountCard,
   getScreenshotUrl,
   getThread,
+  getThreadOlder,
   markThreadRead,
   sendChatMessage,
   sendChatImage,
@@ -763,6 +765,13 @@ export default function ChatClient({
 }) {
   // Thread arrives server-rendered (see page.tsx) — no loading spinner.
   const [messages, setMessages] = useState<ChatMessage[]>(initialMessages);
+  // Older-history paging (audit M3): the button shows while a full
+  // window is on screen and the server has not said "no more".
+  const [olderExhausted, setOlderExhausted] = useState(false);
+  const [loadingOlder, setLoadingOlder] = useState(false);
+  const hasOlderRef = useRef(false);
+  const threadScrollRef = useRef<HTMLDivElement>(null);
+  const restoreRef = useRef<{ prevHeight: number; prevTop: number } | null>(null);
   const [loading, setLoading] = useState(false);
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
@@ -845,8 +854,18 @@ export default function ChatClient({
       const newTextAlreadyLanded = thread.some(
         (m) => m.kind === "text" && !prevById.has(m.id),
       );
-      setMessages(thread);
-      messagesRef.current = thread;
+      // Merge keeps user-loaded older pages across polls (audit M3); a
+      // short window means the full history fits, so stale older pages
+      // drop and pagination resets.
+      const merged = hasOlderRef.current
+        ? mergeThreadMessages(messagesRef.current, thread, 500, (m) => m.created_at)
+        : thread;
+      if (thread.length < 500) {
+        hasOlderRef.current = false;
+        setOlderExhausted(false);
+      }
+      setMessages(merged);
+      messagesRef.current = merged;
       setLoading(false);
       // A non-player message landing ends the "typing" beat.
       const last = thread[thread.length - 1];
@@ -947,9 +966,49 @@ export default function ChatClient({
     });
   }, []);
 
+  const lastMessageId = messages[messages.length - 1]?.id;
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
-  }, [messages.length, agentTyping, awaitingReply, preparing]);
+  }, [lastMessageId, agentTyping, awaitingReply, preparing]);
+
+  // After prepending older pages, keep the view stable: the height was
+  // captured in loadOlder before the state change, so shift scrollTop
+  // by exactly the added height.
+  useEffect(() => {
+    const el = threadScrollRef.current;
+    const pending = restoreRef.current;
+    if (el && pending) {
+      el.scrollTop = pending.prevTop + (el.scrollHeight - pending.prevHeight);
+      restoreRef.current = null;
+    }
+  }, [messages]);
+
+  async function loadOlder() {
+    const oldest = messagesRef.current[0];
+    if (!oldest || loadingOlder) return;
+    const el = threadScrollRef.current;
+    restoreRef.current = el
+      ? { prevHeight: el.scrollHeight, prevTop: el.scrollTop }
+      : null;
+    setLoadingOlder(true);
+    try {
+      const page = await getThreadOlder({
+        beforeCreatedAt: new Date(oldest.created_at).toISOString(),
+        beforeId: oldest.id,
+      });
+      const existing = new Set(messagesRef.current.map((m) => m.id));
+      const fresh = page.messages.filter((m) => !existing.has(m.id));
+      const merged = [...fresh, ...messagesRef.current];
+      messagesRef.current = merged;
+      setMessages(merged);
+      hasOlderRef.current = true;
+      if (!page.hasMore) setOlderExhausted(true);
+    } catch {
+      restoreRef.current = null;
+    } finally {
+      setLoadingOlder(false);
+    }
+  }
 
   async function send(text: string) {
     const t = text.trim();
@@ -1042,9 +1101,20 @@ export default function ChatClient({
 
       {/* Thread */}
       <div
+        ref={threadScrollRef}
         aria-live="polite"
         className="no-scrollbar flex-1 space-y-3 overflow-y-auto bg-near-black px-4 py-4"
       >
+        {messages.length >= 500 && !olderExhausted ? (
+          <button
+            type="button"
+            onClick={() => void loadOlder()}
+            disabled={loadingOlder}
+            className="w-full rounded-full border border-line bg-card-2 py-2 text-xs font-semibold text-text-primary transition hover:text-gold disabled:opacity-40"
+          >
+            {loadingOlder ? "Loading…" : "Load older messages"}
+          </button>
+        ) : null}
         {loading ? (
           <p className="mt-10 text-center text-sm text-text-muted">
             Loading your chat…

@@ -16,6 +16,7 @@ import {
   sendQuickReply,
   sendSingleGame,
   sendSingleMethod,
+  getThreadOlder,
 } from "../../_actions";
 import { QUICK_REPLIES } from "../../_quick-replies";
 import { cn } from "@/lib/utils";
@@ -400,6 +401,7 @@ export default function ThreadView({
   methods,
   methodsCount,
   onMutated,
+  onPrependOlder,
   onBack,
   onShowDetails,
   panelCollapsed,
@@ -413,6 +415,8 @@ export default function ThreadView({
   methods: Array<{ id: string; name: string; brandColor: string | null }>;
   methodsCount: number;
   onMutated?: () => Promise<void>;
+  /** Prepend older pages loaded by the thread itself (audit M3). */
+  onPrependOlder?: (messages: ChatMessageView[]) => void;
   /** Mobile only: back to the player list / open the details panel. The
    *  thread header owns these now (Build 39 merged the shell's separate
    *  mobile nav bar into this one bar). */
@@ -429,6 +433,16 @@ export default function ThreadView({
   const [payOpen, setPayOpen] = useState(false);
   const [viewer, setViewer] = useState<{ src: string; caption: string | null } | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
+  // Older-history paging (audit M3): the button shows while a full
+  // window is on screen and the server has not said "no more".
+  // Per-player exhaustion flags (audit M3): keyed by player so switching
+  // conversations needs no reset effect (set-state-in-effect is linted).
+  const [olderExhaustedByPlayer, setOlderExhaustedByPlayer] = useState<
+    Record<string, boolean>
+  >({});
+  const olderExhausted = olderExhaustedByPlayer[player.id] ?? false;
+  const [loadingOlder, setLoadingOlder] = useState(false);
+  const restoreRef = useRef<{ prevHeight: number; prevTop: number } | null>(null);
 
   // Live "player is typing" via Realtime broadcast (Meta Business style).
   const [playerTyping, setPlayerTyping] = useState(false);
@@ -473,10 +487,52 @@ export default function ThreadView({
     if (onMutated) await onMutated();
   }
 
+  // Scroll to bottom only when the NEWEST message changes (or the
+  // player switches) — not on every poll refresh, so reading older
+  // history no longer gets yanked to the bottom every 10 s.
+  const lastMessageId = thread[thread.length - 1]?.id;
   useEffect(() => {
     const el = scrollRef.current;
     if (el) el.scrollTop = el.scrollHeight;
-  }, [thread, player.id]);
+  }, [lastMessageId, player.id]);
+
+  // After prepending older pages, keep the view stable instead of
+  // jumping: the height was captured in loadOlder before the state
+  // change, so shift scrollTop by exactly the added height.
+  useEffect(() => {
+    const el = scrollRef.current;
+    const pending = restoreRef.current;
+    if (el && pending) {
+      el.scrollTop = pending.prevTop + (el.scrollHeight - pending.prevHeight);
+      restoreRef.current = null;
+    }
+  }, [thread]);
+
+  async function loadOlder() {
+    const oldest = thread[0];
+    if (!oldest || loadingOlder) return;
+    const playerIdAtStart = player.id;
+    const el = scrollRef.current;
+    restoreRef.current = el
+      ? { prevHeight: el.scrollHeight, prevTop: el.scrollTop }
+      : null;
+    setLoadingOlder(true);
+    try {
+      const page = await getThreadOlder(playerIdAtStart, {
+        beforeCreatedAt: new Date(oldest.createdAt).toISOString(),
+        beforeId: oldest.id,
+      });
+      if (player.id !== playerIdAtStart) return;
+      onPrependOlder?.(page.messages);
+      if (!page.hasMore) {
+        setOlderExhaustedByPlayer((prev) => ({ ...prev, [playerIdAtStart]: true }));
+      }
+    } catch {
+      restoreRef.current = null;
+    } finally {
+      setLoadingOlder(false);
+    }
+  }
 
   async function sendText() {
     const text = draft.trim();
@@ -751,6 +807,16 @@ export default function ThreadView({
         aria-live="polite"
         className="admin-chat-scroll min-h-0 flex-1 overflow-y-auto bg-near-black px-3 py-3 md:px-4"
       >
+        {thread.length >= 500 && !olderExhausted ? (
+          <button
+            type="button"
+            onClick={() => void loadOlder()}
+            disabled={loadingOlder}
+            className="admin-focus mb-2 w-full rounded-md border border-surface-border bg-surface-card py-2 text-xs font-semibold text-text-primary transition hover:text-gold disabled:opacity-40"
+          >
+            {loadingOlder ? "Loading…" : "Load older messages"}
+          </button>
+        ) : null}
         {thread.length === 0 ? (
           <p className="mt-8 text-center text-xs text-text-muted">
             No messages yet. Say hello or send the game list above.

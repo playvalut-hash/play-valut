@@ -15,6 +15,7 @@ import {
   markThreadRead,
 } from "../../_actions";
 import { cn } from "@/lib/utils";
+import { mergeThreadMessages } from "@/lib/thread-merge";
 import { ChatIcon, ChevronDownIcon, SearchIcon } from "@/components/icons";
 import ThreadView from "./thread";
 import DetailsPanel from "./details-panel";
@@ -261,6 +262,10 @@ export default function InboxShell({
         ?.thread ?? initialThread
     );
   });
+  // Mirror of the displayed thread for the poll refresh callback, plus
+  // whether the user loaded older pages (audit M3 merge gate).
+  const threadRef = useRef<ChatMessageView[]>([]);
+  const hasOlderRef = useRef(false);
   const [detail, setDetail] = useState<PlayerDetailView | null>(() => {
     if (initialDetail) return initialDetail;
     return (
@@ -313,9 +318,17 @@ export default function InboxShell({
       // A newer refresh started while this one was in flight — it owns
       // the view now; dropping this stale result (Build 54).
       if (seq !== refreshSeqRef.current) return;
+      // Merge keeps user-loaded older pages across polls (audit M3); a
+      // short window means the full history fits, so stale older pages
+      // drop and pagination resets. The cache keeps the fresh window.
+      const merged = hasOlderRef.current
+        ? mergeThreadMessages(threadRef.current, t, 500, (m) => m.createdAt)
+        : t;
+      if (t.length < 500) hasOlderRef.current = false;
       cache.set(id, { thread: t, detail: d });
       if (selectedIdRef.current === id) {
-        setThread(t);
+        threadRef.current = merged;
+        setThread(merged);
         setDetail(d);
         // The admin is looking at this thread: anything in it — including
         // messages that arrived while it was open — counts as read.
@@ -386,6 +399,8 @@ export default function InboxShell({
     if (id === selectedId) {
       setSelectedId(null);
       setThread([]);
+      threadRef.current = [];
+      hasOlderRef.current = false;
       setDetail(null);
       return;
     }
@@ -393,6 +408,8 @@ export default function InboxShell({
     setMobilePanel(null);
     if (!id) {
       setThread([]);
+      threadRef.current = [];
+      hasOlderRef.current = false;
       setDetail(null);
       return;
     }
@@ -400,6 +417,8 @@ export default function InboxShell({
     const cached = cache.get(id);
     if (cached) {
       setThread(cached.thread);
+      threadRef.current = cached.thread;
+      hasOlderRef.current = false;
       setDetail(cached.detail);
       setLoadingThread(false);
       clearUnreadLocal(id);
@@ -415,6 +434,8 @@ export default function InboxShell({
       const t = await getThread(id);
       if (selectedIdRef.current !== id) return;
       setThread(t);
+      threadRef.current = t;
+      hasOlderRef.current = false;
       setLoadingThread(false);
       clearUnreadLocal(id);
       markThreadRead(admin.id, id).catch(() => {});
@@ -733,6 +754,14 @@ export default function InboxShell({
                 methods={methods}
                 methodsCount={methodsCount}
                 onMutated={refreshSelected}
+                onPrependOlder={(older) => {
+                  const existing = new Set(threadRef.current.map((m) => m.id));
+                  const fresh = older.filter((m) => !existing.has(m.id));
+                  const merged = [...fresh, ...threadRef.current];
+                  threadRef.current = merged;
+                  setThread(merged);
+                  hasOlderRef.current = true;
+                }}
                 onBack={() => {
                   void selectPlayer(null);
                 }}

@@ -877,29 +877,20 @@ async function signedScreenshotUrl(path: string | null): Promise<string | null> 
   return data.signedUrl;
 }
 
-/** Full chat thread for one player, with card/list payloads resolved server-side. */
-export async function getThread(playerId: string): Promise<ChatMessageView[]> {
-  await requireSessionAdmin();
-  const client = svc();
-
-  // Messages + games + methods in parallel (were sequential).
-  const [messagesRes, gamesRes, methodsRes] = await Promise.all([
-    client
-      .from("chat_messages")
-      .select("id, player_id, sender, kind, body, created_at, is_read_by_player, is_read_by_admin")
-      .eq("player_id", playerId)
-      // LATEST 500, not the OLDEST 200 (Build 42) — same truncation trap
-      // as the player side; rows are reversed back to ascending below.
-      .order("created_at", { ascending: false })
-      .limit(500),
-    client.from("games").select("id, name"),
-    client.from("payment_methods").select("id, name"),
-  ]);
-
-  const { data: messagesDesc } = messagesRes;
-  const messages = (messagesDesc ?? []).slice().reverse();
-  const { data: games } = gamesRes;
-  const { data: methods } = methodsRes;
+/**
+ * Resolve raw thread rows into ChatMessageView cards (v2 Phase 2, audit
+ * M3). Extracted verbatim from getThread so the older-pages action
+ * renders identical cards — one resolver, not two copies.
+ */
+async function resolveThreadViews(
+  client: ReturnType<typeof svc>,
+  messagesDesc: unknown,
+  gamesData: unknown,
+  methodsData: unknown,
+): Promise<ChatMessageView[]> {
+  const messages = ((messagesDesc ?? []) as unknown[]).slice().reverse();
+  const games = gamesData;
+  const methods = methodsData;
   const gameNames = new Map(
     ((games ?? []) as Array<{ id: string; name: string }>).map(
       (g) => [g.id, g.name] as const,
@@ -1048,6 +1039,80 @@ export async function getThread(playerId: string): Promise<ChatMessageView[]> {
     }
   }
   return views;
+}
+
+/** Full chat thread for one player, with card/list payloads resolved server-side. */
+export async function getThread(playerId: string): Promise<ChatMessageView[]> {
+  await requireSessionAdmin();
+  const client = svc();
+
+  // Messages + games + methods in parallel (were sequential).
+  const [messagesRes, gamesRes, methodsRes] = await Promise.all([
+    client
+      .from("chat_messages")
+      .select("id, player_id, sender, kind, body, created_at, is_read_by_player, is_read_by_admin")
+      .eq("player_id", playerId)
+      // LATEST 500, not the OLDEST 200 (Build 42) — older history pages
+      // via getThreadOlder below; rows are reversed back to ascending.
+      // Secondary id order makes the window boundary deterministic, so
+      // the older-pages cursor never skips or repeats a tied row.
+      .order("created_at", { ascending: false })
+      .order("id", { ascending: false })
+      .limit(500),
+    client.from("games").select("id, name"),
+    client.from("payment_methods").select("id, name"),
+  ]);
+
+  return resolveThreadViews(
+    client,
+    messagesRes.data,
+    gamesRes.data,
+    methodsRes.data,
+  );
+}
+
+const threadOlderCursorSchema = z.object({
+  beforeCreatedAt: z.string().datetime({ offset: true }),
+  beforeId: z.string().uuid(),
+});
+
+/**
+ * One older page of a thread (v2 Phase 2, audit M3). Cursor is the
+ * oldest message currently shown: strictly older rows, with (created_at,
+ * id) ordering so same-timestamp ties never gap or repeat. Limit+1
+ * reports hasMore exactly. Same card resolution as getThread.
+ */
+export async function getThreadOlder(
+  playerId: string,
+  rawCursor: z.input<typeof threadOlderCursorSchema>,
+): Promise<{ messages: ChatMessageView[]; hasMore: boolean }> {
+  await requireSessionAdmin();
+  const { beforeCreatedAt, beforeId } = threadOlderCursorSchema.parse(rawCursor);
+  const client = svc();
+  const [messagesRes, gamesRes, methodsRes] = await Promise.all([
+    client
+      .from("chat_messages")
+      .select("id, player_id, sender, kind, body, created_at, is_read_by_player, is_read_by_admin")
+      .eq("player_id", playerId)
+      .or(
+        `created_at.lt.${beforeCreatedAt},and(created_at.eq.${beforeCreatedAt},id.lt.${beforeId})`,
+      )
+      .order("created_at", { ascending: false })
+      .order("id", { ascending: false })
+      .limit(201),
+    client.from("games").select("id, name"),
+    client.from("payment_methods").select("id, name"),
+  ]);
+  const rows = ((messagesRes.data ?? []) as unknown[]).slice();
+  const hasMore = rows.length > 200;
+  const page = hasMore ? rows.slice(0, 200) : rows;
+  const views = await resolveThreadViews(
+    client,
+    page,
+    gamesRes.data,
+    methodsRes.data,
+  );
+  return { messages: views, hasMore };
 }
 
 /** Mark the whole thread as read by admin when the agent opens it. */

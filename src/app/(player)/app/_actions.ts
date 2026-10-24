@@ -566,9 +566,51 @@ export async function getThread(): Promise<ChatMessage[]> {
     .select("id, player_id, sender, kind, body, is_read_by_admin, is_read_by_player, created_at")
     .eq("player_id", user.id)
     // LATEST 500, not the OLDEST 500 (Build 42) — see chat/page.tsx.
+    // Secondary id order makes the window boundary deterministic, so
+    // the getThreadOlder cursor never skips or repeats a tied row.
     .order("created_at", { ascending: false })
+    .order("id", { ascending: false })
     .limit(500);
   return ((data ?? []) as unknown as ChatMessage[]).reverse();
+}
+
+const threadOlderCursorSchema = z.object({
+  beforeCreatedAt: z.string().datetime({ offset: true }),
+  beforeId: z.string().uuid(),
+});
+
+/**
+ * One older page of the player's own thread (v2 Phase 2, audit M3).
+ * Cursor is the oldest message currently shown; (created_at, id)
+ * ordering keeps same-timestamp ties exact. Limit+1 reports hasMore
+ * exactly. Invalid cursor or no user yields an empty page (same
+ * fail-soft shape as getAccountCard's null).
+ */
+export async function getThreadOlder(
+  rawCursor: z.input<typeof threadOlderCursorSchema>,
+): Promise<{ messages: ChatMessage[]; hasMore: boolean }> {
+  const parsed = threadOlderCursorSchema.safeParse(rawCursor);
+  if (!parsed.success) return { messages: [], hasMore: false };
+  const { beforeCreatedAt, beforeId } = parsed.data;
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { messages: [], hasMore: false };
+  const { data } = await supabase
+    .from("chat_messages")
+    .select("id, player_id, sender, kind, body, is_read_by_admin, is_read_by_player, created_at")
+    .eq("player_id", user.id)
+    .or(
+      `created_at.lt.${beforeCreatedAt},and(created_at.eq.${beforeCreatedAt},id.lt.${beforeId})`,
+    )
+    .order("created_at", { ascending: false })
+    .order("id", { ascending: false })
+    .limit(201);
+  const rows = ((data ?? []) as unknown as ChatMessage[]).slice();
+  const hasMore = rows.length > 200;
+  const page = hasMore ? rows.slice(0, 200) : rows;
+  return { messages: page.reverse(), hasMore };
 }
 
 /** Mark admin/system messages as read by the player. */
