@@ -20,7 +20,7 @@ import ThreadView from "./thread";
 import DetailsPanel from "./details-panel";
 import { Avatar, timeAgo } from "./ui-bits";
 
-type Filter = "all" | "unread" | "action";
+type Filter = "all" | "unread" | "action" | "active";
 
 function PlayerRow({
   player,
@@ -46,7 +46,15 @@ function PlayerRow({
       )}
     >
       <div className="flex items-start gap-2.5">
-        <Avatar name={player.displayName} />
+        <span className="relative shrink-0">
+          <Avatar name={player.displayName} />
+          {player.isOnline && (
+            <span
+              aria-label="Active now"
+              className="absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full border-2 border-bg-2 bg-emerald-400"
+            />
+          )}
+        </span>
         <div className="min-w-0 flex-1">
           <div className="flex items-center justify-between gap-2">
             <p className="truncate text-[13px] font-medium text-text-primary">
@@ -60,6 +68,11 @@ function PlayerRow({
             {player.lastPreview ?? "No messages yet"}
           </p>
           <div className="mt-1 flex items-center gap-1">
+            {player.isOnline && (
+              <span className="rounded-full bg-emerald-400/15 px-1.5 py-px text-[10px] font-semibold text-emerald-400">
+                Active
+              </span>
+            )}
             {player.unreadCount > 0 && (
               <span className="rounded-full bg-gold px-1.5 py-px text-[10px] font-bold text-navy">
                 {player.unreadCount}
@@ -500,6 +513,7 @@ export default function InboxShell({
         p.creatingAccounts === 0
       )
         return false;
+      if (filter === "active" && !p.isOnline) return false;
       if (tag && !p.tags.includes(tag)) return false;
       if (
         q &&
@@ -516,6 +530,7 @@ export default function InboxShell({
     : null;
 
   const unreadTotal = overview.reduce((n, p) => n + p.unreadCount, 0);
+  const activeCount = overview.filter((p) => p.isOnline).length;
   const [mobilePanel, setMobilePanel] = useState<"details" | null>(null);
   // Mobile shows: list (no selection) → thread (selection) → details (if requested)
   const mobileView = !selectedId ? "list" : mobilePanel === "details" ? "details" : "thread";
@@ -543,12 +558,13 @@ export default function InboxShell({
               className="admin-focus w-full rounded-md border border-surface-border bg-surface-input py-2 pl-8 pr-2 text-[13px] text-text-primary placeholder:text-text-muted"
             />
           </div>
-          <div className="mt-2 flex gap-1.5" role="group" aria-label="Message filters">
+          <div className="mt-2 flex flex-wrap gap-1.5" role="group" aria-label="Message filters">
             {(
               [
                 ["all", "All"],
                 ["unread", unreadTotal > 0 ? `Unread (${unreadTotal})` : "Unread"],
                 ["action", "Action-needed"],
+                ["active", activeCount > 0 ? `Active (${activeCount})` : "Active"],
               ] as Array<[Filter, string]>
             ).map(([key, label]) => (
               <button
