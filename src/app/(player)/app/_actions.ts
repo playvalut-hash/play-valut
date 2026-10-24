@@ -9,7 +9,10 @@ import {
   encryptPassword,
   generateGamePassword,
 } from "@/lib/crypto";
-import { generateUsername, validateDepositAmount } from "@/lib/utils";
+import {
+  insertGameAccountWithUniqueUsername,
+  validateDepositAmount,
+} from "@/lib/utils";
 import { validateImageFile } from "@/lib/uploads";
 import { matchChatIntent } from "@/lib/chat-intent";
 import type {
@@ -159,33 +162,45 @@ async function createOrReturnAccount(
     return { accountId: row.id, status: row.status, created: false };
   }
 
-  const { data, error } = await supabase
-    .from("game_accounts")
-    .insert({
-      player_id: playerId,
-      game_id: gameId,
-      username: generateUsername(gameId),
-      password_enc: encryptPassword(generateGamePassword()),
-      status: "creating",
-    })
-    .select("id")
-    .single();
-
-  if (error || !data) {
-    // Race: another request created it between our check and insert.
-    const { data: retry } = await supabase
-      .from("game_accounts")
-      .select("id, status")
-      .eq("player_id", playerId)
-      .eq("game_id", gameId)
-      .maybeSingle();
-    if (retry) {
-      const row = retry as { id: string; status: "creating" | "active" };
-      return { accountId: row.id, status: row.status, created: false };
-    }
+  // Username collisions with OTHER players are retried inside the helper
+  // (audit H6): the (game_id, username) unique index (migration 0016)
+  // surfaces them as 23505, and the helper regenerates the username.
+  const inserted = await insertGameAccountWithUniqueUsername(gameId, {
+    tryInsert: async (username) => {
+      const { data, error } = await supabase
+        .from("game_accounts")
+        .insert({
+          player_id: playerId,
+          game_id: gameId,
+          username,
+          password_enc: encryptPassword(generateGamePassword()),
+          status: "creating",
+        })
+        .select("id")
+        .single();
+      return {
+        id: (data as { id: string } | null)?.id ?? null,
+        errorCode: (error as { code?: string } | null)?.code ?? null,
+      };
+    },
+    findExisting: async () => {
+      const { data: retry } = await supabase
+        .from("game_accounts")
+        .select("id, status")
+        .eq("player_id", playerId)
+        .eq("game_id", gameId)
+        .maybeSingle();
+      return (retry as { id: string; status: "creating" | "active" } | null) ?? null;
+    },
+  });
+  if (!inserted) {
     throw new Error("Could not create your game account. Please try again.");
   }
-  return { accountId: (data as { id: string }).id, status: "creating", created: true };
+  return {
+    accountId: inserted.id,
+    status: inserted.status,
+    created: inserted.created,
+  };
 }
 
 /** Does an account card message for this account already exist in the thread? */

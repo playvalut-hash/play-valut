@@ -2541,7 +2541,7 @@ export async function deletePlayer(
 /* ── Create game account for player (from details panel) ── */
 
 import { generateGamePassword } from "@/lib/crypto";
-import { generateUsername } from "@/lib/utils";
+import { insertGameAccountWithUniqueUsername } from "@/lib/utils";
 
 export async function createGameAccountForPlayer(
   adminId: string,
@@ -2576,19 +2576,42 @@ export async function createGameAccountForPlayer(
   // the card in the thread (markAccountActive), like a chat-requested
   // account. (Build 62: this used to insert "active" directly and never
   // sent anything to the player, so Create looked broken.)
-  const { data: account, error } = await client
-    .from("game_accounts")
-    .insert({
-      player_id: playerId,
-      game_id: gameId,
-      username: generateUsername(gameId),
-      password_enc: encryptPassword(generateGamePassword()),
-      status: "creating",
-    })
-    .select("id")
-    .single();
-  if (error || !account) throw new Error("Could not create account");
-  const accountId = (account as { id: string }).id;
+  // Username collisions with other players are retried inside the helper
+  // (audit H6); a (player_id, game_id) race surfaces as "already has".
+  const inserted = await insertGameAccountWithUniqueUsername(gameId, {
+    tryInsert: async (username) => {
+      const { data, error } = await client
+        .from("game_accounts")
+        .insert({
+          player_id: playerId,
+          game_id: gameId,
+          username,
+          password_enc: encryptPassword(generateGamePassword()),
+          status: "creating",
+        })
+        .select("id")
+        .single();
+      return {
+        id: (data as { id: string } | null)?.id ?? null,
+        errorCode: (error as { code?: string } | null)?.code ?? null,
+      };
+    },
+    findExisting: async () => {
+      const { data: retry } = await client
+        .from("game_accounts")
+        .select("id")
+        .eq("player_id", playerId)
+        .eq("game_id", gameId)
+        .maybeSingle();
+      if (!retry) return null;
+      return { id: (retry as { id: string }).id, status: "creating" as const };
+    },
+  });
+  if (!inserted) throw new Error("Could not create account");
+  if (!inserted.created) {
+    throw new Error(`This player already has a ${gameName} account`);
+  }
+  const accountId = inserted.id;
 
   // Send it to the player in chat, exactly like a requested account:
   // a short setup note, a human beat, then the CREATING card.
