@@ -570,6 +570,73 @@ function messagePreview(kind: string, body: Record<string, unknown>): string {
 
 /** Full player list for the inbox, with tags, unread counts, last message and action flags. */
 /**
+ * Per-player inbox counts (v2 Phase 1, audit H5). One grouped RPC instead
+ * of three unbounded row fetches (unread messages, pending deposits,
+ * creating accounts) on every poll. Falls back to the old row fetches when
+ * the function is not deployed yet (migration 0015), so the inbox never
+ * breaks between the code deploy and the SQL run.
+ */
+async function getOverviewCounts(
+  client: ReturnType<typeof svc>,
+  ids: string[],
+): Promise<{
+  unread: Map<string, number>;
+  pending: Map<string, number>;
+  creating: Map<string, number>;
+}> {
+  const { data, error } = await client.rpc("player_overview_counts", {
+    player_ids: ids,
+  });
+  if (!error && data) {
+    const unread = new Map<string, number>();
+    const pending = new Map<string, number>();
+    const creating = new Map<string, number>();
+    for (const row of data as Array<{
+      player_id: string;
+      unread_count: number;
+      pending_count: number;
+      creating_count: number;
+    }>) {
+      unread.set(row.player_id, Number(row.unread_count));
+      pending.set(row.player_id, Number(row.pending_count));
+      creating.set(row.player_id, Number(row.creating_count));
+    }
+    return { unread, pending, creating };
+  }
+  // Pre-migration fallback: the old row fetches, unchanged behavior.
+  const [unreadRes, pendingRes, creatingRes] = await Promise.all([
+    client
+      .from("chat_messages")
+      .select("player_id")
+      .in("player_id", ids)
+      .eq("sender", "player")
+      .eq("is_read_by_admin", false),
+    client
+      .from("deposits")
+      .select("player_id")
+      .in("player_id", ids)
+      .eq("status", "pending"),
+    client
+      .from("game_accounts")
+      .select("player_id")
+      .in("player_id", ids)
+      .eq("status", "creating"),
+  ]);
+  const count = (rows: unknown) => {
+    const map = new Map<string, number>();
+    for (const r of (rows ?? []) as Array<{ player_id: string }>) {
+      map.set(r.player_id, (map.get(r.player_id) ?? 0) + 1);
+    }
+    return map;
+  };
+  return {
+    unread: count(unreadRes.data),
+    pending: count(pendingRes.data),
+    creating: count(creatingRes.data),
+  };
+}
+
+/**
  * Inbox player list (v2 Phase 1, audit H2). Defaults to the newest 100
  * players; pass search/limit/offset to page through the whole base or to
  * search server-side — the old client-only search could never find a
@@ -602,38 +669,19 @@ export async function getInboxOverview(opts?: {
   const ids = playerList.map((p) => p.id);
 
   // All independent queries in parallel (was 5 sequential round-trips).
-  const [tagsRes, unreadRes, pendingRes, creatingRes, recentRes, lastSeenMap] =
-    await Promise.all([
-      client.from("player_tags").select("player_id, tag").in("player_id", ids),
-      client
-        .from("chat_messages")
-        .select("player_id")
-        .in("player_id", ids)
-        .eq("sender", "player")
-        .eq("is_read_by_admin", false),
-      client
-        .from("deposits")
-        .select("player_id")
-        .in("player_id", ids)
-        .eq("status", "pending"),
-      client
-        .from("game_accounts")
-        .select("player_id")
-        .in("player_id", ids)
-        .eq("status", "creating"),
-      client
-        .from("chat_messages")
-        .select("player_id, kind, body, created_at")
-        .in("player_id", ids)
-        .order("created_at", { ascending: false })
-        .limit(500),
-      fetchLastSeenMap(client, ids),
-    ]);
+  const [tagsRes, recentRes, lastSeenMap, countMaps] = await Promise.all([
+    client.from("player_tags").select("player_id, tag").in("player_id", ids),
+    client
+      .from("chat_messages")
+      .select("player_id, kind, body, created_at")
+      .in("player_id", ids)
+      .order("created_at", { ascending: false })
+      .limit(500),
+    fetchLastSeenMap(client, ids),
+    getOverviewCounts(client, ids),
+  ]);
 
   const { data: tags } = tagsRes;
-  const { data: unread } = unreadRes;
-  const { data: pendingDeposits } = pendingRes;
-  const { data: creating } = creatingRes;
   const { data: recent } = recentRes;
   const tagMap = new Map<string, string[]>();
   for (const t of ((tags ?? []) as Array<{ player_id: string; tag: string }>)) {
@@ -642,20 +690,9 @@ export async function getInboxOverview(opts?: {
     tagMap.set(t.player_id, arr);
   }
 
-  const unreadMap = new Map<string, number>();
-  for (const m of ((unread ?? []) as Array<{ player_id: string }>)) {
-    unreadMap.set(m.player_id, (unreadMap.get(m.player_id) ?? 0) + 1);
-  }
-
-  const pendingMap = new Map<string, number>();
-  for (const d of ((pendingDeposits ?? []) as Array<{ player_id: string }>)) {
-    pendingMap.set(d.player_id, (pendingMap.get(d.player_id) ?? 0) + 1);
-  }
-
-  const creatingMap = new Map<string, number>();
-  for (const a of ((creating ?? []) as Array<{ player_id: string }>)) {
-    creatingMap.set(a.player_id, (creatingMap.get(a.player_id) ?? 0) + 1);
-  }
+  const unreadMap = countMaps.unread;
+  const pendingMap = countMaps.pending;
+  const creatingMap = countMaps.creating;
 
   // Latest message per player (recent window, then take first per player).
   const lastMap = new Map<
