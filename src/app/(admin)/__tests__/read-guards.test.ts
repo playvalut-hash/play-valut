@@ -6,58 +6,17 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
  * The Supabase clients are fully mocked; no live database is touched.
  */
 
-const getUser = vi.fn();
+import { getUser, mockServiceClient, session } from "./mocks";
 
 vi.mock("@/lib/supabase/server", () => ({
   createClient: () => ({ auth: { getUser } }),
 }));
 
-function chainable(result: unknown) {
-  const q: Record<string, unknown> = {};
-  for (const m of [
-    "select",
-    "eq",
-    "neq",
-    "in",
-    "order",
-    "limit",
-    "gt",
-    "gte",
-    "lt",
-    "lte",
-    "single",
-    "maybeSingle",
-  ]) {
-    q[m] = () => q;
-  }
-  // Awaiting the chain resolves to the stubbed result.
-  q.then = (resolve: (v: unknown) => void) => resolve(result);
-  return q;
-}
-
-const ADMIN_ROW = {
-  id: "admin-1",
-  role: "super_admin",
-  display_name: "Super",
-  email: "admin@example.com",
-  is_active: true,
-  permissions: null,
-};
-
 vi.mock("@/lib/supabase/service", () => ({
-  createServiceClient: () => ({
-    from: (table: string) =>
-      table === "admin_users"
-        ? chainable({ data: ADMIN_ROW, error: null })
-        : chainable({ data: [], error: null }),
-  }),
+  createServiceClient: mockServiceClient,
 }));
 
 import { getInboxOverview } from "../_actions";
-
-function session(userId: string | null) {
-  getUser.mockResolvedValue({ data: { user: userId ? { id: userId } : null } });
-}
 
 describe("getInboxOverview session guard (audit C2)", () => {
   beforeEach(() => getUser.mockReset());

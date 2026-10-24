@@ -31,6 +31,7 @@ import {
 import { expandShortcut } from "@/lib/text-expander";
 import ScreenshotViewer from "./screenshot-viewer";
 import { Avatar, StatusChip, bubbleTime, fullDateTime } from "./ui-bits";
+import { safeHref } from "@/lib/urls";
 
 /* ── Account card (fixed 400px, never stretches — PRD Change 21a) ──────── */
 
@@ -307,9 +308,9 @@ function MessageItem({
                 <span className="text-right text-xs text-text-secondary">{card.note}</span>
               </div>
             )}
-            {card.payLink && (
+            {safeHref(card.payLink) && (
               <a
-                href={card.payLink}
+                href={safeHref(card.payLink) ?? ""}
                 target="_blank"
                 rel="noreferrer"
                 className="admin-focus inline-flex items-center gap-1 pt-0.5 text-[11px] font-semibold text-gold hover:underline"

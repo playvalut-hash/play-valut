@@ -10,6 +10,7 @@ import {
   generateGamePassword,
 } from "@/lib/crypto";
 import { generateUsername, validateDepositAmount } from "@/lib/utils";
+import { validateImageFile } from "@/lib/uploads";
 import { matchChatIntent } from "@/lib/chat-intent";
 import type {
   AccountCard,
@@ -640,13 +641,12 @@ function getFormString(formData: FormData, key: string): string {
 
 async function uploadScreenshot(userId: string, file: File): Promise<string> {
   const service = createServiceClient();
-  const ext = file.type.includes("png") ? "png" : "jpg";
-  const path = `${userId}/${crypto.randomUUID()}.${ext}`;
-  const buffer = Buffer.from(await file.arrayBuffer());
+  const validated = await validateImageFile(file, MAX_SCREENSHOT_BYTES);
+  const path = `${userId}/${crypto.randomUUID()}.${validated.extension}`;
   const { error } = await service.storage
     .from("screenshots")
-    .upload(path, buffer, {
-      contentType: file.type || "image/jpeg",
+    .upload(path, validated.bytes, {
+      contentType: validated.contentType,
       upsert: false,
     });
   if (error) throw new Error("Couldn't upload the screenshot. Try again.");

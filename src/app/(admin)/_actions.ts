@@ -17,6 +17,8 @@ import { createClient } from "@/lib/supabase/server";
 import { createServiceClient } from "@/lib/supabase/service";
 import { decryptPassword, encryptPassword } from "@/lib/crypto";
 import { normalizeTag } from "@/lib/utils";
+import { isSafeHttpUrl } from "@/lib/urls";
+import { validateImageFile } from "@/lib/uploads";
 import { QUICK_REPLIES } from "./_quick-replies";
 import { assertSessionMatches, getSessionUserId } from "./_auth";
 
@@ -1313,16 +1315,13 @@ export async function adminSendChatImage(
   if (!(entry instanceof File) || entry.size === 0) {
     throw new Error("No image attached");
   }
-  if (!entry.type.startsWith("image/")) throw new Error("That file isn't an image");
-  if (entry.size > 8 * 1024 * 1024) throw new Error("Image must be under 8 MB");
+  const validated = await validateImageFile(entry, 8 * 1024 * 1024);
   const client = svc();
-  const ext = entry.type.includes("png") ? "png" : "jpg";
-  const path = `${playerId}/${crypto.randomUUID()}.${ext}`;
-  const buffer = Buffer.from(await entry.arrayBuffer());
+  const path = `${playerId}/${crypto.randomUUID()}.${validated.extension}`;
   const { error: upError } = await client.storage
     .from("screenshots")
-    .upload(path, buffer, {
-      contentType: entry.type || "image/jpeg",
+    .upload(path, validated.bytes, {
+      contentType: validated.contentType,
       upsert: false,
     });
   if (upError) throw new Error("Couldn't upload the image. Try again.");
@@ -1604,8 +1603,14 @@ const gameSchema = z.object({
     .regex(/^[a-z0-9-]+$/, "ID must be lowercase letters, digits and hyphens"),
   name: z.string().trim().min(1).max(80),
   category: z.string().trim().max(60).optional().default(""),
-  link: z.string().trim().max(500).optional().default(""),
-  webLink: z.string().trim().max(500).optional().default(""),
+  link: z.string().trim().max(500).optional().default("").refine(
+    (v) => v === "" || isSafeHttpUrl(v),
+    "Link must start with http:// or https://",
+  ),
+  webLink: z.string().trim().max(500).optional().default("").refine(
+    (v) => v === "" || isSafeHttpUrl(v),
+    "Link must start with http:// or https://",
+  ),
   access: z.enum(["both", "app", "web"]).default("both"),
   firstBonusPct: z.coerce.number().int().min(0).max(1000).default(0),
   regBonusPct: z.coerce.number().int().min(0).max(1000).default(0),
@@ -1692,15 +1697,11 @@ export async function uploadGameIcon(
   const file = formData.get("file");
   z.string().min(1).parse(gameId);
   if (!(file instanceof File)) throw new Error("No file provided");
-  if (!file.type.startsWith("image/")) throw new Error("Only image files are allowed");
-  if (file.size > MAX_UPLOAD_BYTES) throw new Error("Image must be 8 MB or smaller");
-
-  const ext = file.type === "image/png" ? "png" : file.type === "image/webp" ? "webp" : "jpg";
-  const path = `${gameId}.${ext}`;
-  const bytes = Buffer.from(await file.arrayBuffer());
+  const validated = await validateImageFile(file, MAX_UPLOAD_BYTES);
+  const path = `${gameId}.${validated.extension}`;
   const { error: uploadError } = await svc()
     .storage.from("game-icons")
-    .upload(path, bytes, { contentType: file.type, upsert: true });
+    .upload(path, validated.bytes, { contentType: validated.contentType, upsert: true });
   if (uploadError) throw new Error("Could not upload icon");
 
   await svc().from("games").update({ icon_path: path }).eq("id", gameId);
@@ -1747,7 +1748,10 @@ const methodSchema = z.object({
     .default(""),
   accountName: z.string().trim().min(1).max(120),
   handle: z.string().trim().min(1).max(120),
-  payLink: z.string().trim().max(500).optional().default(""),
+  payLink: z.string().trim().max(500).optional().default("").refine(
+    (v) => v === "" || isSafeHttpUrl(v),
+    "Link must start with http:// or https://",
+  ),
   note: z.string().trim().max(500).optional().default(""),
   sortOrder: z.coerce.number().int().min(0).max(9999).default(0),
   isActive: z.boolean().default(true),
@@ -1865,15 +1869,11 @@ export async function uploadBrandLogo(
   await requireAdmin(adminId);
   const file = formData.get("file");
   if (!(file instanceof File)) throw new Error("No file provided");
-  if (!file.type.startsWith("image/")) throw new Error("Only image files are allowed");
-  if (file.size > MAX_UPLOAD_BYTES) throw new Error("Image must be 8 MB or smaller");
-
-  const ext = file.type === "image/png" ? "png" : file.type === "image/webp" ? "webp" : "jpg";
-  const path = `logo.${ext}`;
-  const bytes = Buffer.from(await file.arrayBuffer());
+  const validated = await validateImageFile(file, MAX_UPLOAD_BYTES);
+  const path = `logo.${validated.extension}`;
   const { error: uploadError } = await svc()
     .storage.from("brand-logos")
-    .upload(path, bytes, { contentType: file.type, upsert: true });
+    .upload(path, validated.bytes, { contentType: validated.contentType, upsert: true });
   if (uploadError) throw new Error("Could not upload logo");
 
   await svc().from("branding").upsert({ id: 1, logo_path: path });

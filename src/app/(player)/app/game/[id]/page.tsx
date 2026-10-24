@@ -11,6 +11,7 @@ import {
 import { requestGameAccount } from "../../_actions";
 import { gameGradient } from "../../_types";
 import type { Game } from "../../_types";
+import { safeHref } from "@/lib/urls";
 
 async function getGame(id: string): Promise<Game | null> {
   const supabase = await createClient();
@@ -59,6 +60,9 @@ export default async function GameDetailPage({
     (game.access === "both" || game.access === "app") && !!game.link;
   const canPlayWeb =
     !!game.web_link && (game.access === "both" || game.access === "web");
+  // Render-time link guard (audit H1): only safe http(s) URLs become anchors.
+  const appHref = safeHref(game.link);
+  const webHref = safeHref(game.web_link);
   const generateAction = requestGameAccount.bind(null, game.id);
 
   return (
@@ -93,7 +97,7 @@ export default async function GameDetailPage({
             </dt>
             <dd>
               <a
-                href={game.link}
+                href={safeHref(game.link) ?? ""}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="inline-flex items-center gap-1.5 text-sm font-bold text-gold hover:text-gold-light transition"
@@ -141,9 +145,9 @@ export default async function GameDetailPage({
       {/* Smart Play buttons (F6) */}
       {(canPlayApp || canPlayWeb) && (
         <div className={`mt-5 grid gap-3 ${canPlayApp && canPlayWeb ? "grid-cols-2" : "grid-cols-1"}`}>
-          {canPlayApp && game.link ? (
+          {canPlayApp && appHref ? (
             <a
-              href={game.link}
+              href={appHref}
               target="_blank"
               rel="noopener noreferrer"
               className="flex min-h-[52px] items-center justify-center gap-2 rounded-xl bg-gold text-base font-bold text-text-ongold shadow-[0_4px_20px_rgba(212,175,55,0.25)] transition hover:brightness-110"
@@ -152,9 +156,9 @@ export default async function GameDetailPage({
               <ArrowRightIcon className="h-5 w-5" />
             </a>
           ) : null}
-          {canPlayWeb && game.web_link ? (
+          {canPlayWeb && webHref ? (
             <a
-              href={game.web_link}
+              href={webHref}
               target="_blank"
               rel="noopener noreferrer"
               className="flex min-h-[52px] items-center justify-center gap-2 rounded-xl border border-gold/60 text-base font-bold text-gold transition hover:bg-gold/10"

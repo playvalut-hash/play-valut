@@ -25,6 +25,7 @@ import {
   submitChatDeposit,
 } from "../_actions";
 import type { AccountCard, ChatMessage } from "../_types";
+import { safeHref } from "@/lib/urls";
 
 /* ── body helpers ─────────────────────────────────────────────────────────── */
 
@@ -559,9 +560,9 @@ function PaymentCardMessage({ message }: { message: ChatMessage }) {
               </div>
             ) : null}
           </dl>
-          {snapshot.pay_link ? (
+          {safeHref(snapshot.pay_link) ? (
             <a
-              href={snapshot.pay_link}
+              href={safeHref(snapshot.pay_link) ?? ""}
               target="_blank"
               rel="noopener noreferrer"
               className="mt-4 flex min-h-[48px] items-center justify-center gap-2 rounded-xl bg-gold text-sm font-bold text-text-ongold transition hover:brightness-110"

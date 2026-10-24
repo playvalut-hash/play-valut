@@ -15,6 +15,7 @@ import {
   TrashIcon,
   XIcon,
 } from "@/components/icons";
+import { safeHref } from "@/lib/urls";
 
 const EMPTY: MethodFormData = {
   id: "",
@@ -338,12 +339,12 @@ export default function MethodsManager({
                 <dt className="text-text-muted">Handle</dt>
                 <dd className="font-mono text-text-primary">{m.handle}</dd>
               </div>
-              {m.payLink && (
+              {safeHref(m.payLink) && (
                 <div className="flex justify-between gap-2">
                   <dt className="text-text-muted">Pay link</dt>
                   <dd>
                     <a
-                      href={m.payLink}
+                      href={safeHref(m.payLink) ?? ""}
                       target="_blank"
                       rel="noreferrer"
                       className="admin-focus inline-flex items-center gap-1 text-gold hover:underline"

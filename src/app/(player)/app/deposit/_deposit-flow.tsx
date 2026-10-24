@@ -15,6 +15,7 @@ import {
 import { MAX_DEPOSIT, MIN_DEPOSIT, validateDepositAmount } from "@/lib/utils";
 import { submitDeposit } from "../_actions";
 import type { PaymentMethod } from "../_types";
+import { safeHref } from "@/lib/urls";
 
 type Step = "amount" | "method" | "detail" | "upload";
 
@@ -256,9 +257,9 @@ export default function DepositFlow({ methods }: { methods: PaymentMethod[] }) {
                 <p className="mt-2 text-xs text-text-secondary">{method.note}</p>
               ) : null}
             </div>
-            {method.pay_link ? (
+            {safeHref(method.pay_link) ? (
               <a
-                href={method.pay_link}
+                href={safeHref(method.pay_link) ?? ""}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="mt-4 flex min-h-[52px] w-full items-center justify-center gap-2 rounded-xl bg-gold text-base font-bold text-text-ongold transition hover:brightness-110"
