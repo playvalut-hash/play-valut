@@ -1,0 +1,29 @@
+-- v2 Phase 1, audit H10: staff bulk-read of game-account rows closed.
+--
+-- Migration 0008 added three staff SELECT policies so admin Realtime
+-- (postgres_changes) could deliver rows. But only TWO of them are ever
+-- used: the admin inbox subscribes to chat_messages and deposits only.
+-- Nothing in either app subscribes to game_accounts rows — account state
+-- reaches the admin UI through server actions (service role) and the
+-- player UI through its own-row policy. So game_accounts_select_staff
+-- bought nothing except a direct PostgREST bulk read of EVERY row,
+-- including the password_enc ciphertext, by any active staff JWT —
+-- bypassing all server-action permission checks and leaving no audit row.
+-- Dropping it closes that hole with zero realtime loss.
+--
+-- chat_messages_select_staff and deposits_select_staff DELIBERATELY STAY:
+-- admin inbox realtime needs them (RLS gates postgres_changes delivery,
+-- and Supabase has no realtime-only policy type). Residual risk, stated
+-- plainly: an active staff JWT can still bulk-read chats and deposits
+-- directly, without an audit row. That content is what agents already see
+-- in the admin UI by design, but the unaudited bulk path only closes with
+-- a broadcast-based realtime redesign (future work, not this migration).
+--
+-- Player access is unaffected: game_accounts_select_own (own rows only)
+-- stays in place, and service-role reads bypass RLS as before.
+--
+-- Verify after running (expect exactly 2 rows, no game_accounts row):
+--   select tablename, policyname from pg_policies
+--   where policyname like '%_select_staff' order by tablename;
+
+drop policy if exists "game_accounts_select_staff" on public.game_accounts;
