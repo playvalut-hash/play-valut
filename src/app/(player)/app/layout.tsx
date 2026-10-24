@@ -2,6 +2,7 @@ import { createClient } from "@/lib/supabase/server";
 import { createServiceClient } from "@/lib/supabase/service";
 
 import { signOut } from "./_actions";
+import PresenceHeartbeat from "./_presence";
 import Tabs from "./_tabs";
 
 /** All pages here are auth-gated: skip prerendering. */
@@ -71,6 +72,7 @@ export default async function PlayerLayout({
       <div className="relative flex min-h-dvh w-full max-w-[440px] flex-col bg-bg md:border-x md:border-line md:shadow-[0_0_80px_rgba(0,0,0,0.7)]">
         <main className="flex-1 pb-24">{children}</main>
         <Tabs />
+        <PresenceHeartbeat />
       </div>
     </div>
   );

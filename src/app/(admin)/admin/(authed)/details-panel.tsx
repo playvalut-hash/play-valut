@@ -546,34 +546,20 @@ export default function DetailsPanel({
           @{detail.player.displayName.toLowerCase().replace(/\s+/g, "")} ·{" "}
           {detail.tags.includes("vip") ? "Gold VIP" : detail.tags.includes("new player") ? "Silver VIP" : "Player"}
         </p>
+        <p className="mt-1.5 flex items-center gap-1.5 text-[12px] font-semibold">
+          <span
+            aria-hidden
+            className={`h-2 w-2 rounded-full ${detail.player.isOnline ? "bg-emerald-400" : "bg-zinc-500"}`}
+          />
+          <span className={detail.player.isOnline ? "text-emerald-400" : "text-text-muted"}>
+            {detail.player.isOnline ? "Active now" : "Offline"}
+          </span>
+        </p>
         {detail.player.isBlocked && (
           <span className="mt-1.5 rounded-full border border-red-500/50 bg-red-500/10 px-2.5 py-0.5 text-[11px] font-bold text-red-400">
             BLOCKED
           </span>
         )}
-      </div>
-
-      {/* Wallet */}
-      <div>
-        <p className="mb-1.5 px-1 text-[11px] font-bold uppercase tracking-wider text-text-muted">
-          Wallet
-        </p>
-        <div className="space-y-2 rounded-xl border border-surface-border bg-surface-card px-3.5 py-3 text-[13px]">
-          <div className="flex justify-between">
-            <span className="text-text-muted">Balance</span>
-            <span className="font-bold text-text-primary">$0.00</span>
-          </div>
-          <div className="flex justify-between border-t border-surface-border pt-2">
-            <span className="text-text-muted">Status</span>
-            <span className="font-semibold text-text-primary">
-              {detail.player.isOnline ? "Active now" : "Offline"}
-            </span>
-          </div>
-          <div className="flex justify-between border-t border-surface-border pt-2">
-            <span className="text-text-muted">Game accounts</span>
-            <span className="font-bold text-text-primary">{detail.accounts.length}</span>
-          </div>
-        </div>
       </div>
 
       {/* Pending deposits — action needed (Build 45) */}

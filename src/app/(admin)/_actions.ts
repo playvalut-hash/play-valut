@@ -255,6 +255,36 @@ function audit(adminId: string, action: string, detail?: string): void {
   );
 }
 
+/* ── Presence (Build 63) ───────────────────────────────────────────────
+ * A player counts as online only when is_online is set AND the last
+ * heartbeat is fresh. last_seen_at arrives with migration 0013; until
+ * then the separate fail-soft lookup just yields an empty map and the
+ * flag alone decides — the inbox never breaks either way. */
+const ONLINE_WINDOW_MS = 75_000;
+
+function computeOnline(isOnline: boolean, lastSeen: string | null | undefined): boolean {
+  if (!isOnline) return false;
+  if (!lastSeen) return true;
+  return Date.now() - new Date(lastSeen).getTime() < ONLINE_WINDOW_MS;
+}
+
+async function fetchLastSeenMap(
+  client: ReturnType<typeof svc>,
+  ids: string[],
+): Promise<Map<string, string | null>> {
+  const map = new Map<string, string | null>();
+  if (ids.length === 0) return map;
+  const { data, error } = await client
+    .from("players")
+    .select("id, last_seen_at")
+    .in("id", ids);
+  if (error || !data) return map;
+  for (const r of data as Array<{ id: string; last_seen_at: string | null }>) {
+    map.set(r.id, r.last_seen_at ?? null);
+  }
+  return map;
+}
+
 function svc() {
   return createServiceClient();
 }
@@ -516,7 +546,7 @@ export async function getInboxOverview(): Promise<PlayerOverview[]> {
   const ids = playerList.map((p) => p.id);
 
   // All independent queries in parallel (was 5 sequential round-trips).
-  const [tagsRes, unreadRes, pendingRes, creatingRes, recentRes] =
+  const [tagsRes, unreadRes, pendingRes, creatingRes, recentRes, lastSeenMap] =
     await Promise.all([
       client.from("player_tags").select("player_id, tag").in("player_id", ids),
       client
@@ -541,6 +571,7 @@ export async function getInboxOverview(): Promise<PlayerOverview[]> {
         .in("player_id", ids)
         .order("created_at", { ascending: false })
         .limit(500),
+      fetchLastSeenMap(client, ids),
     ]);
 
   const { data: tags } = tagsRes;
@@ -591,7 +622,7 @@ export async function getInboxOverview(): Promise<PlayerOverview[]> {
       displayName: p.display_name,
       email: p.email,
       avatarUrl: p.avatar_url,
-      isOnline: p.is_online,
+      isOnline: computeOnline(p.is_online, lastSeenMap.get(p.id)),
       createdAt: p.created_at,
       tags: (tagMap.get(p.id) ?? []).sort(),
       unreadCount: unreadMap.get(p.id) ?? 0,
@@ -992,6 +1023,7 @@ export async function getPlayerDetail(
     .eq("id", playerId)
     .single();
   if (!player) return null;
+  const lastSeenMap = await fetchLastSeenMap(client, [playerId]);
 
   const [{ data: tags }, { data: notes }, { data: accounts }, { data: deposits }] =
     await Promise.all([
@@ -1076,7 +1108,7 @@ export async function getPlayerDetail(
       displayName: player.display_name as string,
       email: (player.email as string | null) ?? null,
       avatarUrl: (player.avatar_url as string | null) ?? null,
-      isOnline: (player.is_online as boolean) ?? false,
+      isOnline: computeOnline((player.is_online as boolean) ?? false, lastSeenMap.get(playerId)),
       isBlocked: (player.is_blocked as boolean) ?? false,
       blockedAt: (player.blocked_at as string | null) ?? null,
     },

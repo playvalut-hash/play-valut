@@ -835,3 +835,27 @@ export async function sendChatImage(formData: FormData): Promise<ActionResult> {
   await notifyAdmin("message", user.id, "Sent an image in chat");
   return { ok: true };
 }
+
+/* ── Presence heartbeat (Build 63) ─────────────────────────────────────
+ * Called by <PresenceHeartbeat/> while the app is open. The player id
+ * always comes from the session, never from the client. Writes are
+ * fail-soft: until migration 0013 (last_seen_at) is applied, the update
+ * falls back to the is_online flag alone. */
+export async function touchPresence(online: boolean): Promise<void> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return;
+  const client = createServiceClient();
+  const { error } = await client
+    .from("players")
+    .update({ is_online: online, last_seen_at: new Date().toISOString() })
+    .eq("id", user.id);
+  if (error) {
+    await client
+      .from("players")
+      .update({ is_online: online })
+      .eq("id", user.id);
+  }
+}
