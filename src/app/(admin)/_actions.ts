@@ -1419,11 +1419,17 @@ export async function markAccountActive(
 
   // Status flip + card lookup + game name are independent — ONE parallel
   // batch (this action used to be 8 strictly sequential round trips).
+  // The flip itself is conditional (audit H8): a concurrent activation
+  // wins the row, and this call sees zero affected rows and returns early
+  // — before any card flip or ready message — exactly like the sequential
+  // already-active return above.
   const [updateRes, cardMsgRes, gameRes] = await Promise.all([
     client
       .from("game_accounts")
       .update({ status: "active", activated_at: new Date().toISOString() })
-      .eq("id", accountId),
+      .eq("id", accountId)
+      .eq("status", "creating")
+      .select("id"),
     client
       .from("chat_messages")
       .select("id, body")
@@ -1438,6 +1444,9 @@ export async function markAccountActive(
       .maybeSingle(),
   ]);
   if (updateRes.error) throw new Error("Could not activate account");
+  if (!updateRes.data || (updateRes.data as unknown[]).length === 0) {
+    return; // Activated concurrently — nothing left to do.
+  }
 
   // Flip the existing in-chat card (R2: one account = one card).
   const target = ((cardMsgRes.data ?? []) as Array<{
@@ -1531,15 +1540,24 @@ export async function approveDeposit(
   if (!deposit) throw new Error("Deposit not found");
   if (deposit.status !== "pending") throw new Error("Deposit already decided");
 
-  const { error } = await client
+  // Atomic decision (v2 Phase 1, audit H8): the update itself carries the
+  // status condition, so two concurrent approves cannot both succeed — the
+  // loser sees zero affected rows and throws BEFORE any chat message is
+  // sent. The read above stays for existence + the message payload only.
+  const { data: decided, error } = await client
     .from("deposits")
     .update({
       status: "approved",
       decided_at: new Date().toISOString(),
       decided_by: adminId,
     })
-    .eq("id", depositId);
+    .eq("id", depositId)
+    .eq("status", "pending")
+    .select("id");
   if (error) throw new Error("Could not approve deposit");
+  if (!decided || decided.length === 0) {
+    throw new Error("Deposit already decided");
+  }
 
   // Independent writes — one parallel batch instead of two round trips.
   await Promise.all([
@@ -1581,7 +1599,8 @@ export async function rejectDeposit(
   if (!deposit) throw new Error("Deposit not found");
   if (deposit.status !== "pending") throw new Error("Deposit already decided");
 
-  const { error } = await client
+  // Atomic decision (audit H8) — see approveDeposit.
+  const { data: decided, error } = await client
     .from("deposits")
     .update({
       status: "rejected",
@@ -1589,8 +1608,13 @@ export async function rejectDeposit(
       decided_at: new Date().toISOString(),
       decided_by: adminId,
     })
-    .eq("id", depositId);
+    .eq("id", depositId)
+    .eq("status", "pending")
+    .select("id");
   if (error) throw new Error("Could not reject deposit");
+  if (!decided || decided.length === 0) {
+    throw new Error("Deposit already decided");
+  }
 
   await Promise.all([
     client.from("chat_messages").insert({
