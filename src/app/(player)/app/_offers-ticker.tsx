@@ -23,7 +23,8 @@ import {
  * the live store, so an added offer appears instantly, a
  * paused/deleted/expired offer vanishes instantly, and the on/off
  * switch hides the whole ticker instantly — the player never reloads.
- * Hovering pauses a crossing. Tapping an offer opens support chat. */
+ * Tapping an offer opens support chat. (Hover-pause was removed: a
+ * cursor resting on the ticker froze it and read as broken.) */
 
 function useLiveTicker(initial: TickerState): TickerState {
   const [state, setState] = useState(initial);
@@ -61,10 +62,11 @@ function useTickerCycle(offers: LiveTickerOffer[]) {
  * current one's tail clears the right edge (delay = current width /
  * speed), so the next offer is already entering as the current one
  * leaves: the screen is never empty, and the two never collide,
- * however long the text is. With a single offer the two slots carry
- * the same text, staggered — a continuous flow, not a duplicated
- * list. The list key above remounts the whole conveyor on any real
- * list change, restarting it from the first offer instantly. */
+ * however long the text is. A LONE offer is the exception: it runs on
+ * a single slot looping in pure CSS, so it is never on screen twice
+ * at once (two staggered copies of one offer read as a duplicate).
+ * The list key above remounts the whole conveyor on any real list
+ * change, restarting it from the first offer instantly. */
 
 const TICKER_SPEED_PX_S = 30;
 
@@ -83,10 +85,13 @@ function ConveyorSlot({
   slot,
   onMeasured,
   onEnd,
+  infinite,
 }: {
   slot: ConveyorSlotState;
   onMeasured: (width: number, barWidth: number) => void;
   onEnd: () => void;
+  /** A lone offer loops in pure CSS — no JS restart, no second copy. */
+  infinite?: boolean;
 }) {
   // Measure-then-animate: the slot first lays out hidden (no animation
   // class, so no instant 0s run firing animationEnd), reports its
@@ -107,10 +112,10 @@ function ConveyorSlot({
     <Link
       ref={measureRef}
       href="/app/chat"
-      onAnimationEnd={animated ? onEnd : undefined}
+      onAnimationEnd={animated && !infinite ? onEnd : undefined}
       className={
         animated
-          ? "pv-ticker-item-x absolute left-0 top-1/2 whitespace-nowrap text-[13px] font-bold text-gold hover:[animation-play-state:paused]"
+          ? "pv-ticker-item-x absolute left-0 top-1/2 whitespace-nowrap text-[13px] font-bold text-gold"
           : "invisible absolute left-0 top-1/2 whitespace-nowrap text-[13px] font-bold text-gold"
       }
       style={
@@ -119,6 +124,7 @@ function ConveyorSlot({
               animationDuration: `${slot.duration}s`,
               animationDelay: `${slot.delay}s`,
               animationFillMode: "backwards",
+              animationIterationCount: infinite ? "infinite" : 1,
             }
           : undefined
       }
@@ -129,6 +135,10 @@ function ConveyorSlot({
 }
 
 function MobileConveyor({ offers }: { offers: LiveTickerOffer[] }) {
+  // A lone offer runs on ONE slot looping in pure CSS — it is never
+  // on screen twice at once. Two or more offers use the staggered
+  // conveyor below (different texts, never duplicated, never empty).
+  const single = offers.length === 1;
   const nextRef = useRef(1);
   const widthARef = useRef<number | null>(null);
   const widthBRef = useRef<number | null>(null);
@@ -149,6 +159,7 @@ function MobileConveyor({ offers }: { offers: LiveTickerOffer[] }) {
           ? { ...s, width, duration: (barWidth + width) / TICKER_SPEED_PX_S }
           : s,
       );
+      if (single) return;
       // The second slot joins once the first is measured, starting
       // when the first one's tail clears the right edge.
       setSlotB((b) =>
@@ -164,7 +175,7 @@ function MobileConveyor({ offers }: { offers: LiveTickerOffer[] }) {
       );
       nextRef.current += 1;
     },
-    [offers],
+    [offers, single],
   );
 
   const onMeasuredB = useCallback((width: number, barWidth: number) => {
@@ -211,6 +222,7 @@ function MobileConveyor({ offers }: { offers: LiveTickerOffer[] }) {
         slot={slotA}
         onMeasured={onMeasuredA}
         onEnd={onEndA}
+        infinite={single}
       />
       {slotB && (
         <ConveyorSlot
@@ -236,7 +248,7 @@ function DesktopStream({ offers }: { offers: LiveTickerOffer[] }) {
       key={`${current.id}-${cycle}`}
       href="/app/chat"
       onAnimationEnd={advance}
-      className="pv-ticker-item-y absolute inset-x-3 rounded-xl border border-gold/30 bg-surface-card px-3 py-2.5 text-[13px] font-bold leading-snug text-text-primary transition-colors hover:border-gold/60 hover:[animation-play-state:paused]"
+      className="pv-ticker-item-y absolute inset-x-3 rounded-xl border border-gold/30 bg-surface-card px-3 py-2.5 text-[13px] font-bold leading-snug text-text-primary transition-colors hover:border-gold/60"
       style={{ animationDuration: "10s" }}
     >
       {current.text}
