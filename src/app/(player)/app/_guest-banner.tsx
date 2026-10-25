@@ -65,7 +65,22 @@ export default function GuestBanner({
             : `pv-${Date.now()}-${Math.random().toString(36).slice(2)}`;
         window.localStorage.setItem("pv_device_id", deviceKey);
       }
-      void trackGuestDevice(deviceKey).catch(() => {});
+      void trackGuestDevice(deviceKey)
+        .then((res) => {
+          try {
+            // One console line per guest session: the tracking outcome
+            // (ok / which guard fired / the RPC error) — read it in
+            // DevTools Console when guest recognition misbehaves.
+            console.info("[guest-tracking]", res);
+            window.sessionStorage.setItem(
+              "pv_track_debug",
+              JSON.stringify(res),
+            );
+          } catch {
+            // Logging must never break the guest flow.
+          }
+        })
+        .catch(() => {});
     } catch {
       // No storage (private mode) — guest flow continues untracked.
     }

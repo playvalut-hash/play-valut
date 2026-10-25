@@ -1073,19 +1073,53 @@ export async function touchPresence(online: boolean): Promise<void> {
  * flags returning guests — so the admin inbox can show "this device
  * came before" even after the guest's own rows were swept. The IP is
  * read server-side from x-forwarded-for and only its SHA-256 hash is
- * stored. Tracking never breaks the app: every failure is swallowed. */
-export async function trackGuestDevice(deviceKey: string): Promise<void> {
+ * stored. Tracking never breaks the app: failures are RETURNED (never
+ * thrown) and the banner logs them to the console, so a silent failure
+ * can actually be diagnosed instead of guessed at. */
+export type GuestTrackResult =
+  | { ok: true; tracked: true }
+  | { ok: true; tracked: false; reason: string }
+  | { ok: false; reason: string; detail?: string };
+export async function trackGuestDevice(
+  deviceKey: string,
+): Promise<GuestTrackResult> {
   try {
-    if (!deviceKey.trim()) return;
+    const key = deviceKey.trim().slice(0, 128);
+    if (!key) return { ok: false, reason: "empty_key" };
     const forwarded = (await headers()).get("x-forwarded-for");
     const ip = forwarded?.split(",")[0]?.trim() || null;
     const supabase = await createClient();
-    await supabase.rpc("track_guest_device", {
-      p_device_key: deviceKey.trim().slice(0, 128),
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    if (!user) return { ok: false, reason: "no_user" };
+    const { data, error } = await supabase.rpc("track_guest_device", {
+      p_device_key: key,
       p_ip: ip,
     });
-  } catch {
+    if (error) return { ok: false, reason: "rpc_error", detail: error.message };
+    if (data === true) return { ok: true, tracked: true };
+    // RPC returned false: work out which guard fired, with no DB change.
+    const { data: row, error: rowErr } = await supabase
+      .from("players")
+      .select("display_name,email")
+      .eq("id", user.id)
+      .maybeSingle();
+    if (rowErr)
+      return { ok: true, tracked: false, reason: "players_lookup_error" };
+    if (!row) return { ok: true, tracked: false, reason: "no_players_row" };
+    if (row.email !== null)
+      return { ok: true, tracked: false, reason: "email_present" };
+    if (!row.display_name)
+      return { ok: true, tracked: false, reason: "null_name" };
+    return { ok: true, tracked: false, reason: "unknown_false" };
+  } catch (e) {
     // Pre-migration (0031 not run) or transient — guest flow continues.
+    return {
+      ok: false,
+      reason: "thrown",
+      detail: e instanceof Error ? e.message : "unknown",
+    };
   }
 }
 
