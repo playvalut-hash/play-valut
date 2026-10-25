@@ -693,7 +693,7 @@ export default function ThreadView({
     <div className="flex h-full min-w-0 flex-1 flex-col">
       {/* Thread header — ONE merged bar (Build 39): mobile back + details
           live here; the shell's separate mobile nav bar is gone. */}
-      <div className="flex shrink-0 items-center gap-2 border-b border-surface-border bg-navy px-2.5 py-2 md:px-4">
+      <div className="flex shrink-0 items-center gap-2 border-b border-surface-border bg-navy px-4 py-2 md:px-6">
         {onBack ? (
           <button
             type="button"
@@ -746,7 +746,7 @@ export default function ThreadView({
       </div>
 
       {/* SEND bar — expandable games + payment methods (compact toolbar) */}
-      <div className="shrink-0 border-b border-surface-border bg-surface-card/60 px-3 py-1.5 md:px-4">
+      <div className="shrink-0 border-b border-surface-border bg-surface-card/60 px-4 py-1.5 md:px-6">
         <div className="admin-thin-scroll flex items-center gap-1.5 overflow-x-auto">
           <span className="hidden shrink-0 text-[10px] font-medium uppercase tracking-wide text-text-muted min-[420px]:block">
             Send
@@ -835,7 +835,7 @@ export default function ThreadView({
       <div
         ref={scrollRef}
         aria-live="polite"
-        className="admin-chat-scroll min-h-0 flex-1 overflow-y-auto bg-near-black px-3 py-3 md:px-4"
+        className="admin-chat-scroll min-h-0 flex-1 overflow-y-auto bg-near-black px-4 py-3 md:px-6"
       >
         {thread.length >= 500 && !olderExhausted ? (
           <button
@@ -873,7 +873,7 @@ export default function ThreadView({
       </div>
 
       {/* Quick replies */}
-      <div className="admin-thin-scroll flex shrink-0 gap-1.5 overflow-x-auto border-t border-surface-border bg-navy px-3 py-1.5">
+      <div className="admin-thin-scroll flex shrink-0 gap-1.5 overflow-x-auto border-t border-surface-border bg-navy px-4 py-1.5 md:px-6">
         {Object.entries(QUICK_REPLIES).map(([key, q]) => (
           <button
             key={key}
@@ -889,7 +889,7 @@ export default function ThreadView({
 
       {/* Player typing indicator */}
       {playerTyping ? (
-        <div className="flex shrink-0 items-center gap-2 border-t border-surface-border bg-navy px-4 py-1.5">
+        <div className="flex shrink-0 items-center gap-2 border-t border-surface-border bg-navy px-4 py-1.5 md:px-6">
           <span className="flex items-center gap-1">
             <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-gold [animation-delay:0ms]" />
             <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-gold [animation-delay:150ms]" />
@@ -903,7 +903,7 @@ export default function ThreadView({
 
       {/* Composer — round pill input + round send, player-chat parity */}
       <div
-        className="flex shrink-0 items-center gap-2 border-t border-surface-border bg-navy px-3 py-2"
+        className="flex shrink-0 items-center gap-2 border-t border-surface-border bg-navy px-4 py-2 md:px-6"
         style={{ paddingBottom: "calc(0.5rem + env(safe-area-inset-bottom))" }}
       >
         <input
