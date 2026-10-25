@@ -15,6 +15,8 @@ import {
   setDrawerOpen,
   subscribeDrawer,
 } from "./_nav-drawer-store";
+import { setActivateOpen } from "./_guest-activate-store";
+import { createClient } from "@/lib/supabase/client";
 
 const TABS = [
   { href: "/app", label: "Home", Icon: HomeIcon },
@@ -43,10 +45,27 @@ function isActiveTab(pathname: string, href: string): boolean {
 export default function Tabs() {
   const pathname = usePathname();
   const [drawerOpen, setDrawerOpenState] = useState(isDrawerOpen());
+  const [isGuest, setIsGuest] = useState(false);
   useEffect(
     () => subscribeDrawer(() => setDrawerOpenState(isDrawerOpen())),
     [],
   );
+  // Guests get a persistent "Activate account" entry (sidebar on
+  // desktop, drawer on mobile) that opens the banner's sheet, so
+  // activation never depends on noticing the banner: the banner can
+  // scroll out of view, but this entry is always one tap away.
+  useEffect(() => {
+    let on = true;
+    createClient()
+      .auth.getUser()
+      .then(({ data }) => {
+        if (on) setIsGuest(data.user?.is_anonymous === true);
+      })
+      .catch(() => {});
+    return () => {
+      on = false;
+    };
+  }, []);
   const hideMobileHeader = pathname === "/app/chat";
   return (
     <>
@@ -130,6 +149,19 @@ export default function Tabs() {
                 </Link>
               );
             })}
+            {isGuest ? (
+              <button
+                type="button"
+                onClick={() => {
+                  setDrawerOpen(false);
+                  setActivateOpen(true);
+                }}
+                className="mt-3 rounded-xl px-3 py-2.5 text-left text-sm font-extrabold text-[#241a02] transition hover:brightness-110"
+                style={{ background: "#d4af37" }}
+              >
+                Activate account
+              </button>
+            ) : null}
         </nav>
       </div>
       <nav
@@ -162,6 +194,16 @@ export default function Tabs() {
             </Link>
           );
         })}
+        {isGuest ? (
+          <button
+            type="button"
+            onClick={() => setActivateOpen(true)}
+            className="mt-3 rounded-xl px-3 py-2.5 text-left text-sm font-extrabold text-[#241a02] transition hover:brightness-110"
+            style={{ background: "#d4af37" }}
+          >
+            Activate account
+          </button>
+        ) : null}
       </nav>
     </>
   );

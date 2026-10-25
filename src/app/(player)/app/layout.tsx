@@ -75,9 +75,12 @@ export default async function PlayerLayout({
   // rail and sync engine render UNCONDITIONALLY — they return null
   // while hidden but stay subscribed, so the ticker appears,
   // disappears and reorders live with no page reload. The mobile bar
-  // is 2.5rem tall, so the chat's mobile height subtracts it via the
-  // --pv-ticker-h variable (the sync engine keeps that variable true
-  // as the ticker changes live; desktop rail needs no adjustment).
+  // is 2.5rem tall and rides in-flow at the top of the shell on
+  // mobile; the desktop rail needs no adjustment. Main is a flex
+  // column, so the guest banner (when present) and the page share
+  // the viewport: the chat page is flex-1 inside main instead of
+  // owning a fixed 100dvh, so a guest's banner can no longer push
+  // the chat composer below the fold.
   const ticker = await getTickerState();
   const initialTicker = { enabled: ticker.enabled, offers: ticker.offers };
   const showTicker = ticker.enabled && ticker.offers.length > 0;
@@ -104,7 +107,7 @@ export default async function PlayerLayout({
           initialOffers={ticker.offers}
         />
         <MobileOffersTicker initial={initialTicker} />
-        <main className="flex-1 pb-4 md:min-w-0 md:px-10 md:pb-0">
+        <main className="flex flex-1 flex-col pb-4 md:min-w-0 md:px-10 md:pb-0">
           <GuestBanner />
           {children}
         </main>

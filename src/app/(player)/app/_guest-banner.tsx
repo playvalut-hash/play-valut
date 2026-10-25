@@ -3,25 +3,29 @@
 import { useEffect, useState } from "react";
 
 import { createClient } from "@/lib/supabase/client";
+import {
+  isActivateOpen,
+  setActivateOpen,
+  subscribeActivate,
+} from "./_guest-activate-store";
 
 /** Guest banner + activate sheet. Shows ONLY for anonymous (guest)
  *  sessions. The guest's chat, accounts and deposits already live
  *  under their anonymous user id — activation CONVERTS that same user
- *  (it never creates a second account), so nothing is lost:
- *  • Google: linkIdentity converts the anonymous user to a Google
- *    user with the same id; the callback lands back on /app.
- *  • Email: updateUser attaches an email + password to the same user
- *    (confirmation link via /auth/callback); the banner stays until
- *    the email is confirmed, then disappears on its own.
- *  Until anonymous sign-ins are enabled in Supabase this banner never
- *  appears, because no anonymous session can exist. */
+ *  (it never creates a second account), so nothing is lost: Google
+ *  linkIdentity converts the anonymous user to a Google user with
+ *  the same id; the callback lands back on /app.
+ *  Activation is Google-only (owner direction, same as the removed
+ *  email registration): no email/password form lives here anymore.
+ *  The sheet's open state is shared through _guest-activate-store so
+ *  the persistent sidebar / drawer "Activate account" entry opens
+ *  this same sheet. Until anonymous sign-ins are enabled in Supabase
+ *  this banner never appears, because no anonymous session can
+ *  exist. */
 export default function GuestBanner() {
   const [isGuest, setIsGuest] = useState(false);
-  const [open, setOpen] = useState(false);
+  const [open, setOpenState] = useState(isActivateOpen());
   const [notice, setNotice] = useState<string | null>(null);
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [emailSent, setEmailSent] = useState(false);
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
@@ -37,6 +41,11 @@ export default function GuestBanner() {
     };
   }, []);
 
+  useEffect(
+    () => subscribeActivate(() => setOpenState(isActivateOpen())),
+    [],
+  );
+
   if (!isGuest) return null;
 
   async function handleGoogle() {
@@ -49,38 +58,12 @@ export default function GuestBanner() {
         options: { redirectTo: `${window.location.origin}/auth/callback` },
       });
       if (error) {
-        setNotice("Google sign-in isn't set up yet — try email instead.");
+        setNotice("Google sign-in isn't set up yet — please try again.");
       }
       // On success the browser leaves for Google; the callback brings
       // the same (now linked) user back to /app.
     } catch {
-      setNotice("Google sign-in isn't set up yet — try email instead.");
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function handleEmail(e: React.FormEvent) {
-    e.preventDefault();
-    setNotice(null);
-    if (!email.trim() || password.length < 6) {
-      setNotice("Enter an email and a password of at least 6 characters.");
-      return;
-    }
-    setBusy(true);
-    try {
-      const supabase = createClient();
-      const { error } = await supabase.auth.updateUser(
-        { email: email.trim(), password },
-        { emailRedirectTo: `${window.location.origin}/auth/callback` },
-      );
-      if (error) {
-        setNotice(error.message);
-      } else {
-        setEmailSent(true);
-      }
-    } catch {
-      setNotice("Couldn't send the confirmation — try again.");
+      setNotice("Google sign-in isn't set up yet — please try again.");
     } finally {
       setBusy(false);
     }
@@ -95,7 +78,7 @@ export default function GuestBanner() {
         </p>
         <button
           type="button"
-          onClick={() => setOpen(true)}
+          onClick={() => setActivateOpen(true)}
           className="shrink-0 rounded-lg px-4 py-2 text-sm font-bold text-[#241a02] transition hover:brightness-110"
           style={{ background: "#d4af37" }}
         >
@@ -106,7 +89,7 @@ export default function GuestBanner() {
       {open ? (
         <div
           className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 p-4 sm:items-center"
-          onClick={() => setOpen(false)}
+          onClick={() => setActivateOpen(false)}
         >
           <div
             className="w-full max-w-[400px] rounded-2xl border border-[#232c3e] bg-[#151a26] p-5"
@@ -116,7 +99,7 @@ export default function GuestBanner() {
               <h2 className="text-lg font-bold">Keep your chat</h2>
               <button
                 type="button"
-                onClick={() => setOpen(false)}
+                onClick={() => setActivateOpen(false)}
                 className="px-2 py-1 text-xl leading-none text-[#6d7a8f]"
                 aria-label="Close"
               >
@@ -150,45 +133,6 @@ export default function GuestBanner() {
               </svg>
               Continue with Google
             </button>
-
-            <div className="my-4 flex items-center gap-3" aria-hidden>
-              <span className="h-px flex-1 bg-[#232c3e]" />
-              <span className="text-xs text-[#6d7a8f]">or use email</span>
-              <span className="h-px flex-1 bg-[#232c3e]" />
-            </div>
-
-            {emailSent ? (
-              <p className="rounded-lg border border-[#d4af37]/40 bg-[#d4af37]/10 px-4 py-3 text-sm text-[#d4af37]">
-                Check your inbox — click the confirmation link to
-                activate. Your guest chat stays until then, and after
-                confirmation it becomes part of your real account.
-              </p>
-            ) : (
-              <form onSubmit={handleEmail} className="space-y-3">
-                <input
-                  type="email"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  placeholder="you@example.com"
-                  className="w-full rounded-xl border border-[#232c3e] bg-[#0b0e14] px-4 py-3 text-[15px] outline-none focus:border-[#d4af37]"
-                />
-                <input
-                  type="password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  placeholder="Create a password"
-                  className="w-full rounded-xl border border-[#232c3e] bg-[#0b0e14] px-4 py-3 text-[15px] outline-none focus:border-[#d4af37]"
-                />
-                <button
-                  type="submit"
-                  disabled={busy}
-                  className="w-full rounded-xl py-3 text-[15px] font-bold text-[#241a02] transition hover:brightness-110 disabled:opacity-60"
-                  style={{ background: "#d4af37" }}
-                >
-                  {busy ? "Sending…" : "Activate with email"}
-                </button>
-              </form>
-            )}
           </div>
         </div>
       ) : null}

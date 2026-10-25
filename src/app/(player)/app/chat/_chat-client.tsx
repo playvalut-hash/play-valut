@@ -1429,7 +1429,11 @@ export default function ChatClient({
   })();
 
   return (
-    <div className="flex h-[calc(100dvh-var(--pv-ticker-h,0px))] flex-col md:h-dvh">
+    // Flex-1 inside main's flex column (not a fixed 100dvh): the
+    // guest banner above shares the viewport with the chat, so the
+    // send bar always stays on screen for guests instead of dropping
+    // below the fold by the banner's height.
+    <div className="flex min-h-0 flex-1 flex-col">
       {/* Header — support identity, Messenger-style. On mobile the
           nav hamburger lives here (merged in) — the app header is
           hidden on this page so the top never stacks three bars. */}
