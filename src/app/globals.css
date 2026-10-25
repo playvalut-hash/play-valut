@@ -145,9 +145,16 @@ textarea {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  *,
-  *::before,
-  *::after {
+  /* The offers ticker is DELIBERATELY excluded here (see the NOTE
+   * under the ticker rules below): a frozen ticker reads as broken,
+   * and the user explicitly wants it moving on every screen. This
+   * exclusion is load-bearing — the ticker's own override was
+   * removed once, but this global !important rule kept freezing it
+   * anyway (0.01ms duration → the card sat at its static position
+   * under the OFFERS heading, exactly as reported). */
+  *:not(.pv-ticker-item-x):not(.pv-ticker-item-y),
+  *:not(.pv-ticker-item-x):not(.pv-ticker-item-y)::before,
+  *:not(.pv-ticker-item-x):not(.pv-ticker-item-y)::after {
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
@@ -189,8 +196,7 @@ textarea {
    clears the left edge, so the bar is empty only briefly between
    crossings (the old left:100%→-100% run hid a short offer for a
    third of every cycle) — and it runs slower (16s), so it reads
-   comfortably. Hover pauses it; reduced-motion users get a still
-   offer instead of motion. The React side swaps the item (and its
+   comfortably. The React side swaps the item (and its
    animation key) when each crossing ends, cycling through live
    offers; with a single offer the same card simply comes around
    again after a gap, never duplicated. */
@@ -220,7 +226,9 @@ textarea {
   animation-timing-function: linear;
   animation-iteration-count: 1;
 }
-/* NOTE: deliberately NO prefers-reduced-motion override here. The
-   ticker IS the feature — a frozen ticker reads as broken, and the
-   user explicitly wants it moving on every screen (a laptop with
-   animation effects off was showing one static card). */
+/* NOTE: deliberately NO prefers-reduced-motion override here, and
+   the global reduced-motion rule above EXCLUDES these two classes.
+   The ticker IS the feature — a frozen ticker reads as broken, and
+   the user explicitly wants it moving on every screen (a laptop
+   with animation effects off was showing one static card, because
+   the global rule crushed its animation to 0.01ms). */
