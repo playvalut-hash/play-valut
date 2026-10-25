@@ -46,6 +46,14 @@ function formatTime(iso: string): string {
   });
 }
 
+/* Echo ids must stay unique even when two echoes are appended in the
+   same tick. Module scope keeps the React Compiler purity lint happy. */
+let echoSeq = 0;
+function nextEchoId(): string {
+  echoSeq += 1;
+  return `echo-${Date.now()}-${echoSeq}`;
+}
+
 /* ── full-screen image viewer ─────────────────────────────────────────────── */
 
 function ImageViewer({ src, onClose }: { src: string; onClose: () => void }) {
@@ -116,7 +124,14 @@ function ShotMessage({
 
   return (
     <div className={`flex ${mine ? "justify-end" : "justify-start"}`}>
-      <div className="max-w-[75%]">
+      <div className="flex max-w-[75%] flex-col">
+        <p
+          className={`mb-1 text-[10px] font-semibold tracking-wide ${
+            mine ? "text-right text-text-muted" : "text-gold/80"
+          }`}
+        >
+          {mine ? "You" : "Support"}
+        </p>
         <button
           type="button"
           onClick={() => url && setViewerOpen(true)}
@@ -355,19 +370,37 @@ function PickerMessage({
   onPicked: () => void;
   onPickStart?: () => void;
 }) {
-  const picked = message.body["picked"] as
+  const serverPicked = message.body["picked"] as
     | { id: string; at: string }
     | null
     | undefined;
+  // Optimistic pick: the chip turns gold the instant it is tapped —
+  // previously nothing visibly changed until the server round trip +
+  // poll came back, so the screen looked dead after a pick.
+  const [optimisticPicked, setOptimisticPicked] = useState<string | null>(null);
+  const [pickError, setPickError] = useState<string | null>(null);
+  const picked = optimisticPicked
+    ? { id: optimisticPicked, at: new Date().toISOString() }
+    : serverPicked;
   const [picking, setPicking] = useState(false);
 
   async function pick(id: string) {
     if (picked || picking) return;
     setPicking(true);
+    setPickError(null);
+    setOptimisticPicked(id);
     onPickStart?.();
     try {
       const res = await chatPick(message.id, id);
-      if (res.ok) onPicked();
+      if (res.ok) {
+        onPicked();
+      } else {
+        setOptimisticPicked(null);
+        setPickError(res.error || "Couldn't select — tap again.");
+      }
+    } catch {
+      setOptimisticPicked(null);
+      setPickError("Couldn't select — tap again.");
     } finally {
       setPicking(false);
     }
@@ -430,6 +463,11 @@ function PickerMessage({
             );
           })}
         </div>
+        {pickError ? (
+          <p className="px-3 pb-2.5 text-[11px] font-medium text-danger">
+            {pickError}
+          </p>
+        ) : null}
       </div>
     </div>
   );
@@ -741,9 +779,17 @@ function MessageView({
     return <PaymentCardMessage message={message} />;
   }
 
-  // text
+  // text — own messages gold/right, support messages dark/left, each
+  // with a small sender label so the two sides are unmistakable.
   return (
     <div className={`flex flex-col ${mine ? "items-end" : "items-start"}`}>
+      <p
+        className={`mb-1 text-[10px] font-semibold tracking-wide ${
+          mine ? "pr-1 text-text-muted" : "pl-1 text-gold/80"
+        }`}
+      >
+        {mine ? "You" : "Support"}
+      </p>
       <div
         className={`max-w-[82%] rounded-2xl px-[13px] py-[9px] text-[14.5px] leading-[1.45] shadow-sm shadow-black/20 ${
           mine
@@ -795,13 +841,75 @@ export default function ChatClient({
   const restoreRef = useRef<{ prevHeight: number; prevTop: number } | null>(null);
   const [loading, setLoading] = useState(false);
   const [input, setInput] = useState("");
-  const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [greeted, setGreeted] = useState(
-    () =>
-      typeof window !== "undefined" &&
+  // Own sends render instantly (echoes) — previously a sent message
+  // appeared only after the server round trip + refresh, so the player
+  // saw nothing but the "agent is typing" dots after hitting send.
+  // The refresh prunes each echo once its real message lands.
+  const [echoes, setEchoes] = useState<ChatMessage[]>([]);
+  // Blob URLs for image echoes, keyed by echo id. State (not a ref) so
+  // rendering may read it — the React Compiler lint forbids ref reads
+  // during render.
+  const [echoShotUrls, setEchoShotUrls] = useState<Record<string, string>>({});
+  // Send queue: rapid sends must never wait on the send button. Each
+  // tap echoes instantly; server work runs in tap order, so no message
+  // is lost and server order always matches send order.
+  const sendQueueRef = useRef<Promise<void>>(Promise.resolve());
+  // Greeting flag read at server-work time, not tap time: with queued
+  // sends the tap-time value can be stale and the welcome would repeat.
+  const greetedRef = useRef(
+    typeof window !== "undefined" &&
       sessionStorage.getItem("pv_greeted") === "1",
   );
+  // Own sends + server thread, in order. Everything below renders this.
+  const visibleMessages = [...messages, ...echoes];
+
+  function makeEcho(
+    kind: ChatMessage["kind"],
+    body: Record<string, unknown>,
+  ): ChatMessage {
+    return {
+      id: nextEchoId(),
+      player_id: playerId,
+      sender: "player",
+      kind,
+      body,
+      is_read_by_admin: false,
+      is_read_by_player: true,
+      created_at: new Date().toISOString(),
+    };
+  }
+
+  // Render-time derivation (the set-state-in-effect lint forbids
+  // pruning this in an effect): only echoes still on screen keep a
+  // URL for display. Revocation of pruned URLs happens in the effect
+  // below, which sets no state.
+  const liveEchoShotUrls = Object.fromEntries(
+    Object.entries(echoShotUrls).filter(([id]) =>
+      echoes.some((e) => e.id === id),
+    ),
+  );
+  const prevEchoIdsForUrlsRef = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    const current = new Set(echoes.map((e) => e.id));
+    for (const id of prevEchoIdsForUrlsRef.current) {
+      if (!current.has(id) && echoShotUrls[id]) {
+        URL.revokeObjectURL(echoShotUrls[id]);
+      }
+    }
+    prevEchoIdsForUrlsRef.current = current;
+  }, [echoes, echoShotUrls]);
+  // Unmount: revoke anything still alive.
+  const echoShotUrlsRef = useRef<Record<string, string>>({});
+  useEffect(() => {
+    echoShotUrlsRef.current = echoShotUrls;
+  });
+  useEffect(() => {
+    const ref = echoShotUrlsRef;
+    return () => {
+      for (const url of Object.values(ref.current)) URL.revokeObjectURL(url);
+    };
+  }, []);
   const bottomRef = useRef<HTMLDivElement>(null);
   // Real-chat feel: live typing indicator (admin typing via Realtime
   // broadcast) + a short "agent is typing" beat while an auto-reply lands.
@@ -888,6 +996,23 @@ export default function ChatClient({
       setMessages(merged);
       messagesRef.current = merged;
       setLoading(false);
+      // Prune confirmed echoes: a local echo whose real message is in
+      // this fresh thread drops out (the real one renders instead).
+      // Sends are serialized by the queue, so at most one echo per
+      // kind is unmatched at any refresh.
+      setEchoes((prev) =>
+        prev.filter(
+          (e) =>
+            !merged.some(
+              (m) =>
+                m.sender === e.sender &&
+                m.kind === e.kind &&
+                (e.kind !== "text" ||
+                  str(m.body["text"]) === str(e.body["text"])) &&
+                Date.parse(m.created_at) >= Date.parse(e.created_at) - 10000,
+            ),
+        ),
+      );
       // A non-player message landing ends the "typing" beat.
       const last = thread[thread.length - 1];
       if (last && last.sender !== "player") setAwaitingReply(false);
@@ -987,7 +1112,7 @@ export default function ChatClient({
     });
   }, []);
 
-  const lastMessageId = messages[messages.length - 1]?.id;
+  const lastMessageId = visibleMessages[visibleMessages.length - 1]?.id;
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
   }, [lastMessageId, agentTyping, awaitingReply, preparing]);
@@ -1031,24 +1156,32 @@ export default function ChatClient({
     }
   }
 
-  async function send(text: string) {
+  function send(text: string) {
     const t = text.trim();
-    if (!t || sending) return;
-    setSending(true);
+    if (!t) return;
+    const echo = makeEcho("text", { text: t });
+    setEchoes((prev) => [...prev, echo]);
     setError(null);
     noteAwaiting();
-    try {
-      const result = await sendChatMessage(t, greeted);
-      if (!result.ok) {
-        setError(result.error);
-      } else if (result.greeted) {
-        sessionStorage.setItem("pv_greeted", "1");
-        setGreeted(true);
+    const work = sendQueueRef.current.then(async () => {
+      try {
+        const result = await sendChatMessage(t, greetedRef.current);
+        if (!result.ok) {
+          setError(result.error);
+          setEchoes((prev) => prev.filter((e) => e.id !== echo.id));
+          // Restore the lost message without clobbering newer typing.
+          setInput((prev) => (prev ? `${t}\n${prev}` : t));
+        } else if (result.greeted) {
+          sessionStorage.setItem("pv_greeted", "1");
+          greetedRef.current = true;
+        }
+      } catch {
+        setEchoes((prev) => prev.filter((e) => e.id !== echo.id));
+        setInput((prev) => (prev ? `${t}\n${prev}` : t));
       }
       void refresh();
-    } finally {
-      setSending(false);
-    }
+    });
+    sendQueueRef.current = work.catch(() => {});
   }
 
   const imageInputRef = useRef<HTMLInputElement>(null);
@@ -1063,8 +1196,7 @@ export default function ChatClient({
     el.style.height = `${Math.min(el.scrollHeight, 150)}px`;
   }, [input]);
 
-  async function sendImage(file: File) {
-    if (sending) return;
+  function sendImage(file: File) {
     if (!file.type.startsWith("image/")) {
       setError("That file isn't an image.");
       return;
@@ -1073,18 +1205,39 @@ export default function ChatClient({
       setError("Image must be under 8 MB.");
       return;
     }
-    setSending(true);
+    const url = URL.createObjectURL(file);
+    const echo = makeEcho("shot", {});
+    setEchoShotUrls((prev) => ({ ...prev, [echo.id]: url }));
+    setEchoes((prev) => [...prev, echo]);
     setError(null);
     noteAwaiting();
-    try {
-      const fd = new FormData();
-      fd.append("screenshot", file);
-      const result = await sendChatImage(fd);
-      if (!result.ok) setError(result.error);
+    const work = sendQueueRef.current.then(async () => {
+      try {
+        const fd = new FormData();
+        fd.append("screenshot", file);
+        const result = await sendChatImage(fd);
+        if (!result.ok) {
+          setError(result.error);
+          setEchoes((prev) => prev.filter((e) => e.id !== echo.id));
+          setEchoShotUrls((prev) => {
+            const next = { ...prev };
+            delete next[echo.id];
+            return next;
+          });
+          URL.revokeObjectURL(url);
+        }
+      } catch {
+        setEchoes((prev) => prev.filter((e) => e.id !== echo.id));
+        setEchoShotUrls((prev) => {
+          const next = { ...prev };
+          delete next[echo.id];
+          return next;
+        });
+        URL.revokeObjectURL(url);
+      }
       void refresh();
-    } finally {
-      setSending(false);
-    }
+    });
+    sendQueueRef.current = work.catch(() => {});
   }
 
   function onSubmit(e: React.FormEvent) {
@@ -1093,10 +1246,23 @@ export default function ChatClient({
     setInput("");
   }
 
-  const showSlicks = !loading && messages.length === 0;
+  // Bare callback references (not inline arrows): the React Compiler
+  // lint flags inline arrows that call ref-reading callbacks as props.
+  const handlePickStart = useCallback(
+    (kind: ChatMessage["kind"]) => {
+      if (kind === "games_list") startPreparing("account");
+    },
+    [startPreparing],
+  );
+  const handlePicked = useCallback(() => {
+    noteAwaiting();
+    void refresh();
+  }, [noteAwaiting, refresh]);
+
+  const showSlicks = !loading && visibleMessages.length === 0;
   const lastOwnTextId = (() => {
-    for (let i = messages.length - 1; i >= 0; i--) {
-      const m = messages[i];
+    for (let i = visibleMessages.length - 1; i >= 0; i--) {
+      const m = visibleMessages[i];
       if (m.sender === "player" && m.kind === "text") return m.id;
     }
     return null;
@@ -1167,7 +1333,7 @@ export default function ChatClient({
             </div>
           </div>
         ) : (
-          messages.map((m) => (
+          visibleMessages.map((m) => (
             <MessageView
               key={m.id}
               message={m}
@@ -1178,16 +1344,13 @@ export default function ChatClient({
               }
               resolvedShotUrl={
                 m.kind === "shot"
-                  ? (initialShotUrls[str(m.body["screenshot_path"])] ?? null)
+                  ? (liveEchoShotUrls[m.id] ??
+                    initialShotUrls[str(m.body["screenshot_path"])] ??
+                    null)
                   : null
               }
-              onPickStart={(kind) => {
-                if (kind === "games_list") startPreparing("account");
-              }}
-              onPicked={() => {
-                noteAwaiting();
-                void refresh();
-              }}
+              onPickStart={handlePickStart}
+              onPicked={handlePicked}
               receipt={
                 m.id === lastOwnTextId
                   ? m.is_read_by_admin
@@ -1240,7 +1403,6 @@ export default function ChatClient({
           <button
             type="button"
             onClick={() => imageInputRef.current?.click()}
-            disabled={sending}
             aria-label="Send an image"
             title="Send an image (or paste one)"
             className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full border border-surface-border text-text-secondary transition hover:text-gold disabled:opacity-50"
@@ -1276,7 +1438,7 @@ export default function ChatClient({
           />
           <button
             type="submit"
-            disabled={sending || !input.trim()}
+            disabled={!input.trim()}
             aria-label="Send message"
             className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-gold text-text-ongold transition hover:brightness-110 disabled:opacity-50"
           >

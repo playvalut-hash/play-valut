@@ -69,7 +69,10 @@ export default async function PlayerLayout({
 
   return (
     <div className="min-h-dvh bg-near-black flex justify-center">
-      <div className="relative flex min-h-dvh w-full max-w-[440px] flex-col bg-bg md:border-x md:border-line md:shadow-[0_0_80px_rgba(0,0,0,0.7)]">
+      {/* Phone frame, centered on desktop — wider than the old 440px so
+          the app fills a desktop window better without turning into a
+          stretched admin-style dashboard. Bottom tab bar stays. */}
+      <div className="relative flex min-h-dvh w-full max-w-[440px] flex-col bg-bg md:max-w-[560px] md:border-x md:border-line md:shadow-[0_0_80px_rgba(0,0,0,0.7)]">
         <main className="flex-1 pb-24">{children}</main>
         <Tabs />
         <PresenceHeartbeat />
