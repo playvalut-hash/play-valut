@@ -258,14 +258,40 @@ async function deliverAccount(playerId: string, game: Game): Promise<void> {
       await insertSystemMessage(playerId, "text", {
         text: `You already have a ${game.name} account — it's right here in our chat, and under Menu → My Game Accounts.`,
       });
-      return;
+    } else {
+      // Account exists but was made from the lobby: surface the saved card.
+      await insertSystemMessage(playerId, "account", {
+        game_id: game.id,
+        account_id: accountId,
+        status,
+      });
     }
-    // Account exists but was made from the lobby: surface the saved card.
-    await insertSystemMessage(playerId, "account", {
-      game_id: game.id,
-      account_id: accountId,
-      status,
-    });
+    // Already-created AND active: the admin must be told, not just shown
+    // a card. This path used to ring no bell at all — unlike a new
+    // request, no notification row was created, so the admin saw nothing
+    // but a picked state change. Now: bell notification + an explicit
+    // message in the thread for discussion. (Creating accounts skip
+    // this — they are still on their way, not "already active".)
+    if (status === "active") {
+      const service = createServiceClient();
+      const { data: playerRow } = await service
+        .from("players")
+        .select("display_name")
+        .eq("id", playerId)
+        .maybeSingle();
+      const name =
+        (playerRow as { display_name?: string | null } | null)?.display_name ??
+        "A player";
+      await notifyAdmin(
+        "account_request",
+        playerId,
+        `${name} picked ${game.name} (already active) — needs discussion`,
+        accountId,
+      );
+      await insertSystemMessage(playerId, "text", {
+        text: `${name} want to pay this game that already created and active please further discuss them!`,
+      });
+    }
     return;
   }
 
