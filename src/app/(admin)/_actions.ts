@@ -15,6 +15,7 @@ import { revalidatePath } from "next/cache";
 
 import { createClient } from "@/lib/supabase/server";
 import { computeOnline } from "@/lib/presence";
+import { isGuestExpired, isGuestHiddenFromInbox } from "@/lib/guest-lifecycle";
 import { createServiceClient } from "@/lib/supabase/service";
 import { decryptPassword, encryptPassword } from "@/lib/crypto";
 import { escapeLikePattern, normalizeTag } from "@/lib/utils";
@@ -82,6 +83,10 @@ export interface PlayerOverview {
   creatingAccounts: number;
   lastMessageAt: string | null;
   lastPreview: string | null;
+  /** True when this guest's device guest-visited before (migration
+   *  0031). Only ever true for guests (email null) — the chip in the
+   *  inbox row also checks email, so an activated player never shows it. */
+  returningGuest: boolean;
 }
 
 export type ChatSender = "player" | "admin" | "system";
@@ -180,6 +185,15 @@ export interface PlayerDetailView {
   notes: AdminNoteView[];
   accounts: AdminAccountView[];
   pendingDeposits: PendingDepositView[];
+  /** Device memory for guests (migration 0031). Null for registered
+   *  players and pre-migration. Survives the guest's own deletion, so
+   *  the panel can say "this device came before" on a return visit. */
+  guestDevice: {
+    visitCount: number;
+    firstSeenAt: string;
+    lastSeenAt: string;
+    lastGuestName: string | null;
+  } | null;
 }
 
 export interface NotificationView {
@@ -793,6 +807,110 @@ async function getOverviewCounts(
 }
 
 /**
+ * Guest sweep (migration 0031): delete unactivated guests who have
+ * been gone for 24h — logged out 24h ago, or idle 24h (presence stamps
+ * last_seen_at every 25s while the app is open, so 24h without a stamp
+ * means the tab is closed). Runs on every inbox load: normally zero
+ * rows match, so it costs one cheap select. Deleting the auth user
+ * cascades players, chat, accounts, deposits, tags, notes and
+ * notifications (all FK cascades in 0001); their screenshots are
+ * removed by prefix too, best-effort. Pre-migration the lifecycle
+ * columns don't exist, the select errors, and the sweep is skipped —
+ * the inbox still loads. Capped so one bad day can't stall the inbox.
+ */
+async function sweepExpiredGuests(
+  client: ReturnType<typeof svc>,
+): Promise<void> {
+  try {
+    const { data, error } = await client
+      .from("players")
+      .select("id, email, guest_left_at, last_seen_at, created_at")
+      .is("email", null)
+      .limit(50);
+    if (error || !data) return;
+    const now = Date.now();
+    for (const p of data as Array<{
+      id: string;
+      email: string | null;
+      guest_left_at: string | null;
+      last_seen_at: string | null;
+      created_at: string;
+    }>) {
+      if (
+        !isGuestExpired(
+          {
+            email: p.email,
+            guestLeftAt: p.guest_left_at,
+            lastSeenAt: p.last_seen_at,
+            createdAt: p.created_at,
+          },
+          now,
+        )
+      ) {
+        continue;
+      }
+      try {
+        await client.auth.admin.deleteUser(p.id);
+      } catch {
+        // A failed delete stays for the next sweep; inbox still loads.
+      }
+      try {
+        const { data: files } = await client.storage
+          .from("screenshots")
+          .list(p.id, { limit: 100 });
+        const names = (files ?? [])
+          .map((f) => f.name)
+          .filter((n) => n && !n.endsWith("/"));
+        if (names.length > 0) {
+          await client.storage
+            .from("screenshots")
+            .remove(names.map((n) => `${p.id}/${n}`));
+        }
+      } catch {
+        // Leftovers are caught by the manual storage sweep.
+      }
+    }
+  } catch {
+    // Pre-migration or transient — inbox still loads.
+  }
+}
+
+/** Guest lifecycle columns per player id. Empty map pre-migration
+ *  (the columns don't exist yet), so callers treat everyone as a
+ *  plain player until 0031 runs. */
+async function fetchGuestLifecycleMap(
+  client: ReturnType<typeof svc>,
+  ids: string[],
+): Promise<
+  Map<string, { guestLeftAt: string | null; returningGuest: boolean }>
+> {
+  const map = new Map<
+    string,
+    { guestLeftAt: string | null; returningGuest: boolean }
+  >();
+  try {
+    const { data, error } = await client
+      .from("players")
+      .select("id, guest_left_at, returning_guest")
+      .in("id", ids);
+    if (error || !data) return map;
+    for (const r of data as Array<{
+      id: string;
+      guest_left_at: string | null;
+      returning_guest: boolean | null;
+    }>) {
+      map.set(r.id, {
+        guestLeftAt: r.guest_left_at,
+        returningGuest: r.returning_guest ?? false,
+      });
+    }
+  } catch {
+    // Pre-migration — empty map, no filtering, no chip.
+  }
+  return map;
+}
+
+/**
  * Inbox player list (v2 Phase 1, audit H2). Defaults to the newest 100
  * players; pass search/limit/offset to page through the whole base or to
  * search server-side — the old client-only search could never find a
@@ -806,6 +924,9 @@ export async function getInboxOverview(opts?: {
 }): Promise<PlayerOverview[]> {
   const me = await requireSessionAdmin();
   const client = svc();
+  // Expired guests are deleted before the list is built, so a guest
+  // who left 24h+ ago never appears — not even for one load.
+  await sweepExpiredGuests(client);
   const limit = Math.min(Math.max(opts?.limit ?? 100, 1), 1000);
   const offset = Math.max(opts?.offset ?? 0, 0);
   const search = opts?.search?.trim();
@@ -825,12 +946,14 @@ export async function getInboxOverview(opts?: {
   const ids = playerList.map((p) => p.id);
 
   // All independent queries in parallel (was 5 sequential round-trips).
-  const [tagsRes, recent, lastSeenMap, countMaps] = await Promise.all([
-    client.from("player_tags").select("player_id, tag").in("player_id", ids),
-    getLatestMessages(client, ids),
-    fetchLastSeenMap(client, ids),
-    getOverviewCounts(client, ids),
-  ]);
+  const [tagsRes, recent, lastSeenMap, countMaps, lifeMap] =
+    await Promise.all([
+      client.from("player_tags").select("player_id, tag").in("player_id", ids),
+      getLatestMessages(client, ids),
+      fetchLastSeenMap(client, ids),
+      getOverviewCounts(client, ids),
+      fetchGuestLifecycleMap(client, ids),
+    ]);
 
   const { data: tags } = tagsRes;
   const tagMap = new Map<string, string[]>();
@@ -859,7 +982,26 @@ export async function getInboxOverview(opts?: {
     if (!lastMap.has(m.player_id)) lastMap.set(m.player_id, m);
   }
 
-  const overview: PlayerOverview[] = playerList.map((p) => {
+  // Guest lifecycle (migration 0031): a logged-out guest vanishes
+  // from the inbox at once; an idle-24h guest too (the sweep above
+  // already deleted them — this covers any it capped or missed).
+  // Registered players are never filtered.
+  const now = Date.now();
+  const visibleList = playerList.filter((p) => {
+    const life = lifeMap.get(p.id);
+    return !isGuestHiddenFromInbox(
+      {
+        email: p.email,
+        guestLeftAt: life?.guestLeftAt ?? null,
+        lastSeenAt: lastSeenMap.get(p.id) ?? null,
+        createdAt: p.created_at,
+      },
+      now,
+    );
+  });
+  if (visibleList.length === 0) return [];
+
+  const overview: PlayerOverview[] = visibleList.map((p) => {
     const last = lastMap.get(p.id) ?? null;
     return {
       id: p.id,
@@ -879,6 +1021,7 @@ export async function getInboxOverview(opts?: {
       creatingAccounts: creatingMap.get(p.id) ?? 0,
       lastMessageAt: last ? last.created_at : null,
       lastPreview: last ? messagePreview(last.kind, last.body) : null,
+      returningGuest: lifeMap.get(p.id)?.returningGuest ?? false,
     };
   });
 
@@ -1391,6 +1534,46 @@ export async function getPlayerDetail(
   if (!player) return null;
   const lastSeenMap = await fetchLastSeenMap(client, [playerId]);
 
+  // Guest device memory (migration 0031): only for unactivated
+  // guests — registered players never get a device row. Fail-soft:
+  // pre-migration the column/table don't exist, so this stays null.
+  let guestDevice: PlayerDetailView["guestDevice"] = null;
+  if ((player.email as string | null) === null) {
+    try {
+      const { data: life } = await client
+        .from("players")
+        .select("guest_device_key")
+        .eq("id", playerId)
+        .single();
+      const deviceKey = (
+        life as { guest_device_key: string | null } | null
+      )?.guest_device_key;
+      if (deviceKey) {
+        const { data: dev } = await client
+          .from("guest_devices")
+          .select("visit_count, first_seen_at, last_seen_at, last_guest_name")
+          .eq("device_key", deviceKey)
+          .single();
+        if (dev) {
+          const d = dev as {
+            visit_count: number;
+            first_seen_at: string;
+            last_seen_at: string;
+            last_guest_name: string | null;
+          };
+          guestDevice = {
+            visitCount: d.visit_count,
+            firstSeenAt: d.first_seen_at,
+            lastSeenAt: d.last_seen_at,
+            lastGuestName: d.last_guest_name,
+          };
+        }
+      }
+    } catch {
+      guestDevice = null;
+    }
+  }
+
   const [{ data: tags }, { data: notes }, { data: accounts }, { data: deposits }] =
     await Promise.all([
       client.from("player_tags").select("tag").eq("player_id", playerId),
@@ -1513,6 +1696,7 @@ export async function getPlayerDetail(
         createdAt: d.created_at,
       })),
     ),
+    guestDevice,
   };
 }
 

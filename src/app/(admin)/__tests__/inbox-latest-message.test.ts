@@ -58,9 +58,15 @@ const QUIET = {
 };
 
 function baseSetup() {
+  // Call order in getInboxOverview: the guest sweep (migration 0031)
+  // queries players first, then the list query, then the last-seen
+  // map, then the guest lifecycle map — each from("players") pops one
+  // entry, so the queue must carry all four in order.
   queues["players"] = [
+    { data: [], error: null }, // guest sweep: no expired guests
     { data: [CHATTY, QUIET], error: null },
     { data: [], error: null }, // last-seen map
+    { data: [], error: null }, // guest lifecycle map: nobody returning
   ];
   queues["player_tags"] = [{ data: [], error: null }];
   queues["chat_messages"] = [];

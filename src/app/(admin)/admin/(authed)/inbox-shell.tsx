@@ -84,6 +84,11 @@ function PlayerRow({
                 Action needed
               </span>
             )}
+            {player.email === null && player.returningGuest && (
+              <span className="rounded-full bg-gold/15 px-1.5 py-px text-[10px] font-semibold text-gold">
+                Returning
+              </span>
+            )}
             {player.tags.slice(0, 3).map((t) => (
               <span
                 key={t}

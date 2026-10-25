@@ -1,6 +1,7 @@
 "use server";
 
 import { redirect } from "next/navigation";
+import { headers } from "next/headers";
 import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
 import { createServiceClient } from "@/lib/supabase/service";
@@ -348,6 +349,24 @@ export async function requestGameAccount(rawGameId: string): Promise<void> {
 /** Sign out of the player app. */
 export async function signOut(): Promise<void> {
   const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  // Guest lifecycle (migration 0031): an explicitly logged-out guest
+  // vanishes from the admin inbox at once (guest_left_at), and the
+  // sweep deletes their rows 24h later. Service client, so the C3
+  // trigger's user-JWT guard never sees this write. Fail-soft: logout
+  // itself must never break because the marker failed.
+  if (user?.is_anonymous) {
+    try {
+      await createServiceClient()
+        .from("players")
+        .update({ guest_left_at: new Date().toISOString() })
+        .eq("id", user.id);
+    } catch {
+      // Marker missed — the 24h idle sweep still catches this guest.
+    }
+  }
   await supabase.auth.signOut();
   redirect("/login");
 }
@@ -1044,6 +1063,29 @@ export async function touchPresence(online: boolean): Promise<void> {
       .from("players")
       .update({ is_online: online })
       .eq("id", user.id);
+  }
+}
+
+/* ── Guest device tracking (migration 0031) ─────────────────────────────
+ * Called from <GuestBanner/> on mount. Sends the browser's localStorage
+ * device id (a random UUID, not a hardware fingerprint) to the
+ * track_guest_device RPC, which links the guest to its device row and
+ * flags returning guests — so the admin inbox can show "this device
+ * came before" even after the guest's own rows were swept. The IP is
+ * read server-side from x-forwarded-for and only its SHA-256 hash is
+ * stored. Tracking never breaks the app: every failure is swallowed. */
+export async function trackGuestDevice(deviceKey: string): Promise<void> {
+  try {
+    if (!deviceKey.trim()) return;
+    const forwarded = (await headers()).get("x-forwarded-for");
+    const ip = forwarded?.split(",")[0]?.trim() || null;
+    const supabase = await createClient();
+    await supabase.rpc("track_guest_device", {
+      p_device_key: deviceKey.trim().slice(0, 128),
+      p_ip: ip,
+    });
+  } catch {
+    // Pre-migration (0031 not run) or transient — guest flow continues.
   }
 }
 

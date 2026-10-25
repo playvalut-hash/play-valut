@@ -14,6 +14,7 @@ export function chainable(result: unknown) {
     "select",
     "eq",
     "neq",
+    "is",
     "in",
     "order",
     "limit",

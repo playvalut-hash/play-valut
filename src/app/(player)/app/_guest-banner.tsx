@@ -8,6 +8,7 @@ import {
   setActivateOpen,
   subscribeActivate,
 } from "./_guest-activate-store";
+import { trackGuestDevice } from "./_actions";
 
 /** Guest banner + activate sheet. Shows ONLY for anonymous (guest)
  *  sessions. The guest's chat, accounts and deposits already live
@@ -47,6 +48,28 @@ export default function GuestBanner({
       on = false;
     };
   }, []);
+
+  // Device tracking (migration 0031): once per guest session, link
+  // this browser to the guest so a return visit is recognised even
+  // after the guest's own rows were swept. The id lives in this
+  // browser's localStorage, so it survives logout — that is the point:
+  // logout hides the thread, but the device memory stays.
+  useEffect(() => {
+    if (!isGuest) return;
+    try {
+      let deviceKey = window.localStorage.getItem("pv_device_id");
+      if (!deviceKey) {
+        deviceKey =
+          typeof crypto.randomUUID === "function"
+            ? crypto.randomUUID()
+            : `pv-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+        window.localStorage.setItem("pv_device_id", deviceKey);
+      }
+      void trackGuestDevice(deviceKey).catch(() => {});
+    } catch {
+      // No storage (private mode) — guest flow continues untracked.
+    }
+  }, [isGuest]);
 
   useEffect(
     () => subscribeActivate(() => setOpenState(isActivateOpen())),

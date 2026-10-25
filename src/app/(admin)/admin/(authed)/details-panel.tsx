@@ -594,6 +594,26 @@ export default function DetailsPanel({
             BLOCKED
           </span>
         )}
+        {detail.guestDevice && (
+          <p className="mt-1.5 max-w-[260px] text-[12px] leading-relaxed text-text-secondary">
+            {detail.guestDevice.visitCount > 1 ? (
+              <>
+                Returning guest — this device visited{" "}
+                {detail.guestDevice.visitCount} times, first seen{" "}
+                {new Date(
+                  detail.guestDevice.firstSeenAt,
+                ).toLocaleDateString()}
+              </>
+            ) : (
+              <>
+                Guest — first seen{" "}
+                {new Date(
+                  detail.guestDevice.firstSeenAt,
+                ).toLocaleDateString()}
+              </>
+            )}
+          </p>
+        )}
       </div>
 
       {/* Pending deposits — action needed (Build 45) */}
