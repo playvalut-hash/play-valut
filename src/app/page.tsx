@@ -213,6 +213,14 @@ export default async function RootPage() {
           ·{" "}
           <Link href="/signup" className="hover:text-[#eef2f7]">
             Create account
+          </Link>{" "}
+          ·{" "}
+          <Link href="/privacy" className="hover:text-[#eef2f7]">
+            Privacy
+          </Link>{" "}
+          ·{" "}
+          <Link href="/terms" className="hover:text-[#eef2f7]">
+            Terms
           </Link>
         </p>
         <p className="mt-1">For players 18 and over.</p>
