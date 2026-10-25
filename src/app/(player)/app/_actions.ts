@@ -250,7 +250,7 @@ async function deliverAccount(playerId: string, game: Game): Promise<void> {
       status,
     });
     await insertSystemMessage(playerId, "player_note", {
-      text: "Your this account is already created — please check here.",
+      text: "Your account is already active.",
     });
     // Already-created AND active: the admin must be told, not just shown
     // a card. This path used to ring no bell at all — unlike a new
