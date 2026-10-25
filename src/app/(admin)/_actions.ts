@@ -2191,40 +2191,68 @@ export async function uploadBrandLogo(
 export async function getSheetLog(): Promise<SheetLogRow[]> {
   await requireSessionAdmin();
   const client = svc();
-  const { data: accounts } = await client
-    .from("game_accounts")
-    .select("id, username, player_id, game_id, status, created_at")
-    .order("created_at", { ascending: false })
-    .limit(2000);
 
-  const list = (accounts ?? []) as Array<{
+  // Full export, no silent cap (v2 Phase 2, audit M14): the old
+  // .limit(2000) quietly dropped every account past the newest 2,000
+  // from the admin's copy-to-Sheets table. Accounts are now fetched in
+  // 1,000-row ranges until a short page ends the loop, and the
+  // player/game lookups are chunked too — a 10,000-account export
+  // would otherwise blow past PostgREST URL limits with one giant IN
+  // list. This page is a rarely-opened admin tool, so completeness
+  // wins over payload size here.
+  const PAGE = 1000;
+  type AccountRow = {
     id: string;
     username: string;
     player_id: string;
     game_id: string;
     status: string;
     created_at: string;
-  }>;
+  };
+  const list: AccountRow[] = [];
+  for (let offset = 0; ; offset += PAGE) {
+    const { data: page } = await client
+      .from("game_accounts")
+      .select("id, username, player_id, game_id, status, created_at")
+      .order("created_at", { ascending: false })
+      .order("id", { ascending: false })
+      .range(offset, offset + PAGE - 1);
+    const rows = (page ?? []) as AccountRow[];
+    list.push(...rows);
+    if (rows.length < PAGE) break;
+  }
   if (list.length === 0) return [];
 
   const playerIds = [...new Set(list.map((a) => a.player_id))];
   const gameIds = [...new Set(list.map((a) => a.game_id))];
 
-  const [{ data: players }, { data: games }] = await Promise.all([
-    client.from("players").select("id, display_name, email").in("id", playerIds),
-    client.from("games").select("id, name").in("id", gameIds),
+  const fetchInChunks = async <T>(
+    table: string,
+    columns: string,
+    ids: string[],
+  ): Promise<T[]> => {
+    const out: T[] = [];
+    for (let i = 0; i < ids.length; i += 500) {
+      const { data } = await client
+        .from(table)
+        .select(columns)
+        .in("id", ids.slice(i, i + 500));
+      out.push(...((data ?? []) as T[]));
+    }
+    return out;
+  };
+
+  const [players, games] = await Promise.all([
+    fetchInChunks<{ id: string; display_name: string; email: string | null }>(
+      "players",
+      "id, display_name, email",
+      playerIds,
+    ),
+    fetchInChunks<{ id: string; name: string }>("games", "id, name", gameIds),
   ]);
 
-  const playerMap = new Map(
-    ((players ?? []) as Array<{ id: string; display_name: string; email: string | null }>).map(
-      (p) => [p.id, p] as const,
-    ),
-  );
-  const gameMap = new Map(
-    ((games ?? []) as Array<{ id: string; name: string }>).map(
-      (g) => [g.id, g.name] as const,
-    ),
-  );
+  const playerMap = new Map(players.map((p) => [p.id, p] as const));
+  const gameMap = new Map(games.map((g) => [g.id, g.name] as const));
 
   return list.map((a) => {
     const p = playerMap.get(a.player_id);
