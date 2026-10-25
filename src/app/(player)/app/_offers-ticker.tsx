@@ -17,9 +17,9 @@ import {
  *   while the page scrolls, including above the support chat.
  * - Desktop: a right rail, a touch narrower than the left sidebar,
  *   offers rising bottom-to-top like live comments — slow (20s
- *   each), staggered (a new one enters every 10s while the previous
- *   is still mid-rail), so the rail is never empty and offers
- *   follow one after another.
+ *   each), staggered (a new one enters every 15s, when the
+ *   previous is near the top), so the rail is never empty and
+ *   offers follow one after another with distance.
  *
  * Both pieces stay mounted (returning null while hidden) and follow
  * the live store, so an added offer appears instantly, a
@@ -60,22 +60,27 @@ function useTickerCycle(offers: LiveTickerOffer[]) {
  * text width (and the bar's width) before it starts, then runs at a
  * constant ~30px/s — so a long offer gets a proportionally longer
  * crossing (its length sets its time; it never rushes, and it never
- * overwrites the next offer). The next slot starts exactly when the
- * current one's tail clears the right edge (delay = current width /
- * speed), so the next offer is already entering as the current one
- * leaves: the screen is never empty, and the two never collide,
- * however long the text is. A LONE offer is the exception: it runs on
- * a single slot looping in pure CSS, so it is never on screen twice
- * at once (two staggered copies of one offer read as a duplicate).
- * The list key above remounts the whole conveyor on any real list
- * change, restarting it from the first offer instantly. */
+ * overwrites the next offer). The next slot starts a short gap
+ * AFTER the current one's tail clears the right edge (delay =
+ * current width / speed + gap), so consecutive offers run with a
+ * visible distance between them instead of back-to-back, while the
+ * bar itself is never empty: the next offer is already entering
+ * long before the current one leaves. A LONE offer is the
+ * exception: it runs on a single slot looping in pure CSS, so it
+ * is never on screen twice at once (two staggered copies of one
+ * offer read as a duplicate). The list key above remounts the
+ * whole conveyor on any real list change, restarting it from the
+ * first offer instantly. */
 
 const TICKER_SPEED_PX_S = 30;
+/** Visible distance between consecutive mobile offers: 3s at
+ *  ~30px/s ≈ 90px of clear bar between two texts. */
+const CONVEYOR_GAP_S = 3;
 
 interface ConveyorSlotState {
   offer: LiveTickerOffer;
   round: number;
-  /** Seconds before this run starts (tail-clear stagger). */
+  /** Seconds before this run starts (tail-clear stagger + gap). */
   delay: number;
   /** Measured text width, once laid out. */
   width: number | null;
@@ -163,13 +168,14 @@ function MobileConveyor({ offers }: { offers: LiveTickerOffer[] }) {
       );
       if (single) return;
       // The second slot joins once the first is measured, starting
-      // when the first one's tail clears the right edge.
+      // a short gap after the first one's tail clears the right
+      // edge — so the two texts run with distance, not back-to-back.
       setSlotB((b) =>
         b === null
           ? {
               offer: offers[nextRef.current % offers.length],
               round: 0,
-              delay: width / TICKER_SPEED_PX_S,
+              delay: width / TICKER_SPEED_PX_S + CONVEYOR_GAP_S,
               width: null,
               duration: null,
             }
@@ -195,7 +201,7 @@ function MobileConveyor({ offers }: { offers: LiveTickerOffer[] }) {
     setSlotA((s) => ({
       offer,
       round: s.round + 1,
-      delay: (widthBRef.current ?? 0) / TICKER_SPEED_PX_S,
+      delay: (widthBRef.current ?? 0) / TICKER_SPEED_PX_S + CONVEYOR_GAP_S,
       width: null,
       duration: null,
     }));
@@ -210,7 +216,7 @@ function MobileConveyor({ offers }: { offers: LiveTickerOffer[] }) {
         : {
             offer,
             round: s.round + 1,
-            delay: (widthARef.current ?? 0) / TICKER_SPEED_PX_S,
+            delay: (widthARef.current ?? 0) / TICKER_SPEED_PX_S + CONVEYOR_GAP_S,
             width: null,
             duration: null,
           },
@@ -240,18 +246,19 @@ function MobileConveyor({ offers }: { offers: LiveTickerOffer[] }) {
 
 /** Desktop rail: a staggered stream, Facebook-Live-comments style.
  *  Each card rises bottom-to-top over a slow 20s. With 2+ offers a
- *  new card enters every 10s — while the previous one is still
- *  mid-rail — so the rail is NEVER empty and offers follow one
- *  after another instead of one card crossing a dark empty column
- *  and the rail sitting blank between crossings. Each card removes
- *  itself when its own rise ends, so at most two are ever in
- *  flight. A LONE offer keeps the old single-card loop (a staggered
- *  second copy of the same offer would read as a duplicate). The
- *  list key above remounts the whole stream on any real list
- *  change, so a new order-0 offer does not wait out the previous
- *  crossing. */
+ *  new card enters every 15s — when the previous one is already
+ *  near the top (75% up), so the two run with a clear distance
+ *  between them instead of crowding the rail, yet the next one is
+ *  already in 5s before the previous vanishes, so the rail is
+ *  NEVER empty and offers follow one after another. Each card
+ *  removes itself when its own rise ends, so at most two are ever
+ *  in flight, and only briefly. A LONE offer keeps the old
+ *  single-card loop (a staggered second copy of the same offer
+ *  would read as a duplicate). The list key above remounts the
+ *  whole stream on any real list change, so a new order-0 offer
+ *  does not wait out the previous crossing. */
 const RAIL_RISE_S = 20;
-const RAIL_STAGGER_S = 10;
+const RAIL_STAGGER_S = 15;
 
 function DesktopStream({ offers }: { offers: LiveTickerOffer[] }) {
   const { current, cycle, advance } = useTickerCycle(offers);
