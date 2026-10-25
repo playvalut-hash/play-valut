@@ -9,8 +9,19 @@ import { cn } from "@/lib/utils";
 import { BellIcon, LogoutIcon, XIcon } from "@/components/icons";
 import { adminSignOut } from "../../_actions";
 
-function kindLabel(kind: NotificationView["kind"]): string {
-  switch (kind) {
+function kindLabel(n: NotificationView): string {
+  // An already-active pick is not something to create — label it by what
+  // it is, not by its kind. The preview is the marker the server writes
+  // for this case ("… (already active) — needs discussion"), so a new
+  // request (no such marker) keeps the old heading. No migration or new
+  // kind needed: the heading is display-only.
+  if (
+    n.kind === "account_request" &&
+    (n.preview ?? "").includes("(already active)")
+  ) {
+    return "Already active";
+  }
+  switch (n.kind) {
     case "account_request":
       return "Account to create";
     case "deposit":
@@ -155,7 +166,7 @@ export default function TopBar({
                     >
                       <div className="flex items-center justify-between gap-2">
                         <span className="text-[11px] font-semibold text-gold">
-                          {kindLabel(n.kind)}
+                          {kindLabel(n)}
                         </span>
                         <span className="text-[10px] text-text-muted">
                           {timeAgo(n.createdAt)}
