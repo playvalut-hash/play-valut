@@ -14,6 +14,29 @@ export default function SignupForm() {
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+
+  /** Same Google path as the login form: Supabase creates the user
+   *  on first OAuth sign-in (the DB trigger adds the players row),
+   *  so "Continue with Google" doubles as signup. Until the Google
+   *  provider is enabled in Supabase, this shows the same graceful
+   *  fallback as login instead of a broken button. */
+  async function handleGoogle() {
+    setError(null);
+    setNotice(null);
+    try {
+      const supabase = createClient();
+      const { error: oauthErr } = await supabase.auth.signInWithOAuth({
+        provider: "google",
+        options: { redirectTo: `${window.location.origin}/auth/callback` },
+      });
+      if (oauthErr) {
+        setNotice("Google sign-in isn't set up yet — use email instead.");
+      }
+    } catch {
+      setNotice("Google sign-in isn't set up yet — use email instead.");
+    }
+  }
 
   async function handleSignup(e: React.FormEvent) {
     e.preventDefault();
@@ -114,6 +137,33 @@ export default function SignupForm() {
             {loading ? "Creating…" : "Create my account"}
           </button>
         </form>
+
+        {notice ? (
+          <div className="mt-4 rounded-lg border border-[#d4af37]/40 bg-[#d4af37]/10 px-4 py-3 text-sm text-[#d4af37]">
+            {notice}
+          </div>
+        ) : null}
+
+        <div className="my-5 flex items-center gap-3" aria-hidden>
+          <span className="h-px flex-1" style={{ background: "#232c3e" }} />
+          <span className="text-xs" style={{ color: "#6d7a8f" }}>or</span>
+          <span className="h-px flex-1" style={{ background: "#232c3e" }} />
+        </div>
+
+        <button
+          type="button"
+          onClick={handleGoogle}
+          className="flex w-full items-center justify-center gap-3 rounded-2xl border py-3.5 text-[15px] font-semibold transition hover:border-gold/50"
+          style={{ borderColor: "#232c3e", background: "#151a26", color: "#eef2f7" }}
+        >
+          <svg width="20" height="20" viewBox="0 0 24 24" role="img" aria-label="Google">
+            <path fill="#4285F4" d="M23.5 12.27c0-.85-.08-1.66-.22-2.45H12v4.64h6.45a5.52 5.52 0 0 1-2.39 3.62v3h3.87c2.26-2.09 3.57-5.16 3.57-8.81z" />
+            <path fill="#34A853" d="M12 24c3.24 0 5.96-1.07 7.94-2.91l-3.87-3c-1.07.72-2.44 1.15-4.07 1.15-3.13 0-5.78-2.11-6.73-4.96H1.29v3.1A12 12 0 0 0 12 24z" />
+            <path fill="#FBBC05" d="M5.27 14.28A7.2 7.2 0 0 1 4.89 12c0-.79.14-1.56.38-2.28v-3.1H1.29a12 12 0 0 0 0 10.76l3.98-3.1z" />
+            <path fill="#EA4335" d="M12 4.77c1.76 0 3.34.61 4.58 1.8l3.44-3.44A11.98 11.98 0 0 0 12 0 12 12 0 0 0 1.29 6.62l3.98 3.1C6.22 6.88 8.87 4.77 12 4.77z" />
+          </svg>
+          Continue with Google
+        </button>
 
         <p className="mt-6 text-center text-[14px]" style={{ color: "#a7b2c3" }}>
           Already have an account?{" "}
