@@ -162,6 +162,11 @@ function AccountCardMessage({
   const accountId = str(message.body["account_id"]);
   const bodyStatus = message.body["status"] === "active" ? "active" : "creating";
   const [card, setCard] = useState<AccountCard | null>(resolvedCard ?? null);
+  // Deleted account (v2 Phase 2, audit M15): the row is gone, so the
+  // fetch resolves null — show an explicit note instead of a "Creating…"
+  // ghost card that never resolves. Transient errors keep the loading
+  // state (catch below swallows them on purpose).
+  const [deleted, setDeleted] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [copied, setCopied] = useState(false);
   const [copiedUser, setCopiedUser] = useState(false);
@@ -175,14 +180,30 @@ function AccountCardMessage({
     }
     let cancelled = false;
     if (accountId) {
-      getAccountCard(accountId).then((c) => {
-        if (!cancelled) setCard(c);
-      });
+      getAccountCard(accountId)
+        .then((c) => {
+          if (cancelled) return;
+          if (c) setCard(c);
+          else setDeleted(true);
+        })
+        .catch(() => {
+          // Transient fetch failure — stay in the loading state.
+        });
     }
     return () => {
       cancelled = true;
     };
   }, [accountId, bodyStatus, resolvedCard]);
+
+  if (deleted) {
+    return (
+      <div className="flex justify-center">
+        <p className="max-w-[85%] rounded-full bg-surface-card px-4 py-1.5 text-center text-xs italic text-text-secondary">
+          This game account was deleted.
+        </p>
+      </div>
+    );
+  }
 
   // R2: the same card flips Creating… → Active in place (no second card).
   const status = card?.status ?? bodyStatus;

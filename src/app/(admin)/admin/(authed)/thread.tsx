@@ -222,6 +222,20 @@ function MessageItem({
     );
   }
 
+  // Deleted account (v2 Phase 2, audit M15): the card row is gone, so
+  // render an explicit note instead of a silent gap in the thread.
+  if (msg.kind === "account" && !msg.account) {
+    return (
+      <div className="admin-msg-in flex justify-center py-1">
+        <span className="max-w-[80%] rounded-full border border-surface-border bg-surface-elevated px-3 py-1 text-center text-[11px] text-text-secondary">
+          {msg.deletedGameName
+            ? `${msg.deletedGameName} account was deleted.`
+            : "This game account was deleted."}
+        </span>
+      </div>
+    );
+  }
+
   if (msg.kind === "games_list" || msg.kind === "pay_list") {
     return (
       <div className="admin-msg-in flex justify-end py-1">

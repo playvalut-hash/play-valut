@@ -119,6 +119,10 @@ export interface ChatMessageView {
   createdAt: string;
   text: string | null;
   account: ThreadAccountCard | null;
+  // Deleted-account placeholder (v2 Phase 2, audit M15): set when an
+  // account-kind message's row is gone — the thread renders an explicit
+  // "account was deleted" note instead of silently dropping the card.
+  deletedGameName?: string | null;
   listTitle: string | null;
   picked: ThreadPick | null;
   pickedName: string | null;
@@ -938,9 +942,15 @@ async function resolveThreadViews(
   for (const m of rows) {
     const body = m.body ?? {};
     let account: ThreadAccountCard | null = null;
+    let deletedGameName: string | null = null;
     if (m.kind === "account" && typeof body.account_id === "string") {
       const acc = accountMap.get(body.account_id);
-      if (acc) {
+      if (!acc) {
+        deletedGameName =
+          typeof body.game_id === "string"
+            ? (gameNames.get(body.game_id) ?? body.game_id)
+            : null;
+      } else {
         account = {
           gameId: acc.game_id,
           accountId: body.account_id,
@@ -994,6 +1004,7 @@ async function resolveThreadViews(
       createdAt: m.created_at,
       text: typeof body.text === "string" ? body.text : null,
       account,
+      deletedGameName,
       listTitle: typeof body.title === "string" ? body.title : null,
       picked,
       pickedName,
