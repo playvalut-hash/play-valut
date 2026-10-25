@@ -1585,7 +1585,15 @@ export async function adminSendChatImage(
     is_read_by_player: false,
     is_read_by_admin: true,
   });
-  if (error) throw new Error("Couldn't send the image. Try again.");
+  if (error) {
+    // Orphaned-upload cleanup (v2 Phase 2, audit M11): the file is
+    // already in storage under a random path nothing references, so a
+    // failed message insert must remove it now — not leave it for the
+    // Storage-page sweep. Best-effort: a failed remove never masks the
+    // original error, and the sweep remains the backstop.
+    await client.storage.from("screenshots").remove([path]);
+    throw new Error("Couldn't send the image. Try again.");
+  }
 }
 
 export async function markAccountActive(
