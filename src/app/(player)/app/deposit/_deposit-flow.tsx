@@ -178,7 +178,7 @@ export default function DepositFlow({ methods }: { methods: PaymentMethod[] }) {
           )}
           <button
             type="submit"
-            className="mt-6 flex w-full min-h-[56px] items-center justify-center gap-2 rounded-xl bg-gold text-base font-bold text-text-ongold transition hover:brightness-110"
+            className="mt-6 flex w-full min-h-[56px] items-center justify-center gap-2 rounded-xl bg-gold text-base font-bold text-black transition hover:brightness-110"
           >
             Continue
             <ArrowRightIcon className="h-5 w-5" />
@@ -262,7 +262,7 @@ export default function DepositFlow({ methods }: { methods: PaymentMethod[] }) {
                 href={safeHref(method.pay_link) ?? ""}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="mt-4 flex min-h-[52px] w-full items-center justify-center gap-2 rounded-xl bg-gold text-base font-bold text-text-ongold transition hover:brightness-110"
+                className="mt-4 flex min-h-[52px] w-full items-center justify-center gap-2 rounded-xl bg-gold text-base font-bold text-black transition hover:brightness-110"
               >
                 <LinkIcon className="h-5 w-5" />
                 Pay ${amount}
@@ -286,7 +286,7 @@ export default function DepositFlow({ methods }: { methods: PaymentMethod[] }) {
             <button
               type="button"
               onClick={() => setStep("upload")}
-              className="flex min-h-[52px] flex-1 items-center justify-center gap-2 rounded-xl bg-gold text-base font-bold text-text-ongold transition hover:brightness-110"
+              className="flex min-h-[52px] flex-1 items-center justify-center gap-2 rounded-xl bg-gold text-base font-bold text-black transition hover:brightness-110"
             >
               I’ve paid — upload screenshot
               <ArrowRightIcon className="h-5 w-5" />
@@ -347,7 +347,7 @@ export default function DepositFlow({ methods }: { methods: PaymentMethod[] }) {
               type="button"
               onClick={handleSubmit}
               disabled={!file || submitting}
-              className="flex min-h-[52px] flex-1 items-center justify-center gap-2 rounded-xl bg-gold text-base font-bold text-text-ongold transition hover:brightness-110 disabled:opacity-60"
+              className="flex min-h-[52px] flex-1 items-center justify-center gap-2 rounded-xl bg-gold text-base font-bold text-black transition hover:brightness-110 disabled:opacity-60"
             >
               {submitting ? (
                 "Uploading…"

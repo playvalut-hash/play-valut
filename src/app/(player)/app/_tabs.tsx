@@ -62,7 +62,7 @@ export default function Tabs() {
         className="hidden w-60 shrink-0 flex-col gap-1 border-r border-line bg-bg p-3 md:sticky md:top-0 md:flex md:h-dvh"
       >
         <div className="mb-3 flex items-center gap-3 px-2 pb-3 pt-1">
-          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-gold font-display text-[13px] font-extrabold text-text-ongold">
+          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-gold font-display text-[13px] font-extrabold text-black">
             PV
           </span>
           <span className="font-display text-lg font-extrabold text-text-primary">

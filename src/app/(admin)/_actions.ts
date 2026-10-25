@@ -1923,7 +1923,15 @@ function toGameRow(g: Record<string, unknown>): GameRow {
     name: g.name as string,
     category: (g.category as string | null) ?? null,
     iconPath,
-    iconUrl: iconPath ? publicUrl("game-icons", iconPath) : null,
+    // icon_path values are full artwork URLs (migration 0007), not bare
+    // storage paths — wrapping one in a storage public URL produced a
+    // double URL that never loads (every library thumbnail showed the
+    // broken-image glyph). Only bare paths go through the bucket URL.
+    iconUrl: iconPath
+      ? /^https?:\/\//.test(iconPath) || iconPath.startsWith("/")
+        ? iconPath
+        : publicUrl("game-icons", iconPath)
+      : null,
     link: (g.link as string | null) ?? null,
     webLink: (g.web_link as string | null) ?? null,
     access: (g.access as GameRow["access"]) ?? "both",

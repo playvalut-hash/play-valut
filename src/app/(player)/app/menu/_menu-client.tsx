@@ -100,7 +100,7 @@ export default function MenuClient({
               Notifications
             </span>
             {updates.length > 0 ? (
-              <span className="rounded-full bg-gold px-2 py-0.5 text-[11px] font-extrabold text-text-ongold">
+              <span className="rounded-full bg-gold px-2 py-0.5 text-[11px] font-extrabold text-black">
                 {updates.length}
               </span>
             ) : null}

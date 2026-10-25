@@ -21,7 +21,7 @@ function GameTile({ tile, isPaid }: { tile: TileData; isPaid: boolean }) {
   return (
     <Link
       href={`/app/game/${game.id}`}
-      className="gtile block w-full rounded-2xl border border-white/10 bg-surface-card p-3 text-center text-ink transition active:scale-[0.97]"
+      className="gtile tilt-3d block w-full rounded-2xl border border-white/10 bg-surface-card p-3 text-center text-ink transition active:scale-[0.97]"
       aria-label={`${game.name} — ${accountStatus ? "account ready" : "get an account"}`}
     >
       <span
@@ -116,7 +116,7 @@ export default function GameGrid({
         </div>
         <a
           href="#games"
-          className="rounded-full bg-gold px-5 py-2 text-sm font-bold text-text-ongold shadow-[0_4px_20px_rgba(212,175,55,0.25)] transition hover:brightness-110"
+          className="rounded-full bg-gold px-5 py-2 text-sm font-bold text-black shadow-[0_4px_20px_rgba(212,175,55,0.25)] transition hover:brightness-110"
         >
           Play Now
         </a>

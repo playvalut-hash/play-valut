@@ -26,7 +26,13 @@ export interface GameAccount {
   username: string;
   status: "creating" | "active";
   created_at: string;
-  game: { id: string; name: string } | null;
+  game: {
+    id: string;
+    name: string;
+    link: string | null;
+    web_link: string | null;
+    access: string | null;
+  } | null;
 }
 
 export interface PaymentMethod {

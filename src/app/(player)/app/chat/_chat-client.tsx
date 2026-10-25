@@ -250,16 +250,16 @@ function AccountCardMessage({
     <div className="flex justify-start">
       <div className="w-full max-w-[340px] overflow-hidden rounded-2xl border border-gold/40 bg-surface-card shadow-xl shadow-black/25">
         <div className="flex items-center justify-between gap-2 bg-gradient-to-r from-gold to-gold-light px-4 py-2.5">
-          <p className="min-w-0 truncate text-sm font-extrabold text-text-ongold">
+          <p className="min-w-0 truncate text-sm font-extrabold text-black">
             {card?.gameName ?? "Game account"}
           </p>
           {active ? (
-            <span className="flex shrink-0 items-center gap-1 rounded-full bg-black/20 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-text-ongold">
+            <span className="flex shrink-0 items-center gap-1 rounded-full bg-black/20 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-black">
               <span className="h-1.5 w-1.5 rounded-full bg-success" />
               Active
             </span>
           ) : (
-            <span className="flex shrink-0 items-center gap-1 rounded-full bg-black/20 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-text-ongold">
+            <span className="flex shrink-0 items-center gap-1 rounded-full bg-black/20 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-black">
               <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-text-ongold" />
               Creating
             </span>
@@ -337,7 +337,7 @@ function AccountCardMessage({
           {active ? (
             <Link
               href="/app/accounts"
-              className="block rounded-xl bg-gold py-2.5 text-center text-sm font-bold text-text-ongold transition hover:brightness-110"
+              className="block rounded-xl bg-gold py-2.5 text-center text-sm font-bold text-black transition hover:brightness-110"
             >
               Open My Game Account →
             </Link>
@@ -429,7 +429,7 @@ function PickerMessage({
                 onClick={() => pick(item.id)}
                 className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-2 text-[12.5px] font-bold leading-none transition ${
                   isPicked
-                    ? "border-gold bg-gold text-text-ongold shadow-lg shadow-gold/25"
+                    ? "border-gold bg-gold text-black shadow-lg shadow-gold/25"
                     : "border-surface-border bg-surface-elevated/70 text-text-primary hover:border-gold/60 hover:text-gold"
                 } ${picked && !isPicked ? "opacity-40" : ""}`}
               >
@@ -644,7 +644,7 @@ function PaymentCardMessage({
               href={safeHref(snapshot.pay_link) ?? ""}
               target="_blank"
               rel="noopener noreferrer"
-              className="mt-4 flex min-h-[48px] items-center justify-center gap-2 rounded-xl bg-gold text-sm font-bold text-text-ongold transition hover:brightness-110"
+              className="mt-4 flex min-h-[48px] items-center justify-center gap-2 rounded-xl bg-gold text-sm font-bold text-black transition hover:brightness-110"
             >
               <LinkIcon className="h-4 w-4" />
               Pay with {methodName}
@@ -685,7 +685,7 @@ function PaymentCardMessage({
                 type="file"
                 accept="image/*"
                 onChange={(e) => setFile(e.target.files?.[0] ?? null)}
-                className="mt-1 block w-full text-xs text-text-secondary file:mr-3 file:rounded-lg file:border-0 file:bg-gold file:px-3 file:py-2 file:text-xs file:font-bold file:text-text-ongold"
+                className="mt-1 block w-full text-xs text-text-secondary file:mr-3 file:rounded-lg file:border-0 file:bg-gold file:px-3 file:py-2 file:text-xs file:font-bold file:text-black"
               />
             </label>
             {error ? (
@@ -705,7 +705,7 @@ function PaymentCardMessage({
                 type="button"
                 onClick={handleUpload}
                 disabled={submitting}
-                className="flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-gold px-3 py-2 text-xs font-bold text-text-ongold disabled:opacity-60"
+                className="flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-gold px-3 py-2 text-xs font-bold text-black disabled:opacity-60"
               >
                 <UploadIcon className="h-4 w-4" />
                 {submitting ? "Uploading…" : "Send screenshot"}
@@ -1360,7 +1360,7 @@ export default function ChatClient({
     <div className="flex h-[calc(100dvh-6rem)] flex-col md:h-dvh">
       {/* Header — support identity, Messenger-style */}
       <header className="flex shrink-0 items-center gap-3 border-b border-surface-border bg-navy px-4 py-3">
-        <span className="relative flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-gold font-display text-[13px] font-extrabold text-text-ongold">
+        <span className="relative flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-gold font-display text-[13px] font-extrabold text-black">
           PV
           <span className="absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full border-2 border-navy bg-success" />
         </span>
@@ -1407,7 +1407,7 @@ export default function ChatClient({
               <button
                 type="button"
                 onClick={() => send("I want a game account")}
-                className="min-h-[48px] rounded-full bg-gold px-6 text-sm font-bold text-text-ongold transition hover:brightness-110"
+                className="min-h-[48px] rounded-full bg-gold px-6 text-sm font-bold text-black transition hover:brightness-110"
               >
                 Get a game account
               </button>
@@ -1529,7 +1529,7 @@ export default function ChatClient({
             type="submit"
             disabled={!input.trim()}
             aria-label="Send message"
-            className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-gold text-text-ongold transition hover:brightness-110 disabled:opacity-50"
+            className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-gold text-black transition hover:brightness-110 disabled:opacity-50"
           >
             <SendIcon className="h-5 w-5" />
           </button>

@@ -387,11 +387,11 @@ export default function GamesManager({
                   <img
                     src={g.iconUrl}
                     alt=""
-                    className="h-9 w-9 rounded-md object-cover"
+                    className="h-12 w-12 rounded-lg object-cover"
                   />
                 ) : (
-                  <span className="flex h-9 w-9 items-center justify-center rounded-md bg-surface-elevated text-text-muted">
-                    <ImageIcon className="h-4 w-4" />
+                  <span className="flex h-12 w-12 items-center justify-center rounded-lg bg-surface-elevated text-text-muted">
+                    <ImageIcon className="h-5 w-5" />
                   </span>
                 )}
                 <div>

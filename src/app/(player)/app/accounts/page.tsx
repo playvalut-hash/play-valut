@@ -15,7 +15,7 @@ export default async function AccountsPage() {
   if (user) {
     const { data } = await supabase
       .from("game_accounts")
-      .select("id, game_id, username, status, created_at, game:games(id, name)")
+      .select("id, game_id, username, status, created_at, game:games(id, name, link, web_link, access)")
       .eq("player_id", user.id)
       .order("created_at", { ascending: false });
     accounts = (data ?? []) as unknown as GameAccount[];
@@ -41,7 +41,7 @@ export default async function AccountsPage() {
           </p>
           <Link
             href="/app"
-            className="mt-5 rounded-xl bg-gold px-6 py-3 text-sm font-bold text-text-ongold transition hover:brightness-110"
+            className="mt-5 rounded-xl bg-gold px-6 py-3 text-sm font-bold text-black transition hover:brightness-110"
           >
             Browse games
           </Link>

@@ -97,7 +97,7 @@ export default function PromoForm() {
       ) : null}
       <button
         type="submit"
-        className="mt-3 w-full rounded-xl bg-gold py-3.5 text-sm font-bold text-text-ongold transition hover:brightness-110 min-h-[48px]"
+        className="mt-3 w-full rounded-xl bg-gold py-3.5 text-sm font-bold text-black transition hover:brightness-110 min-h-[48px]"
       >
         Apply code
       </button>

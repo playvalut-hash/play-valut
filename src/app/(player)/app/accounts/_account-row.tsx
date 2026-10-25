@@ -36,6 +36,28 @@ export default function AccountRow({ account }: { account: GameAccount }) {
   const [c1, c2] = gameGradient(account.game_id);
   const active = account.status === "active";
 
+  // Play goes straight to the game's official link (same rule as the
+  // detail page's Smart Play buttons): the app link first when access
+  // allows it, else the web link. Only safe http(s) URLs become anchors;
+  // without any official link it falls back to the in-app detail page.
+  const gameLink = account.game;
+  const isHttp = (u: string | null | undefined): u is string =>
+    !!u && /^https?:\/\//.test(u);
+  const appHref =
+    gameLink &&
+    (gameLink.access === "both" || gameLink.access === "app") &&
+    isHttp(gameLink.link)
+      ? gameLink.link
+      : null;
+  const webHref =
+    gameLink &&
+    (gameLink.access === "both" || gameLink.access === "web") &&
+    isHttp(gameLink.web_link)
+      ? gameLink.web_link
+      : null;
+  const playHref = appHref ?? webHref ?? `/app/game/${account.game_id}`;
+  const playExternal = playHref !== `/app/game/${account.game_id}`;
+
   useEffect(() => {
     let cancelled = false;
     if (showPassword && password === null) {
@@ -70,7 +92,7 @@ export default function AccountRow({ account }: { account: GameAccount }) {
   }
 
   return (
-    <article className="rounded-2xl border border-surface-border bg-surface-card p-4">
+    <article className="tilt-3d rounded-2xl border border-surface-border bg-surface-card p-4">
       <div className="flex items-center gap-3">
         <span
           aria-hidden
@@ -169,13 +191,25 @@ export default function AccountRow({ account }: { account: GameAccount }) {
       </div>
 
       {active ? (
-        <Link
-          href={`/app/game/${account.game_id}`}
-          className="mt-3 flex min-h-[48px] items-center justify-center gap-2 rounded-xl bg-gold text-sm font-bold text-text-ongold transition hover:brightness-110"
-        >
-          Play {gameName}
-          <ArrowRightIcon className="h-4 w-4" />
-        </Link>
+        playExternal ? (
+          <a
+            href={playHref}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="mt-3 flex min-h-[48px] items-center justify-center gap-2 rounded-xl bg-gold text-sm font-bold text-black transition hover:brightness-110"
+          >
+            Play {gameName}
+            <ArrowRightIcon className="h-4 w-4" />
+          </a>
+        ) : (
+          <Link
+            href={playHref}
+            className="mt-3 flex min-h-[48px] items-center justify-center gap-2 rounded-xl bg-gold text-sm font-bold text-black transition hover:brightness-110"
+          >
+            Play {gameName}
+            <ArrowRightIcon className="h-4 w-4" />
+          </Link>
+        )
       ) : (
         <p className="mt-3 rounded-xl bg-gold/10 px-3 py-2.5 text-center text-xs font-semibold text-gold-light">
           Support is setting up your login — it will appear here and in chat.
