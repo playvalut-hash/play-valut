@@ -1269,7 +1269,7 @@ export default function ChatClient({
   })();
 
   return (
-    <div className="flex h-[calc(100dvh-6rem)] flex-col">
+    <div className="flex h-[calc(100dvh-6rem)] flex-col md:h-dvh">
       {/* Header — support identity, Messenger-style */}
       <header className="flex shrink-0 items-center gap-3 border-b border-surface-border bg-navy px-4 py-3">
         <span className="relative flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-gold font-display text-[13px] font-extrabold text-text-ongold">

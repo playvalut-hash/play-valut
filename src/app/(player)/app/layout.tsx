@@ -70,10 +70,15 @@ export default async function PlayerLayout({
   return (
     <div className="min-h-dvh bg-near-black flex justify-center">
       {/* Full-width on desktop like the admin app; the phone frame
-          applies on mobile only. Bottom tab bar stays. */}
-      <div className="relative flex min-h-dvh w-full max-w-[440px] flex-col bg-bg md:max-w-none">
-        <main className="flex-1 pb-24">{children}</main>
+          applies on mobile only. Navigation is a left sidebar on
+          desktop (like the admin's player-list column) and the bottom
+          tab bar on mobile. Main gets side padding on desktop so
+          nothing sits flush against the window edges. */}
+      <div className="relative flex min-h-dvh w-full max-w-[440px] flex-col bg-bg md:max-w-none md:flex-row">
         <Tabs />
+        <main className="flex-1 pb-24 md:min-w-0 md:px-6 md:pb-0">
+          {children}
+        </main>
         <PresenceHeartbeat />
       </div>
     </div>

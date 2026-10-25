@@ -256,14 +256,19 @@ async function deliverAccount(playerId: string, game: Game): Promise<void> {
     const exists = await accountCardExists(playerId, accountId);
     if (exists) {
       await insertSystemMessage(playerId, "text", {
-        text: `You already have a ${game.name} account — it's right here in our chat, and under Menu → My Game Accounts.`,
+        text: "Your this account is already created — please check here.",
       });
     } else {
-      // Account exists but was made from the lobby: surface the saved card.
+      // Account exists but was made from the lobby: surface the saved card,
+      // plus the same already-created note so the player does not mistake
+      // it for a brand-new account.
       await insertSystemMessage(playerId, "account", {
         game_id: game.id,
         account_id: accountId,
         status,
+      });
+      await insertSystemMessage(playerId, "text", {
+        text: "Your this account is already created — please check here.",
       });
     }
     // Already-created AND active: the admin must be told, not just shown
@@ -289,7 +294,7 @@ async function deliverAccount(playerId: string, game: Game): Promise<void> {
         accountId,
       );
       await insertSystemMessage(playerId, "text", {
-        text: `${name} want to pay this game that already created and active please further discuss them!`,
+        text: `${name} want to play this game that already created and active please further discuss them!`,
       });
     }
     return;
