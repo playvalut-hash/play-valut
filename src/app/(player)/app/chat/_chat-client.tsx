@@ -1357,7 +1357,7 @@ export default function ChatClient({
   })();
 
   return (
-    <div className="flex h-[calc(100dvh-6rem)] flex-col md:h-dvh">
+    <div className="flex h-[calc(100dvh-6rem-var(--pv-ticker-h,0px))] flex-col md:h-dvh">
       {/* Header — support identity, Messenger-style */}
       <header className="flex shrink-0 items-center gap-3 border-b border-surface-border bg-navy px-4 py-3">
         <span className="relative flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-gold font-display text-[13px] font-extrabold text-black">
@@ -1468,10 +1468,11 @@ export default function ChatClient({
         </p>
       ) : null}
 
-      {/* Send bar */}
+      {/* Send bar — compact on mobile (the old 48px composer + padding
+          ate too much of a small screen); desktop keeps its size. */}
       <form
         onSubmit={onSubmit}
-        className="shrink-0 border-t border-surface-border bg-navy px-3 py-2.5"
+        className="shrink-0 border-t border-surface-border bg-navy px-2.5 py-2 md:px-3 md:py-2.5"
         style={{ paddingBottom: "calc(0.625rem + env(safe-area-inset-bottom))" }}
       >
         <div className="flex items-center gap-2">
@@ -1494,7 +1495,7 @@ export default function ChatClient({
             onClick={() => imageInputRef.current?.click()}
             aria-label="Send an image"
             title="Send an image (or paste one)"
-            className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full border border-surface-border text-text-secondary transition hover:text-gold disabled:opacity-50"
+            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-surface-border text-text-secondary transition hover:text-gold disabled:opacity-50 md:h-12 md:w-12"
           >
             <ImageIcon className="h-5 w-5" />
           </button>
@@ -1523,13 +1524,13 @@ export default function ChatClient({
             }}
             placeholder="Type a message…"
             autoComplete="off"
-            className="max-h-[150px] min-h-[48px] flex-1 resize-none overflow-y-auto rounded-[24px] border border-surface-border bg-surface-input px-4 py-3 text-sm leading-snug text-text-primary placeholder:text-text-muted focus:border-gold/60 focus:outline-none"
+            className="max-h-[150px] min-h-[40px] flex-1 resize-none overflow-y-auto rounded-[24px] border border-surface-border bg-surface-input px-4 py-2 text-sm leading-snug text-text-primary placeholder:text-text-muted focus:border-gold/60 focus:outline-none md:min-h-[48px] md:py-3"
           />
           <button
             type="submit"
             disabled={!input.trim()}
             aria-label="Send message"
-            className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-gold text-black transition hover:brightness-110 disabled:opacity-50"
+            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-gold text-black transition hover:brightness-110 disabled:opacity-50 md:h-12 md:w-12"
           >
             <SendIcon className="h-5 w-5" />
           </button>

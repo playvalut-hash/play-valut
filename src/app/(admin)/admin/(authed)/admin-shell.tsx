@@ -230,7 +230,7 @@ export default function AdminShell({
             className={cn(
               "shrink-0 border-r border-surface-border bg-navy transition-all duration-200",
               "fixed inset-y-0 left-0 z-40 w-64 md:static",
-              collapsed ? "md:w-[68px]" : "md:w-52",
+              collapsed ? "md:w-[68px]" : "md:w-[clamp(160px,14vw,208px)]",
               sidebarOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0",
             )}
           >

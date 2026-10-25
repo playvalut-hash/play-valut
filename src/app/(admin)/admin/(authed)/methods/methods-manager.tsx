@@ -279,7 +279,7 @@ export default function MethodsManager({
         </AdminModal>
       )}
 
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+      <div className="grid grid-cols-[repeat(auto-fill,minmax(260px,1fr))] gap-3">
         {methods.map((m) => (
           <div
             key={m.id}

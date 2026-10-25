@@ -418,8 +418,9 @@ export default function GamesManager({
         </AdminModal>
       )}
 
-      {/* Card grid — same format as Payment Methods (Build 60) */}
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+      {/* Card grid — auto-fill columns, so the count follows the
+          available width (zoom in → fewer, zoom out → more). */}
+      <div className="grid grid-cols-[repeat(auto-fill,minmax(260px,1fr))] gap-3">
         {games.map((g) => (
           <div
             key={g.id}

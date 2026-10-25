@@ -199,7 +199,7 @@ export default function DepositFlow({ methods }: { methods: PaymentMethod[] }) {
               chat.
             </p>
           ) : (
-            <div className="mt-3 space-y-2.5">
+            <div className="mt-3 grid gap-2.5 md:grid-cols-[repeat(auto-fill,minmax(280px,1fr))]">
               {methods.map((m) => (
                 <button
                   key={m.id}

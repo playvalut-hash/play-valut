@@ -47,7 +47,7 @@ export default async function AccountsPage() {
           </Link>
         </div>
       ) : (
-        <div className="mt-4 grid grid-cols-1 gap-4 pb-6 md:grid-cols-2 xl:grid-cols-3">
+        <div className="mt-4 grid grid-cols-[repeat(auto-fill,minmax(280px,1fr))] gap-4 pb-6">
           {accounts.map((account) => (
             <AccountRow key={account.id} account={account} />
           ))}

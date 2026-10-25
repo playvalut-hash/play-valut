@@ -176,12 +176,16 @@ export default function GameGrid({
             {filtered.length}
           </span>
         </h2>
+        {/* Games grid — auto-fill columns, so the count follows the
+            available width: zooming in drops columns (5 → 4 → 3),
+            zooming out adds them (6, 7, …). Nothing here is a fixed
+            column count anymore. */}
         {filtered.length === 0 ? (
           <p className="mt-6 rounded-xl border border-surface-border bg-surface-card p-6 text-center text-sm text-text-secondary">
             No games match “{query}”.
           </p>
         ) : (
-          <div className="mt-3 grid grid-cols-3 gap-3 pb-6 md:grid-cols-4 lg:grid-cols-5">
+          <div className="mt-3 grid grid-cols-[repeat(auto-fill,minmax(105px,1fr))] gap-3 pb-6 md:grid-cols-[repeat(auto-fill,minmax(185px,1fr))]">
             {filtered.map((tile) => (
               <GameTile key={tile.game.id} tile={tile} isPaid={isPaid} />
             ))}

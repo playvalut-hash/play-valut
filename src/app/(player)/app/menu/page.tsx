@@ -7,6 +7,9 @@ export interface PlayerUpdate {
   detail: string;
   at: string;
   tone: "success" | "danger" | "gold";
+  /** Where a tap on the update goes: a deposit decision opens the
+      Wallet history, an activated account opens My Game Accounts. */
+  href: "/app/wallet" | "/app/accounts";
 }
 
 interface PlayerProfile {
@@ -85,6 +88,7 @@ export default async function MenuPage() {
             : d.admin_note ?? "Support declined this deposit — ask in chat.",
         at: d.decided_at,
         tone: d.status === "approved" ? "success" : "danger",
+        href: "/app/wallet",
       });
     }
 
@@ -107,6 +111,7 @@ export default async function MenuPage() {
         detail: "Your login is ready under My Game Accounts.",
         at: a.activated_at,
         tone: "gold",
+        href: "/app/accounts",
       });
     }
 

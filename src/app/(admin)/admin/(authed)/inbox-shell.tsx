@@ -126,7 +126,7 @@ function loadInboxSnapshot(): InboxSnap | null {
 }
 
 /**
- * Business Inbox: 264px player list · flexible WhatsApp-style thread ·
+ * Business Inbox: flexible player list · flexible WhatsApp-style thread ·
  * 336px details panel. Uses Supabase Realtime for instant updates.
  */
 export default function InboxShell({
@@ -720,11 +720,13 @@ export default function InboxShell({
 
   return (
     <div className="flex h-full min-h-0">
-      {/* Player list — full width on mobile, 264px fixed on desktop */}
+      {/* Player list — full width on mobile, flexible on desktop: it
+          grows and shrinks with the window (and the zoom level) instead
+          of sitting at a fixed 264px. */}
       <div
         className={cn(
           "flex shrink-0 flex-col border-r border-line bg-bg-2",
-          "w-full md:w-[264px]",
+          "w-full md:w-[clamp(220px,20vw,320px)]",
           // Hide on mobile when thread/details is shown
           selectedId && mobileView !== "list" ? "hidden md:flex" : "flex",
         )}

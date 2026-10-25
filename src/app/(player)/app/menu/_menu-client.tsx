@@ -150,24 +150,32 @@ export default function MenuClient({
               ) : (
                 <ul className="divide-y divide-surface-border">
                   {visible.map((u) => (
-                    <li key={u.id} className="flex items-start gap-2.5 py-3">
-                      <span className="mt-1.5">
-                        <ToneDot tone={u.tone} />
-                      </span>
-                      <div className="min-w-0 flex-1">
-                        <p className="text-sm font-bold text-text-primary">
-                          {u.title}
-                        </p>
-                        <p className="text-xs text-text-secondary">{u.detail}</p>
-                        <p className="mt-0.5 text-[11px] text-text-muted">
-                          {new Date(u.at).toLocaleString(undefined, {
-                            month: "short",
-                            day: "numeric",
-                            hour: "numeric",
-                            minute: "2-digit",
-                          })}
-                        </p>
-                      </div>
+                    <li key={u.id}>
+                      {/* A tap on an update goes where it belongs (deposit
+                          → Wallet history, account → My Game Accounts);
+                          opening the section still dismisses it. */}
+                      <Link
+                        href={u.href}
+                        className="flex items-start gap-2.5 py-3 transition hover:opacity-80"
+                      >
+                        <span className="mt-1.5">
+                          <ToneDot tone={u.tone} />
+                        </span>
+                        <div className="min-w-0 flex-1">
+                          <p className="text-sm font-bold text-text-primary">
+                            {u.title}
+                          </p>
+                          <p className="text-xs text-text-secondary">{u.detail}</p>
+                          <p className="mt-0.5 text-[11px] text-text-muted">
+                            {new Date(u.at).toLocaleString(undefined, {
+                              month: "short",
+                              day: "numeric",
+                              hour: "numeric",
+                              minute: "2-digit",
+                            })}
+                          </p>
+                        </div>
+                      </Link>
                     </li>
                   ))}
                 </ul>
