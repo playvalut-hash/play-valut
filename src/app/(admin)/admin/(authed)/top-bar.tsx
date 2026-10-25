@@ -29,6 +29,14 @@ function kindLabel(n: NotificationView): string {
       return "Account to create";
     case "deposit":
       return "Deposit pending";
+    case "player_blocked":
+      return "Player blocked";
+    case "player_unblocked":
+      return "Player unblocked";
+    case "chat_cleared":
+      return "Chat cleared";
+    case "player_deleted":
+      return "Player deleted";
     default:
       return "New message";
   }
@@ -93,6 +101,9 @@ export default function TopBar({
     }
     onNotificationOpened?.(n.id);
     setOpen(false);
+    // Moderation alerts for deleted players carry no player id — the
+    // bell row itself is the whole message, there is no thread to open.
+    if (!n.playerId) return;
     router.push(`/admin?player=${n.playerId}`);
     router.refresh();
   }

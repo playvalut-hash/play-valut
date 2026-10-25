@@ -56,7 +56,11 @@ export async function GET(request: Request) {
             (typeof meta.full_name === "string" && meta.full_name) ||
             (typeof meta.display_name === "string" && meta.display_name) ||
             (user.email ? user.email.split("@")[0] : null);
-          const patch: { email?: string; display_name?: string } = {};
+          const patch: {
+            email?: string;
+            display_name?: string;
+            activated_at?: string;
+          } = {};
           if (row && !row.email && user.email) patch.email = user.email;
           if (
             row &&
@@ -66,8 +70,37 @@ export async function GET(request: Request) {
           ) {
             patch.display_name = realName;
           }
+          // Guest-to-player conversion (migration 0032): stamping
+          // activated_at is what lets the super-admin dashboard count
+          // "guest se active" per window. Pre-migration the column
+          // doesn't exist and the update errors — retry without it so
+          // the email/name fill-in (which the sweep depends on: a
+          // converted guest must stop looking like a guest) is never
+          // lost because of the new column.
+          if (patch.email) {
+            patch.activated_at = new Date().toISOString();
+          }
           if (Object.keys(patch).length > 0) {
-            await supabase.from("players").update(patch).eq("id", user.id);
+            const { error } = await supabase
+              .from("players")
+              .update(patch)
+              .eq("id", user.id);
+            if (error && patch.activated_at) {
+              const fallbackPatch: {
+                email?: string;
+                display_name?: string;
+              } = {};
+              if (patch.email) fallbackPatch.email = patch.email;
+              if (patch.display_name) {
+                fallbackPatch.display_name = patch.display_name;
+              }
+              if (Object.keys(fallbackPatch).length > 0) {
+                await supabase
+                  .from("players")
+                  .update(fallbackPatch)
+                  .eq("id", user.id);
+              }
+            }
           }
         }
       } catch {

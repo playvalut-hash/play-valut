@@ -9,6 +9,7 @@ import {
   CardIcon,
   ChatIcon,
   GamepadIcon,
+  HomeIcon,
   NoteIcon,
   SparklesIcon,
   TagIcon,
@@ -31,6 +32,12 @@ const ITEMS: NavItem[] = [
   { href: "/admin/branding", label: "Branding", icon: SparklesIcon },
   { href: "/admin/sheet-log", label: "Sheet Log", icon: NoteIcon },
 ];
+
+const DASHBOARD_ITEM: NavItem = {
+  href: "/admin/dashboard",
+  label: "Dashboard",
+  icon: HomeIcon,
+};
 
 const AGENTS_ITEM: NavItem = {
   href: "/admin/agents",
@@ -70,6 +77,7 @@ export default function SideNav({
 }) {
   const pathname = usePathname();
   const items = [
+    ...(role === "super_admin" ? [DASHBOARD_ITEM] : []),
     ...ITEMS,
     ...(canShortcuts ? [SHORTCUTS_ITEM] : []),
     ...(role === "super_admin" ? [AGENTS_ITEM, STORAGE_ITEM, AUDIT_ITEM] : []),

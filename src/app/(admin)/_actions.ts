@@ -198,8 +198,15 @@ export interface PlayerDetailView {
 
 export interface NotificationView {
   id: string;
-  kind: "message" | "account_request" | "deposit";
-  playerId: string;
+  kind:
+    | "message"
+    | "account_request"
+    | "deposit"
+    | "player_blocked"
+    | "player_unblocked"
+    | "chat_cleared"
+    | "player_deleted";
+  playerId: string | null;
   playerName: string;
   preview: string | null;
   createdAt: string;
@@ -514,53 +521,108 @@ export async function getNotifications(opts?: {
   limit?: number;
   offset?: number;
 }): Promise<NotificationView[]> {
-  await requireSessionAdmin();
+  const me = await requireSessionAdmin();
   const limit = Math.min(Math.max(opts?.limit ?? NOTIF_LIMIT, 1), 100);
   const offset = Math.max(opts?.offset ?? 0, 0);
-  const { data: rows } = await svc()
-    .from("notifications")
-    .select("id, kind, player_id, preview, created_at")
-    .eq("is_read", false)
-    .order("created_at", { ascending: false })
-    .range(offset, offset + limit - 1);
 
-  const list = (rows ?? []) as Array<{
+  // Super-admin-only alerts (migration 0032) travel with the row.
+  // Pre-migration the columns don't exist, so the flagged select
+  // errors and we fall back to the old select — and since no
+  // super-only row can exist before 0032, the fallback is exact.
+  type Row = {
     id: string;
     kind: string;
-    player_id: string;
+    player_id: string | null;
+    player_name?: string | null;
+    super_admin_only?: boolean | null;
     preview: string | null;
     created_at: string;
-  }>;
-  if (list.length === 0) return [];
+  };
+  let rows: Row[] = [];
+  try {
+    const res = await svc()
+      .from("notifications")
+      .select("id, kind, player_id, player_name, super_admin_only, preview, created_at")
+      .eq("is_read", false)
+      .order("created_at", { ascending: false })
+      .range(offset, offset + limit - 1);
+    if (res.error) throw res.error;
+    rows = (res.data ?? []) as Row[];
+  } catch {
+    const res = await svc()
+      .from("notifications")
+      .select("id, kind, player_id, preview, created_at")
+      .eq("is_read", false)
+      .order("created_at", { ascending: false })
+      .range(offset, offset + limit - 1);
+    rows = (res.data ?? []) as Row[];
+  }
+  if (rows.length === 0) return [];
 
-  const playerIds = [...new Set(list.map((n) => n.player_id))];
-  const { data: players } = await svc()
-    .from("players")
-    .select("id, display_name")
-    .in("id", playerIds);
-  const names = new Map(
-    ((players ?? []) as Array<{ id: string; display_name: string }>).map(
-      (p) => [p.id, p.display_name] as const,
+  // Agents never see super-admin-only alerts; the super admin sees all.
+  const visible =
+    me.role === "super_admin"
+      ? rows
+      : rows.filter((n) => !n.super_admin_only);
+  if (visible.length === 0) return [];
+
+  const playerIds = [
+    ...new Set(
+      visible
+        .map((n) => n.player_id)
+        .filter((v): v is string => !!v),
     ),
-  );
+  ];
+  const names = new Map<string, string>();
+  if (playerIds.length > 0) {
+    const { data: players } = await svc()
+      .from("players")
+      .select("id, display_name")
+      .in("id", playerIds);
+    for (const p of (players ?? []) as Array<{
+      id: string;
+      display_name: string;
+    }>) {
+      names.set(p.id, p.display_name);
+    }
+  }
 
-  return list.map((n) => ({
+  return visible.map((n) => ({
     id: n.id,
     kind: n.kind as NotificationView["kind"],
     playerId: n.player_id,
-    playerName: names.get(n.player_id) ?? "Player",
+    // Delete alerts snapshot the name at insert time (the player row
+    // is gone), so prefer it over the lookup.
+    playerName:
+      n.player_name ?? (n.player_id ? (names.get(n.player_id) ?? "Player") : "Player"),
     preview: n.preview,
     createdAt: n.created_at,
   }));
 }
 
 export async function getUnreadNotificationCount(): Promise<number> {
-  await requireSessionAdmin();
-  const { count } = await svc()
-    .from("notifications")
-    .select("id", { count: "exact", head: true })
-    .eq("is_read", false);
-  return count ?? 0;
+  const me = await requireSessionAdmin();
+  try {
+    let query = svc()
+      .from("notifications")
+      .select("id", { count: "exact", head: true })
+      .eq("is_read", false);
+    // Agents don't count super-admin-only alerts. Pre-migration this
+    // errors (unknown column) and the fallback below runs — exact,
+    // because no super-only row can exist before 0032.
+    if (me.role !== "super_admin") {
+      query = query.eq("super_admin_only", false);
+    }
+    const { count, error } = await query;
+    if (error) throw error;
+    return count ?? 0;
+  } catch {
+    const { count } = await svc()
+      .from("notifications")
+      .select("id", { count: "exact", head: true })
+      .eq("is_read", false);
+    return count ?? 0;
+  }
 }
 
 export async function markNotificationRead(
@@ -579,20 +641,353 @@ export async function markNotificationRead(
 export async function markAllNotificationsRead(
   adminId: string,
 ): Promise<{ ok: true; count: number } | { ok: false; error: string }> {
-  await requireAdmin(adminId);
+  const me = await requireAdmin(adminId);
   try {
-    const { data, error } = await svc()
+    // Agents mark only their own visible rows read — a super-only
+    // alert must survive an agent's "Mark all read", or the super
+    // admin would never see it. Pre-migration the filtered update
+    // errors (unknown column) and the fallback below runs — exact,
+    // because no super-only row can exist before 0032.
+    let query = svc()
       .from("notifications")
       .update({ is_read: true })
-      .eq("is_read", false)
-      .select("id");
-    if (error) return { ok: false, error: "Could not mark all read" };
+      .eq("is_read", false);
+    if (me.role !== "super_admin") {
+      query = query.eq("super_admin_only", false);
+    }
+    const { data, error } = await query.select("id");
+    if (error) throw error;
     const count = data?.length ?? 0;
     await audit(adminId, "notifications.mark_all_read", `${count} notifications`);
     return { ok: true, count };
   } catch {
-    return { ok: false, error: "Could not mark all read" };
+    try {
+      const { data, error } = await svc()
+        .from("notifications")
+        .update({ is_read: true })
+        .eq("is_read", false)
+        .select("id");
+      if (error) return { ok: false, error: "Could not mark all read" };
+      const count = data?.length ?? 0;
+      await audit(adminId, "notifications.mark_all_read", `${count} notifications`);
+      return { ok: true, count };
+    } catch {
+      return { ok: false, error: "Could not mark all read" };
+    }
   }
+}
+
+/**
+ * Super-admin-only bell alert for moderation actions (migration 0032):
+ * block, unblock, chat clear, player delete. Best-effort — moderation
+ * itself never fails because an alert did. Pre-migration the insert
+ * errors (unknown columns) and is skipped; alerts start working once
+ * 0032 runs. Delete alerts carry player_id null (the row is gone and
+ * the FK cascade would erase a linked alert) plus a name snapshot.
+ */
+async function alertSuperAdmin(opts: {
+  actorId: string;
+  kind: "player_blocked" | "player_unblocked" | "chat_cleared" | "player_deleted";
+  playerId: string | null;
+  playerName: string;
+  verb: string;
+}): Promise<void> {
+  try {
+    const client = svc();
+    const { data: actor } = await client
+      .from("admin_users")
+      .select("display_name, email")
+      .eq("id", opts.actorId)
+      .single();
+    const actorRow = actor as {
+      display_name: string | null;
+      email: string;
+    } | null;
+    const actorName =
+      actorRow?.display_name || actorRow?.email || "An agent";
+    await client.from("notifications").insert({
+      kind: opts.kind,
+      player_id: opts.playerId,
+      player_name: opts.playerName,
+      super_admin_only: true,
+      preview: `${actorName} ${opts.verb} ${opts.playerName}`,
+    });
+  } catch {
+    // Alerts are informational only.
+  }
+}
+
+/* ── Super-admin dashboard (migration 0032) ─────────────────────────── */
+
+export type DashboardWindow = "24h" | "5d" | "10d" | "30d";
+
+const DASHBOARD_WINDOW_MS: Record<DashboardWindow, number> = {
+  "24h": 24 * 60 * 60 * 1000,
+  "5d": 5 * 24 * 60 * 60 * 1000,
+  "10d": 10 * 24 * 60 * 60 * 1000,
+  "30d": 30 * 24 * 60 * 60 * 1000,
+};
+
+export interface SuperAdminDashboard {
+  window: DashboardWindow;
+  windowStart: string;
+  newPlayers: number;
+  newGuests: number;
+  guestActivated: number;
+  returningGuests: number;
+  accountsCreated: number;
+  depositsApprovedCount: number;
+  depositsApprovedTotal: number;
+  pendingDepositsCount: number;
+  pendingDepositsTotal: number;
+  totalPlayers: number;
+  totalGuests: number;
+  onlineNow: number;
+  unreadMessages: number;
+  creatingAccounts: number;
+  blocks: { total: number; byAgent: Array<{ name: string; count: number }> };
+  deletes: { total: number; byAgent: Array<{ name: string; count: number }> };
+  unblocks: number;
+  chatsCleared: number;
+  moderationFeed: Array<{
+    action: string;
+    label: string;
+    agentName: string;
+    playerName: string;
+    createdAt: string;
+  }>;
+  contactCount: number;
+  contactMessages: Array<{
+    id: string;
+    name: string;
+    email: string;
+    message: string;
+    createdAt: string;
+  }>;
+}
+
+const MODERATION_LABELS: Record<string, string> = {
+  "player.block": "Blocked player",
+  "player.unblock": "Unblocked player",
+  "player.clear_chat": "Cleared chat",
+  "player.delete": "Deleted player",
+};
+
+/** Super-admin-only overview. Window counts come from created_at /
+ *  decided_at / activated_at timestamps, so switching the window is a
+ *  fresh query, not a stored rollup. Guest activations count only
+ *  conversions after migration 0032 (earlier ones have no
+ *  activated_at). Contact reads fail soft pre-migration. */
+export async function getSuperAdminDashboard(
+  window: string,
+): Promise<SuperAdminDashboard> {
+  const me = await requireSessionAdmin();
+  if (me.role !== "super_admin") throw new Error("Not authorized");
+  const key: DashboardWindow =
+    window === "5d" || window === "10d" || window === "30d" ? window : "24h";
+  const start = new Date(Date.now() - DASHBOARD_WINDOW_MS[key]).toISOString();
+  const client = svc();
+
+  const [
+    windowPlayersRes,
+    activatedRes,
+    accountsCreatedRes,
+    approvedRes,
+    pendingRes,
+    totalPlayersRes,
+    totalGuestsRes,
+    onlineRes,
+    unreadRes,
+    creatingRes,
+    auditRes,
+    contactsRes,
+    contactCountRes,
+  ] = await Promise.all([
+    client
+      .from("players")
+      .select("email, returning_guest")
+      .gte("created_at", start),
+    // Fail-soft: activated_at arrives with 0032.
+    client
+      .from("players")
+      .select("id", { count: "exact", head: true })
+      .gte("activated_at", start),
+    client
+      .from("game_accounts")
+      .select("id", { count: "exact", head: true })
+      .gte("created_at", start),
+    client
+      .from("deposits")
+      .select("amount")
+      .eq("status", "approved")
+      .gte("decided_at", start),
+    client.from("deposits").select("amount").eq("status", "pending"),
+    client.from("players").select("id", { count: "exact", head: true }),
+    client
+      .from("players")
+      .select("id", { count: "exact", head: true })
+      .is("email", null),
+    client
+      .from("players")
+      .select("id", { count: "exact", head: true })
+      .eq("is_online", true),
+    client
+      .from("chat_messages")
+      .select("id", { count: "exact", head: true })
+      .eq("sender", "player")
+      .eq("is_read_by_admin", false),
+    client
+      .from("game_accounts")
+      .select("id", { count: "exact", head: true })
+      .eq("status", "creating"),
+    client
+      .from("audit_log")
+      .select("admin_id, action, detail, created_at")
+      .in("action", [
+        "player.block",
+        "player.unblock",
+        "player.clear_chat",
+        "player.delete",
+      ])
+      .gte("created_at", start)
+      .order("created_at", { ascending: false })
+      .limit(100),
+    // Fail-soft: contact_messages arrives with 0032.
+    client
+      .from("contact_messages")
+      .select("id, name, email, message, created_at")
+      .order("created_at", { ascending: false })
+      .limit(10),
+    client
+      .from("contact_messages")
+      .select("id", { count: "exact", head: true })
+      .gte("created_at", start),
+  ]);
+
+  const windowPlayers = (windowPlayersRes.data ?? []) as Array<{
+    email: string | null;
+    returning_guest: boolean | null;
+  }>;
+  const newPlayers = windowPlayers.filter((p) => p.email !== null).length;
+  const newGuests = windowPlayers.filter((p) => p.email === null).length;
+  const returningGuests = windowPlayers.filter(
+    (p) => p.email === null && p.returning_guest === true,
+  ).length;
+
+  const approvedRows = (approvedRes.data ?? []) as Array<{
+    amount: string | number;
+  }>;
+  const pendingRows = (pendingRes.data ?? []) as Array<{
+    amount: string | number;
+  }>;
+  const sum = (rows: Array<{ amount: string | number }>) =>
+    rows.reduce((acc, r) => acc + Number(r.amount || 0), 0);
+
+  // Moderation: group counts + per-agent tables + recent feed.
+  const auditRows = (auditRes.data ?? []) as Array<{
+    admin_id: string;
+    action: string;
+    detail: string;
+    created_at: string;
+  }>;
+  const actorIds = [...new Set(auditRows.map((r) => r.admin_id))];
+  const playerIds = [
+    ...new Set(
+      auditRows.map((r) => r.detail.split(":")[0]).filter((v) => !!v),
+    ),
+  ];
+  const [actorsRes, playersRes] = await Promise.all([
+    actorIds.length > 0
+      ? client.from("admin_users").select("id, display_name, email").in("id", actorIds)
+      : Promise.resolve({ data: [] as Array<{ id: string; display_name: string | null; email: string }> }),
+    playerIds.length > 0
+      ? client.from("players").select("id, display_name").in("id", playerIds)
+      : Promise.resolve({ data: [] as Array<{ id: string; display_name: string }> }),
+  ]);
+  const actorNames = new Map<string, string>();
+  for (const a of (actorsRes.data ?? []) as Array<{
+    id: string;
+    display_name: string | null;
+    email: string;
+  }>) {
+    actorNames.set(a.id, a.display_name || a.email);
+  }
+  const playerNames = new Map<string, string>();
+  for (const p of (playersRes.data ?? []) as Array<{
+    id: string;
+    display_name: string;
+  }>) {
+    playerNames.set(p.id, p.display_name);
+  }
+  const groupByAgent = (action: string) => {
+    const by = new Map<string, number>();
+    for (const r of auditRows) {
+      if (r.action !== action) continue;
+      const name = actorNames.get(r.admin_id) ?? "Unknown";
+      by.set(name, (by.get(name) ?? 0) + 1);
+    }
+    return [...by.entries()]
+      .map(([name, count]) => ({ name, count }))
+      .sort((a, b) => b.count - a.count);
+  };
+  const blocks = groupByAgent("player.block");
+  const deletes = groupByAgent("player.delete");
+  const moderationFeed = auditRows.slice(0, 20).map((r) => {
+    const pid = r.detail.split(":")[0];
+    return {
+      action: r.action,
+      label: MODERATION_LABELS[r.action] ?? r.action,
+      agentName: actorNames.get(r.admin_id) ?? "Unknown",
+      playerName:
+        playerNames.get(pid) ?? `Player ${pid.slice(0, 8)}`,
+      createdAt: r.created_at,
+    };
+  });
+
+  return {
+    window: key,
+    windowStart: start,
+    newPlayers,
+    newGuests,
+    guestActivated: activatedRes.error ? 0 : (activatedRes.count ?? 0),
+    returningGuests,
+    accountsCreated: accountsCreatedRes.count ?? 0,
+    depositsApprovedCount: approvedRows.length,
+    depositsApprovedTotal: sum(approvedRows),
+    pendingDepositsCount: pendingRows.length,
+    pendingDepositsTotal: sum(pendingRows),
+    totalPlayers: totalPlayersRes.count ?? 0,
+    totalGuests: totalGuestsRes.count ?? 0,
+    onlineNow: onlineRes.count ?? 0,
+    unreadMessages: unreadRes.count ?? 0,
+    creatingAccounts: creatingRes.count ?? 0,
+    blocks: {
+      total: blocks.reduce((acc, b) => acc + b.count, 0),
+      byAgent: blocks,
+    },
+    deletes: {
+      total: deletes.reduce((acc, d) => acc + d.count, 0),
+      byAgent: deletes,
+    },
+    unblocks: auditRows.filter((r) => r.action === "player.unblock").length,
+    chatsCleared: auditRows.filter((r) => r.action === "player.clear_chat")
+      .length,
+    moderationFeed,
+    contactCount: contactCountRes.error ? 0 : (contactCountRes.count ?? 0),
+    contactMessages: ((contactsRes.data ?? []) as Array<{
+      id: string;
+      name: string;
+      email: string;
+      message: string;
+      created_at: string;
+    }>).map((m) => ({
+      id: m.id,
+      name: m.name,
+      email: m.email,
+      message: m.message,
+      createdAt: m.created_at,
+    })),
+  };
 }
 
 /* ── Inbox: players overview ───────────────────────────────────────────── */
@@ -2898,6 +3293,14 @@ export async function setPlayerBlocked(
   z.string().uuid().parse(playerId);
   z.boolean().parse(blocked);
   const client = svc();
+  const { data: target } = await client
+    .from("players")
+    .select("display_name")
+    .eq("id", playerId)
+    .single();
+  const targetName =
+    (target as { display_name: string | null } | null)?.display_name ??
+    "Player";
   const { error } = await client
     .from("players")
     .update(
@@ -2913,6 +3316,13 @@ export async function setPlayerBlocked(
     .eq("id", playerId);
   if (error) throw new Error("Could not update player");
   await audit(adminId, blocked ? "player.block" : "player.unblock", playerId);
+  await alertSuperAdmin({
+    actorId: adminId,
+    kind: blocked ? "player_blocked" : "player_unblocked",
+    playerId,
+    playerName: targetName,
+    verb: blocked ? "blocked" : "unblocked",
+  });
 }
 
 /* ── Screenshot storage lifecycle (v2 Phase 1, audit H7) ─────────────── */
@@ -3168,6 +3578,14 @@ export async function clearPlayerChat(
       ? undefined
       : z.number().int().min(1).max(3650).parse(olderThanDays);
   const client = svc();
+  const { data: target } = await client
+    .from("players")
+    .select("display_name")
+    .eq("id", playerId)
+    .single();
+  const targetName =
+    (target as { display_name: string | null } | null)?.display_name ??
+    "Player";
 
   // Shot paths in scope FIRST (audit H7, user decision 2026-10-24): the
   // rows are about to disappear, and with them the only record of which
@@ -3227,6 +3645,13 @@ export async function clearPlayerChat(
         .in("screenshot_path", removed);
     }
   }
+  await alertSuperAdmin({
+    actorId: adminId,
+    kind: "chat_cleared",
+    playerId,
+    playerName: targetName,
+    verb: "cleared the chat of",
+  });
 }
 
 /**
@@ -3240,6 +3665,17 @@ export async function deletePlayer(
   await requirePermission(adminId, "player_delete");
   z.string().uuid().parse(playerId);
   const client = svc();
+  // Name FIRST: the auth delete below cascades the player row, so a
+  // later lookup would find nothing. The delete alert carries a name
+  // snapshot and a null player_id for the same reason.
+  const { data: target } = await client
+    .from("players")
+    .select("display_name")
+    .eq("id", playerId)
+    .single();
+  const targetName =
+    (target as { display_name: string | null } | null)?.display_name ??
+    "Player";
   const { error } = await client.auth.admin.deleteUser(playerId);
   if (error) throw new Error("Could not delete player");
   await audit(adminId, "player.delete", playerId);
@@ -3264,6 +3700,15 @@ export async function deletePlayer(
   } catch {
     // Leftovers are caught by the manual storage sweep.
   }
+  // Null player_id: the row is gone and the FK cascade would erase a
+  // linked alert — the name snapshot is what the bell shows.
+  await alertSuperAdmin({
+    actorId: adminId,
+    kind: "player_deleted",
+    playerId: null,
+    playerName: targetName,
+    verb: "deleted the account of",
+  });
 }
 
 /* ── Create game account for player (from details panel) ── */

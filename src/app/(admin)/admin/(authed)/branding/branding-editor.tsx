@@ -184,6 +184,19 @@ export default function BrandingEditor({
       <p className="mt-0.5 text-xs text-text-muted">
         Applies to the player sign-in screen and app header
       </p>
+      <p className="mt-2 text-xs">
+        <a
+          href="/"
+          target="_blank"
+          rel="noreferrer"
+          className="font-semibold text-gold hover:underline"
+        >
+          View live site ↗
+        </a>
+        <span className="text-text-muted">
+          {" "}— the public Home / Games / About / Contact page guests see.
+        </span>
+      </p>
 
       {error && (
         <div role="alert" className="mt-3 max-w-2xl rounded-md border border-danger/40 bg-danger/10 px-3 py-2 text-xs text-danger">
