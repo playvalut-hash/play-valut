@@ -195,6 +195,16 @@ function AccountCard({
 
 /* ── Message bubble ────────────────────────────────────────────────────── */
 
+/* Echo ids must stay unique even when two echoes are appended in the
+   same tick (sendOneMethod appends text + card). Module scope keeps the
+   React Compiler purity lint happy: no impure calls inside the
+   component body. */
+let echoSeq = 0;
+function nextEchoId(): string {
+  echoSeq += 1;
+  return `echo-${Date.now()}-${echoSeq}`;
+}
+
 function MessageItem({
   admin,
   playerName,
@@ -575,7 +585,7 @@ export default function ThreadView({
     fields: Partial<ChatMessageView>,
   ): ChatMessageView {
     return {
-      id: `echo-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      id: nextEchoId(),
       playerId: player.id,
       sender: "admin",
       kind,
@@ -691,10 +701,18 @@ export default function ThreadView({
   async function sendList(kind: "games" | "pay") {
     if (sendListBusy) return;
     setSendListBusy(kind);
+    // Optimistic: the list card shows on click, not after the round trip.
+    const echo = makeEcho(kind === "games" ? "games_list" : "pay_list", {
+      listTitle: kind === "games" ? "Choose your game" : "Choose a payment method",
+      picked: null,
+    });
+    onAppendOptimistic?.(echo);
     try {
       if (kind === "games") await sendGamesList(admin.id, player.id);
       else await sendPayList(admin.id, player.id);
       await changed();
+    } catch {
+      onDropOptimistic?.(echo.id);
     } finally {
       setSendListBusy(null);
     }
@@ -704,6 +722,16 @@ export default function ThreadView({
     if (sendListBusy) return;
     setSendListBusy("single");
     setGamesOpen(false); // Chips disappear immediately
+    // Optimistic: lead-in text + game card show on click.
+    const textEcho = makeEcho("text", {
+      text: `Sure! Let me set up your ${gameName} account — one moment… 🎮`,
+    });
+    const cardEcho = makeEcho("games_list", {
+      listTitle: `How about ${gameName}? Tap to get your account`,
+      picked: null,
+    });
+    onAppendOptimistic?.(textEcho);
+    onAppendOptimistic?.(cardEcho);
     try {
       // 1. Send "Sure! Let me set up your account" message
       await sendAdminMessage(admin.id, {
@@ -713,6 +741,9 @@ export default function ThreadView({
       // 2. Send the single game
       await sendSingleGame(admin.id, player.id, gameId);
       await changed();
+    } catch {
+      onDropOptimistic?.(textEcho.id);
+      onDropOptimistic?.(cardEcho.id);
     } finally {
       setSendListBusy(null);
     }
@@ -722,6 +753,24 @@ export default function ThreadView({
     if (sendListBusy) return;
     setSendListBusy("single-method");
     setPayOpen(false); // Panel closes immediately, same as games
+    // Optimistic: lead-in text + card show on click. The card's handle
+    // lives server-side only, so the echo shows "Loading…" there until
+    // the refresh swaps in the real card.
+    const textEcho = makeEcho("text", {
+      text: `Here are the ${methodName} payment details 👇`,
+    });
+    const cardEcho = makeEcho("payment_card", {
+      paymentCard: {
+        name: methodName,
+        accountName: null,
+        brandColor: methods.find((m) => m.id === methodId)?.brandColor ?? null,
+        handle: "Loading…",
+        note: null,
+        payLink: null,
+      },
+    });
+    onAppendOptimistic?.(textEcho);
+    onAppendOptimistic?.(cardEcho);
     try {
       // 1. Short lead-in so the card doesn't land without context
       await sendAdminMessage(admin.id, {
@@ -731,6 +780,9 @@ export default function ThreadView({
       // 2. Send that method's payment card
       await sendSingleMethod(admin.id, player.id, methodId);
       await changed();
+    } catch {
+      onDropOptimistic?.(textEcho.id);
+      onDropOptimistic?.(cardEcho.id);
     } finally {
       setSendListBusy(null);
     }
