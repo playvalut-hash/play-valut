@@ -54,7 +54,6 @@ html {
 body {
   margin: 0;
   background-color: #04060a;
-  color: var(--color-ink);
   font-family: var(--font-sans);
   font-size: 15.5px;
   line-height: 1.5;
@@ -77,10 +76,25 @@ input,
 select,
 textarea {
   font: inherit;
-  color: inherit;
 }
-a {
-  color: var(--color-gold-2);
+/* Base element colours live in the base layer so that Tailwind text
+   utilities (utilities layer) win over them on the same element.
+   Unlayered, the `a` rule below beat EVERY text colour utility on
+   links — which is why gold buttons rendered pale gold text no matter
+   which dark token was set on them. Plain links without a text utility
+   still render gold, as intended. */
+@layer base {
+  body {
+    color: var(--color-ink);
+  }
+  input,
+  select,
+  textarea {
+    color: inherit;
+  }
+  a {
+    color: var(--color-gold-2);
+  }
 }
 .mono {
   font-family: var(--font-mono);
@@ -143,15 +157,16 @@ a {
 /* ── 3D tilt for cards/tiles ────────────────────────────────────────────
    Hover-only, GPU-composited (transform + box-shadow only), no JS and no
    layout work — so it costs nothing until the pointer is over a card and
-   nothing on load. Off on touch devices (no hover) and for users who
-   prefer reduced motion, so speed is never traded for the effect. */
+   nothing on load. On touch screens a tap triggers the same hover state
+   as press feedback. Off for users who prefer reduced motion, so speed
+   is never traded for the effect. */
 .tilt-3d {
   transition: transform 250ms ease, box-shadow 250ms ease;
 }
 .tilt-3d .gtile-art img {
   transition: transform 250ms ease;
 }
-@media (hover: hover) and (prefers-reduced-motion: no-preference) {
+@media (prefers-reduced-motion: no-preference) {
   .tilt-3d:hover {
     transform: perspective(900px) translateY(-4px) rotateX(2.5deg)
       rotateY(-2.5deg);
