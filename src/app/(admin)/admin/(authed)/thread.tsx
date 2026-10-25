@@ -596,12 +596,14 @@ export default function ThreadView({
   }, [admin.id]);
 
   // Auto-growing composer (Build 59): grows with the text up to a cap,
-  // then scrolls — like a professional chat system.
+  // then scrolls — like a professional chat system. The cap is also
+  // viewport-relative so the box never eats a small window: at most
+  // 150px, and at most a quarter of the window height.
   useEffect(() => {
     const el = composerRef.current;
     if (!el) return;
     el.style.height = "auto";
-    el.style.height = `${Math.min(el.scrollHeight, 150)}px`;
+    el.style.height = `${Math.min(el.scrollHeight, 150, Math.floor(window.innerHeight * 0.25))}px`;
   }, [draft]);
 
   const imageInputRef = useRef<HTMLInputElement>(null);
@@ -745,7 +747,7 @@ export default function ThreadView({
 
       {/* SEND bar — expandable games + payment methods (compact toolbar) */}
       <div className="shrink-0 border-b border-surface-border bg-surface-card/60 px-3 py-1.5 md:px-4">
-        <div className="no-scrollbar flex items-center gap-1.5 overflow-x-auto">
+        <div className="admin-thin-scroll flex items-center gap-1.5 overflow-x-auto">
           <span className="hidden shrink-0 text-[10px] font-medium uppercase tracking-wide text-text-muted min-[420px]:block">
             Send
           </span>
@@ -967,7 +969,7 @@ export default function ThreadView({
           }}
           placeholder={`Message ${player.displayName}…`}
           aria-label="Message"
-          className="admin-focus max-h-[150px] min-h-[42px] min-w-0 flex-1 resize-none overflow-y-auto rounded-[22px] border border-surface-border bg-surface-input px-3.5 py-2.5 text-[13.5px] leading-snug text-text-primary placeholder:text-text-muted"
+          className="admin-focus max-h-[min(150px,25vh)] min-h-[42px] min-w-0 flex-1 resize-none overflow-y-auto rounded-[22px] border border-surface-border bg-surface-input px-3.5 py-2.5 text-[13.5px] leading-snug text-text-primary placeholder:text-text-muted"
         />
         <button
           type="button"

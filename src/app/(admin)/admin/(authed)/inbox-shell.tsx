@@ -788,7 +788,19 @@ export default function InboxShell({
 
       {/* Details panel — full width on mobile, 336px on desktop.
           Must stay flex-col at ALL sizes so the inner min-h-0 flex-1 chain
-          gives DetailsPanel a bounded height and its own scroll works. */}
+          gives DetailsPanel a bounded height and its own scroll works.
+          Small-window responsive fix: below xl (1280px) the panel is a
+          fixed overlay drawer instead of a third column — a persisted
+          wide panel used to squeeze the thread (and its composer) into
+          a narrow strip on small windows. The backdrop closes it. */}
+      {selected && detail && !panelCollapsed && mobileView !== "details" && (
+        <button
+          type="button"
+          aria-label="Close details panel"
+          onClick={togglePanel}
+          className="fixed inset-0 z-40 hidden bg-black/60 md:block xl:hidden"
+        />
+      )}
       {selected && detail && (
         <div
           ref={panelRef}
@@ -800,17 +812,18 @@ export default function InboxShell({
               ? "flex flex-col"
               : panelCollapsed
                 ? "hidden"
-                : "hidden md:flex md:flex-col",
+                : "hidden md:flex md:flex-col max-xl:fixed max-xl:inset-y-0 max-xl:right-0 max-xl:z-50 max-xl:shadow-2xl",
           )}
         >
-          {/* Drag handle — mouse resize (desktop only) */}
+          {/* Drag handle — mouse resize (wide desktop only; the panel is
+              an overlay below xl, so there is no column edge to drag). */}
           <div
             role="separator"
             aria-label="Resize details panel"
             title="Drag to resize · double-click to reset"
             onMouseDown={onPanelDragStart}
             onDoubleClick={resetPanelWidth}
-            className="absolute inset-y-0 left-0 z-20 hidden w-2 -translate-x-1/2 cursor-col-resize rounded-full transition-colors hover:bg-gold/30 active:bg-gold/50 md:block"
+            className="absolute inset-y-0 left-0 z-20 hidden w-2 -translate-x-1/2 cursor-col-resize rounded-full transition-colors hover:bg-gold/30 active:bg-gold/50 xl:block"
           />
           {/* Mobile back button */}
           <div className="flex shrink-0 items-center gap-2 border-b border-surface-border bg-navy px-2 py-1.5 md:hidden">
