@@ -43,7 +43,13 @@ create or replace function public.track_guest_device(p_device_key text, p_ip tex
 returns boolean
 language plpgsql
 security definer
-set search_path = public
+-- NOTE: pgcrypto lives in the extensions schema on Supabase, NOT in
+-- public — with search_path = public alone, digest() is invisible at
+-- runtime ("function digest(text, unknown) does not exist") and every
+-- tracking call fails. All table refs below are public-qualified and
+-- auth.uid() is schema-qualified, so widening the path only affects
+-- the digest() call. Keep extensions here.
+set search_path = public, extensions
 as $$
 declare
   v_guest_id uuid := auth.uid();
