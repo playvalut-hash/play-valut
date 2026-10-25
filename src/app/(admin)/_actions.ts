@@ -19,6 +19,7 @@ import { createServiceClient } from "@/lib/supabase/service";
 import { decryptPassword, encryptPassword } from "@/lib/crypto";
 import { escapeLikePattern, normalizeTag } from "@/lib/utils";
 import { isSafeHttpUrl } from "@/lib/urls";
+import { resolveGameIconUrl } from "@/lib/game-icon";
 import { validateImageFile } from "@/lib/uploads";
 import { QUICK_REPLIES } from "./_quick-replies";
 import { assertSessionMatches, getSessionUserId } from "./_auth";
@@ -195,6 +196,10 @@ export interface GameRow {
   category: string | null;
   iconPath: string | null;
   iconUrl: string | null;
+  /** True when an admin-uploaded icon overrides the original artwork. */
+  hasCustomIcon: boolean;
+  /** The original artwork (what Remove restores), resolved like iconUrl. */
+  originalIconUrl: string | null;
   link: string | null;
   webLink: string | null;
   access: "both" | "app" | "web";
@@ -1918,20 +1923,19 @@ export async function mintScreenshotUrl(
 
 function toGameRow(g: Record<string, unknown>): GameRow {
   const iconPath = (g.icon_path as string | null) ?? null;
+  const customIconPath = (g.custom_icon_path as string | null) ?? null;
   return {
     id: g.id as string,
     name: g.name as string,
     category: (g.category as string | null) ?? null,
     iconPath,
-    // icon_path values are full artwork URLs (migration 0007), not bare
-    // storage paths — wrapping one in a storage public URL produced a
-    // double URL that never loads (every library thumbnail showed the
-    // broken-image glyph). Only bare paths go through the bucket URL.
-    iconUrl: iconPath
-      ? /^https?:\/\//.test(iconPath) || iconPath.startsWith("/")
-        ? iconPath
-        : publicUrl("game-icons", iconPath)
-      : null,
+    // One shared rule (see src/lib/game-icon.ts): a custom upload wins
+    // everywhere; otherwise the original artwork shows. getGames uses
+    // select("*"), so a not-yet-migrated DB simply yields no custom
+    // column and the original shows — no error before migration 0024.
+    iconUrl: resolveGameIconUrl(iconPath, customIconPath),
+    hasCustomIcon: !!customIconPath,
+    originalIconUrl: resolveGameIconUrl(iconPath, null),
     link: (g.link as string | null) ?? null,
     webLink: (g.web_link as string | null) ?? null,
     access: (g.access as GameRow["access"]) ?? "both",
@@ -2048,7 +2052,10 @@ export async function deleteGame(adminId: string, gameId: string): Promise<void>
 
 const MAX_UPLOAD_BYTES = 8 * 1024 * 1024;
 
-/** Upload a game icon to the public game-icons bucket. Returns the stored path. */
+/** Upload a game icon to the public game-icons bucket. Returns the stored path.
+ *  The upload becomes the game's CUSTOM icon (custom_icon_path) — the
+ *  original artwork in icon_path is never overwritten, so Remove can
+ *  always bring it back. Needs migration 0024 (custom_icon_path). */
 export async function uploadGameIcon(
   adminId: string,
   formData: FormData,
@@ -2060,15 +2067,78 @@ export async function uploadGameIcon(
   if (!(file instanceof File)) throw new Error("No file provided");
   const validated = await validateImageFile(file, MAX_UPLOAD_BYTES);
   const path = `${gameId}.${validated.extension}`;
-  const { error: uploadError } = await svc()
-    .storage.from("game-icons")
+  const client = svc();
+  const { data: current } = await client
+    .from("games")
+    .select("custom_icon_path")
+    .eq("id", gameId)
+    .maybeSingle();
+  const oldPath =
+    (current as { custom_icon_path?: string | null } | null)
+      ?.custom_icon_path ?? null;
+  const { error: uploadError } = await client.storage
+    .from("game-icons")
     .upload(path, validated.bytes, { contentType: validated.contentType, upsert: true });
   if (uploadError) throw new Error("Could not upload icon");
 
-  await svc().from("games").update({ icon_path: path }).eq("id", gameId);
+  const { error: updateError } = await client
+    .from("games")
+    .update({ custom_icon_path: path })
+    .eq("id", gameId);
+  if (updateError) {
+    // Don't leave an orphan behind when the DB write fails.
+    await client.storage.from("game-icons").remove([path]);
+    if (/custom_icon_path/.test(updateError.message ?? "")) {
+      throw new Error(
+        "Custom icons need migration 0024 — please run it in the SQL Editor first.",
+      );
+    }
+    throw new Error("Could not upload icon");
+  }
+  // A replaced upload with a different extension orphans the old file.
+  if (oldPath && oldPath !== path) {
+    await client.storage.from("game-icons").remove([oldPath]);
+  }
   await audit(adminId, "games.upload_icon", gameId);
   revalidateSection("/admin/games");
   return { path, url: publicUrl("game-icons", path) };
+}
+
+/** Remove a game's custom icon — the original artwork shows everywhere again.
+ *  The stored upload is deleted too (best-effort); the column clear is
+ *  what restores the original, so a storage failure never blocks it. */
+export async function clearCustomGameIcon(
+  adminId: string,
+  gameId: string,
+): Promise<void> {
+  await requireAdmin(adminId);
+  z.string().min(1).parse(gameId);
+  const client = svc();
+  const { data: current } = await client
+    .from("games")
+    .select("custom_icon_path")
+    .eq("id", gameId)
+    .maybeSingle();
+  const oldPath =
+    (current as { custom_icon_path?: string | null } | null)
+      ?.custom_icon_path ?? null;
+  const { error } = await client
+    .from("games")
+    .update({ custom_icon_path: null })
+    .eq("id", gameId);
+  if (error) {
+    if (/custom_icon_path/.test(error.message ?? "")) {
+      throw new Error(
+        "Custom icons need migration 0024 — please run it in the SQL Editor first.",
+      );
+    }
+    throw new Error("Could not remove icon");
+  }
+  if (oldPath) {
+    await client.storage.from("game-icons").remove([oldPath]);
+  }
+  await audit(adminId, "games.clear_custom_icon", gameId);
+  revalidateSection("/admin/games");
 }
 
 /* ── Payment Methods ───────────────────────────────────────────────────── */

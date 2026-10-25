@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 
 import type { AdminInfo, GameFormData, GameRow } from "../../../_actions";
 import {
+  clearCustomGameIcon,
   deleteGame,
   upsertGame,
   uploadGameIcon,
@@ -97,6 +98,20 @@ function GameForm({
       router.refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not upload icon");
+    } finally {
+      setUploading(false);
+    }
+  }
+
+  async function onRemoveIcon() {
+    if (!initial) return;
+    setUploading(true);
+    setError(null);
+    try {
+      await clearCustomGameIcon(admin.id, initial.id);
+      router.refresh();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not remove icon");
     } finally {
       setUploading(false);
     }
@@ -286,7 +301,31 @@ function GameForm({
               }}
             />
           </label>
+          {initial.hasCustomIcon && (
+            <button
+              type="button"
+              onClick={() => void onRemoveIcon()}
+              disabled={uploading}
+              className="admin-focus rounded-md border border-danger/40 px-2.5 py-1.5 text-xs text-danger hover:bg-danger/10 disabled:opacity-50"
+            >
+              {uploading ? "Removing…" : "Remove icon"}
+            </button>
+          )}
         </div>
+      )}
+      {initial?.hasCustomIcon && (
+        <p className="mt-2 flex items-center gap-2 text-[11px] text-text-muted">
+          Custom icon set — removing it restores the original artwork
+          {initial.originalIconUrl ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={initial.originalIconUrl}
+              alt="Original artwork"
+              className="h-6 w-6 rounded object-cover"
+            />
+          ) : null}
+          everywhere (player + admin).
+        </p>
       )}
 
       <div className="mt-4 flex gap-2">

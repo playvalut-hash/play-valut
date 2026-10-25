@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import Link from "next/link";
 import { SearchIcon, SparklesIcon } from "@/components/icons";
 import { BrandMark, BrandName, brandLogoUrl, type Branding } from "../../_branding";
+import { resolveGameIconUrl } from "@/lib/game-icon";
 import { gameGradient } from "./_types";
 import type { TileData } from "./page";
 
@@ -17,6 +18,10 @@ function GameTile({ tile, isPaid }: { tile: TileData; isPaid: boolean }) {
   const [c1, c2] = gameGradient(game.id);
   const paidRegular = accountStatus === "active" && isPaid;
   const badgePct = paidRegular ? game.reg_bonus_pct : game.first_bonus_pct;
+  const iconUrl = resolveGameIconUrl(
+    game.icon_path,
+    game.custom_icon_path ?? null,
+  );
 
   return (
     <Link
@@ -32,10 +37,10 @@ function GameTile({ tile, isPaid }: { tile: TileData; isPaid: boolean }) {
           aspectRatio: "1 / 1",
         }}
       >
-        {game.icon_path ? (
+        {iconUrl ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img
-            src={game.icon_path}
+            src={iconUrl}
             alt={`${game.name} official game artwork`}
             loading="lazy"
             className="absolute inset-0 block h-full w-full object-cover"

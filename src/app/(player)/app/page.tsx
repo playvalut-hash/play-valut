@@ -4,6 +4,10 @@ import { getBranding } from "../../_branding-server";
 import { tileBonusText } from "@/lib/utils";
 import GameGrid from "./_game-grid";
 import type { Game } from "./_types";
+import {
+  GAMES_LIST_COLUMNS,
+  GAMES_LIST_COLUMNS_WITH_CUSTOM,
+} from "./_types";
 
 export interface TileData {
   game: Game;
@@ -16,16 +20,25 @@ export default async function HomePage() {
   const supabase = await createClient();
 
   // Branding + session + games in parallel (were sequential).
+  // The games query retries without custom_icon_path when migration
+  // 0024 has not run yet, so the deploy never breaks on the old DB.
+  const gamesPromise = (async () => {
+    const run = (cols: string) =>
+      supabase
+        .from("games")
+        .select(cols)
+        .eq("is_active", true)
+        .order("sort_order", { ascending: true });
+    const first = await run(GAMES_LIST_COLUMNS_WITH_CUSTOM);
+    if (first.error && /custom_icon_path/.test(first.error.message ?? "")) {
+      return run(GAMES_LIST_COLUMNS);
+    }
+    return first;
+  })();
   const [branding, { data: { user } }, { data: gamesData }] = await Promise.all([
     getBranding(),
     supabase.auth.getUser(),
-    supabase
-      .from("games")
-      .select(
-        "id, name, category, icon_path, link, web_link, access, first_bonus_pct, reg_bonus_pct, min_load, max_load, redeem_info, sort_order",
-      )
-      .eq("is_active", true)
-      .order("sort_order", { ascending: true }),
+    gamesPromise,
   ]);
   const games = (gamesData ?? []) as unknown as Game[];
 

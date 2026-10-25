@@ -9,6 +9,8 @@ export interface Game {
   name: string;
   category: string | null;
   icon_path: string | null;
+  /** Admin-uploaded override; when set it wins over icon_path everywhere. */
+  custom_icon_path?: string | null;
   link: string | null;
   web_link: string | null;
   access: "both" | "app" | "web";
@@ -19,6 +21,11 @@ export interface Game {
   redeem_info: string | null;
   sort_order: number;
 }
+
+/** Column list for game lobby queries (shared so retries stay identical). */
+export const GAMES_LIST_COLUMNS =
+  "id, name, category, icon_path, link, web_link, access, first_bonus_pct, reg_bonus_pct, min_load, max_load, redeem_info, sort_order";
+export const GAMES_LIST_COLUMNS_WITH_CUSTOM = `${GAMES_LIST_COLUMNS}, custom_icon_path`;
 
 export interface GameAccount {
   id: string;
