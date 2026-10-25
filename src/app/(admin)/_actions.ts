@@ -552,6 +552,7 @@ export async function markNotificationRead(
   notificationId: string,
 ): Promise<void> {
   await requireAdmin(adminId);
+  z.string().uuid().parse(notificationId);
   await svc().from("notifications").update({ is_read: true }).eq("id", notificationId);
   await audit(adminId, "notifications.mark_read", notificationId);
 }
@@ -1052,6 +1053,7 @@ async function resolveThreadViews(
 /** Full chat thread for one player, with card/list payloads resolved server-side. */
 export async function getThread(playerId: string): Promise<ChatMessageView[]> {
   await requireSessionAdmin();
+  z.string().uuid().parse(playerId);
   const client = svc();
 
   // Messages + games + methods in parallel (were sequential).
@@ -1129,6 +1131,7 @@ export async function markThreadRead(
   playerId: string,
 ): Promise<void> {
   await requireAdmin(adminId);
+  z.string().uuid().parse(playerId);
   await svc()
     .from("chat_messages")
     .update({ is_read_by_admin: true })
@@ -1309,6 +1312,7 @@ export async function getPlayerDetail(
   playerId: string,
 ): Promise<PlayerDetailView | null> {
   await requireSessionAdmin();
+  z.string().uuid().parse(playerId);
   const client = svc();
   const { data: player } = await client
     .from("players")
@@ -2386,6 +2390,7 @@ export async function toggleAgentActive(
 ): Promise<void> {
   await requireSuperAdmin(adminId);
   z.string().uuid().parse(targetId);
+  z.boolean().parse(isActive);
   if (targetId === adminId) throw new Error("You cannot disable your own account");
   const { error } = await svc()
     .from("admin_users")
@@ -2443,6 +2448,7 @@ export async function setPlayerBlocked(
 ): Promise<void> {
   await requirePermission(adminId, "player_block");
   z.string().uuid().parse(playerId);
+  z.boolean().parse(blocked);
   const client = svc();
   const { error } = await client
     .from("players")
