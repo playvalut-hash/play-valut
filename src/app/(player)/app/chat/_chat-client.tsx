@@ -475,7 +475,18 @@ function PickerMessage({
 
 /* ── payment card (deposit via chat) ──────────────────────────────────────── */
 
-function PaymentCardMessage({ message }: { message: ChatMessage }) {
+function PaymentCardMessage({
+  message,
+  onDepositSend,
+}: {
+  message: ChatMessage;
+  onDepositSend: (args: {
+    methodId: string;
+    methodName: string;
+    amount: string;
+    file: File;
+  }) => Promise<{ ok: boolean; error?: string }>;
+}) {
   const snapshot = (message.body["snapshot"] ?? {}) as {
     name?: string;
     account_name?: string | null;
@@ -521,16 +532,23 @@ function PaymentCardMessage({ message }: { message: ChatMessage }) {
     }
     setSubmitting(true);
     try {
-      const formData = new FormData();
-      formData.set("amount", amount);
-      formData.set("methodId", methodId);
-      formData.set("screenshot", file);
-      const result = await submitChatDeposit(formData);
+      // Instant echo first: onDepositSend puts the screenshot + caption
+      // in the thread immediately, then runs the server work on the send
+      // queue. The form only closes when the server confirms.
+      const result = await onDepositSend({
+        methodId,
+        methodName: snapshot.name ?? "Payment method",
+        amount,
+        file,
+      });
       if (result.ok) {
         setDone(true);
         setUploadOpen(false);
       } else {
-        setError(result.error);
+        setError(
+          result.error ??
+            "Upload failed — check your connection and try again.",
+        );
       }
     } catch {
       // Never fail silently — the player must always see what happened.
@@ -716,6 +734,7 @@ function MessageView({
   message,
   onPicked,
   onPickStart,
+  onDepositSend,
   receipt,
   resolvedCard,
   resolvedShotUrl,
@@ -723,6 +742,12 @@ function MessageView({
   message: ChatMessage;
   onPicked: (kind: ChatMessage["kind"]) => void;
   onPickStart: (kind: ChatMessage["kind"]) => void;
+  onDepositSend: (args: {
+    methodId: string;
+    methodName: string;
+    amount: string;
+    file: File;
+  }) => Promise<{ ok: boolean; error?: string }>;
   receipt?: "sent" | "seen";
   resolvedCard?: AccountCard | null;
   resolvedShotUrl?: string | null;
@@ -776,7 +801,9 @@ function MessageView({
     );
   }
   if (message.kind === "payment_card") {
-    return <PaymentCardMessage message={message} />;
+    return (
+      <PaymentCardMessage message={message} onDepositSend={onDepositSend} />
+    );
   }
 
   // text — own messages gold/right, support messages dark/left, each
@@ -791,7 +818,7 @@ function MessageView({
         {mine ? "You" : "Support"}
       </p>
       <div
-        className={`max-w-[82%] rounded-2xl px-[13px] py-[9px] text-[14.5px] leading-[1.45] shadow-sm shadow-black/20 ${
+        className={`max-w-[min(82%,680px)] rounded-2xl px-[13px] py-[9px] text-[14.5px] leading-[1.45] shadow-sm shadow-black/20 ${
           mine
             ? "rounded-br-[5px] bg-gold font-semibold text-gold-ink"
             : "rounded-bl-[5px] border border-line bg-card-2 text-ink"
@@ -1240,6 +1267,67 @@ export default function ChatClient({
     sendQueueRef.current = work.catch(() => {});
   }
 
+  // Deposit sends (payment card → "I've paid") get the same instant
+  // treatment as image sends: the screenshot + caption echo appears
+  // immediately, the server work runs on the send queue (order +
+  // no-loss, same as text/image sends), a failure drops the echo and
+  // reports back to the form, and refresh swaps the echo for the real
+  // shot message when it lands.
+  function sendDeposit(args: {
+    methodId: string;
+    methodName: string;
+    amount: string;
+    file: File;
+  }): Promise<{ ok: boolean; error?: string }> {
+    const url = URL.createObjectURL(args.file);
+    const echo = makeEcho("shot", {
+      caption: `Deposit $${args.amount} via ${args.methodName} — screenshot attached`,
+    });
+    setEchoShotUrls((prev) => ({ ...prev, [echo.id]: url }));
+    setEchoes((prev) => [...prev, echo]);
+    noteAwaiting();
+    const work = sendQueueRef.current.then(async () => {
+      try {
+        const fd = new FormData();
+        fd.set("amount", args.amount);
+        fd.set("methodId", args.methodId);
+        fd.set("screenshot", args.file);
+        const result = await submitChatDeposit(fd);
+        if (!result.ok) {
+          setEchoes((prev) => prev.filter((e) => e.id !== echo.id));
+          setEchoShotUrls((prev) => {
+            const next = { ...prev };
+            delete next[echo.id];
+            return next;
+          });
+          URL.revokeObjectURL(url);
+        }
+        return result;
+      } catch {
+        setEchoes((prev) => prev.filter((e) => e.id !== echo.id));
+        setEchoShotUrls((prev) => {
+          const next = { ...prev };
+          delete next[echo.id];
+          return next;
+        });
+        URL.revokeObjectURL(url);
+        return {
+          ok: false,
+          error: "Upload failed — check your connection and try again.",
+        };
+      } finally {
+        void refresh();
+      }
+    });
+    // The queue itself stays Promise<void> (the next send waits for this
+    // one either way); the caller awaits `work` for the real result.
+    sendQueueRef.current = work.then(
+      () => {},
+      () => {},
+    );
+    return work;
+  }
+
   function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     void send(input);
@@ -1351,6 +1439,7 @@ export default function ChatClient({
               }
               onPickStart={handlePickStart}
               onPicked={handlePicked}
+              onDepositSend={sendDeposit}
               receipt={
                 m.id === lastOwnTextId
                   ? m.is_read_by_admin
