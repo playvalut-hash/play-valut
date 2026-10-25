@@ -1062,19 +1062,38 @@ export async function getTickerState(): Promise<{
 }> {
   try {
     const service = createServiceClient();
-    const [{ data: settings }, { data: rows, error }] = await Promise.all([
-      service
-        .from("offer_settings")
-        .select("ticker_enabled")
-        .eq("id", 1)
-        .maybeSingle(),
-      service
+    const settingsRes = await service
+      .from("offer_settings")
+      .select("ticker_enabled")
+      .eq("id", 1)
+      .maybeSingle();
+    // Pre-0027 fallback: the table exists (0026 ran) but expires_at
+    // does not — retry without that column instead of hiding a live
+    // ticker until the admin runs the next migration. Rows from the
+    // retry carry expires_at null (never expiring), which is exactly
+    // the 0026 behaviour.
+    let rowsRes = await service
+      .from("offers")
+      .select("id, text, is_active, sort_order, created_at, expires_at")
+      .eq("is_active", true)
+      .order("sort_order", { ascending: true })
+      .order("created_at", { ascending: true });
+    if (rowsRes.error) {
+      const legacy = await service
         .from("offers")
-        .select("id, text, is_active, sort_order, created_at, expires_at")
+        .select("id, text, is_active, sort_order, created_at")
         .eq("is_active", true)
         .order("sort_order", { ascending: true })
-        .order("created_at", { ascending: true }),
-    ]);
+        .order("created_at", { ascending: true });
+      rowsRes = {
+        data: ((legacy.data ?? []) as Array<Record<string, unknown>>).map(
+          (r) => ({ ...r, expires_at: null }),
+        ),
+        error: legacy.error,
+      } as unknown as typeof rowsRes;
+    }
+    const { data: settings } = settingsRes;
+    const { data: rows, error } = rowsRes;
     if (error) return { enabled: false, offers: [] };
     const enabled = settings
       ? (settings as { ticker_enabled: boolean }).ticker_enabled
