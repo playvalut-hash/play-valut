@@ -2336,6 +2336,40 @@ export async function uploadBrandLogo(
   return { url: publicUrl("brand-logos", path) };
 }
 
+/** Remove the brand logo: clears the branding row's logo path (the
+ *  sign-in screen and app header fall back to the default mark) and
+ *  deletes the stored file when one is recorded. Idempotent — removing
+ *  when no logo is set still succeeds. Returns instead of throwing so
+ *  the editor shows the real message (React #441). */
+export async function removeBrandLogo(
+  adminId: string,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  await requireAdmin(adminId);
+  try {
+    const { data: row } = await svc()
+      .from("branding")
+      .select("logo_path")
+      .eq("id", 1)
+      .maybeSingle();
+    const path = (row as { logo_path: string | null } | null)?.logo_path;
+    if (path) {
+      // A missing file is fine — the path clearing below is what
+      // matters for display; an orphaned file is harmless.
+      await svc().storage.from("brand-logos").remove([path]);
+    }
+    const { error } = await svc()
+      .from("branding")
+      .update({ logo_path: null })
+      .eq("id", 1);
+    if (error) return { ok: false, error: "Could not remove logo" };
+    await audit(adminId, "branding.remove_logo");
+    revalidateSection("/admin/branding");
+    return { ok: true };
+  } catch {
+    return { ok: false, error: "Could not remove logo" };
+  }
+}
+
 /* ── Sheet Log ─────────────────────────────────────────────────────────── */
 
 export async function getSheetLog(): Promise<SheetLogRow[]> {

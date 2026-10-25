@@ -418,52 +418,52 @@ function PickerMessage({
               : "Tap one to continue"}
           </p>
         </div>
-        {/* Chips layout (Build 46 — skeleton style, replaces rows) */}
-        <div className="flex flex-wrap gap-1.5 p-3">
-          {items.map((item) => {
-            const isPicked = picked?.id === item.id;
-            return (
-              <button
-                key={item.id}
-                type="button"
-                disabled={!!picked || picking}
-                onClick={() => pick(item.id)}
-                className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-2 text-[12.5px] font-bold leading-none transition ${
-                  isPicked
-                    ? "border-gold bg-gold text-black shadow-lg shadow-gold/25"
-                    : "border-surface-border bg-surface-elevated/70 text-text-primary hover:border-gold/60 hover:text-gold"
-                } ${picked && !isPicked ? "opacity-40" : ""}`}
-              >
-                <span
-                  aria-hidden
-                  className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[10px] font-extrabold ${
-                    isPicked ? "bg-black/20" : "bg-gold/15 text-gold"
-                  }`}
-                  style={
-                    item.brand_color && !isPicked
-                      ? { backgroundColor: item.brand_color, color: "#fff" }
-                      : undefined
-                  }
+        {/* After a pick the chips disappear — a picked card keeps only
+            its choice as one compact line, so the thread never shows
+            stale tappable chips. A failed pick restores the grid
+            (optimistic pick is cleared), so the player can try again. */}
+        {picked ? (
+          <div className="flex items-center gap-2 px-4 py-3">
+            <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-gold text-black">
+              <CheckIcon className="h-3.5 w-3.5 shrink-0" />
+            </span>
+            <span className="text-sm font-bold text-text-primary">
+              {items.find((item) => item.id === picked.id)?.name ?? "Picked"}
+            </span>
+          </div>
+        ) : (
+          <div className="flex flex-wrap gap-1.5 p-3">
+            {items.map((item) => {
+              return (
+                <button
+                  key={item.id}
+                  type="button"
+                  disabled={picking}
+                  onClick={() => pick(item.id)}
+                  className="inline-flex items-center gap-1.5 rounded-full border px-3 py-2 text-[12.5px] font-bold leading-none transition border-surface-border bg-surface-elevated/70 text-text-primary hover:border-gold/60 hover:text-gold"
                 >
-                  {item.name.charAt(0).toUpperCase()}
-                </span>
-                {item.name}
-                {item.handle ? (
                   <span
-                    className={`text-[11px] font-semibold ${
-                      isPicked ? "opacity-75" : "text-text-muted"
-                    }`}
+                    aria-hidden
+                    className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[10px] font-extrabold bg-gold/15 text-gold"
+                    style={
+                      item.brand_color
+                        ? { backgroundColor: item.brand_color, color: "#fff" }
+                        : undefined
+                    }
                   >
-                    {item.handle}
+                    {item.name.charAt(0).toUpperCase()}
                   </span>
-                ) : null}
-                {isPicked ? (
-                  <CheckIcon className="h-3.5 w-3.5 shrink-0" />
-                ) : null}
-              </button>
-            );
-          })}
-        </div>
+                  {item.name}
+                  {item.handle ? (
+                    <span className="text-[11px] font-semibold text-text-muted">
+                      {item.handle}
+                    </span>
+                  ) : null}
+                </button>
+              );
+            })}
+          </div>
+        )}
         {pickError ? (
           <p className="px-3 pb-2.5 text-[11px] font-medium text-danger">
             {pickError}

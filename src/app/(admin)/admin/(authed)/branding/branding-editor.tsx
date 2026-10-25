@@ -4,7 +4,11 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 
 import type { AdminInfo, BrandingRow } from "../../../_actions";
-import { updateBranding, uploadBrandLogo } from "../../../_actions";
+import {
+  removeBrandLogo,
+  updateBranding,
+  uploadBrandLogo,
+} from "../../../_actions";
 import { EyeIcon, ImageIcon, UploadIcon } from "@/components/icons";
 
 /** Live preview: miniature mock of the player sign-in screen. */
@@ -68,6 +72,7 @@ export default function BrandingEditor({
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [removing, setRemoving] = useState(false);
 
   const preview: BrandingRow = {
     brandName: form.brandName || branding.brandName,
@@ -104,6 +109,24 @@ export default function BrandingEditor({
       setError(err instanceof Error ? err.message : "Could not upload logo");
     } finally {
       setUploading(false);
+    }
+  }
+
+  async function onRemoveLogo() {
+    setRemoving(true);
+    setError(null);
+    try {
+      const res = await removeBrandLogo(admin.id);
+      if (!res.ok) {
+        setError(res.error);
+      } else {
+        setLogoUrl(null);
+        router.refresh();
+      }
+    } catch {
+      setError("Could not remove logo");
+    } finally {
+      setRemoving(false);
     }
   }
 
@@ -154,14 +177,28 @@ export default function BrandingEditor({
 
           <span className={labelCls}>Logo</span>
           <div className="flex items-center gap-3">
-            {logoUrl ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img src={logoUrl} alt="Brand logo" className="h-12 w-12 rounded-full border border-surface-border object-cover" />
-            ) : (
-              <span className="flex h-12 w-12 items-center justify-center rounded-full border border-dashed border-surface-border text-text-muted">
-                <ImageIcon className="h-5 w-5" />
-              </span>
-            )}
+            <span className="relative inline-flex shrink-0">
+              {logoUrl ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={logoUrl} alt="Brand logo" className="h-12 w-12 rounded-full border border-surface-border object-cover" />
+              ) : (
+                <span className="flex h-12 w-12 items-center justify-center rounded-full border border-dashed border-surface-border text-text-muted">
+                  <ImageIcon className="h-5 w-5" />
+                </span>
+              )}
+              {logoUrl && (
+                <button
+                  type="button"
+                  onClick={() => void onRemoveLogo()}
+                  disabled={removing}
+                  aria-label="Remove logo"
+                  title="Remove logo"
+                  className="admin-focus absolute -right-1.5 -top-1.5 flex h-5 w-5 items-center justify-center rounded-full bg-danger text-xs font-bold leading-none text-white shadow hover:brightness-110 disabled:opacity-50"
+                >
+                  ×
+                </button>
+              )}
+            </span>
             <label className="admin-focus inline-flex cursor-pointer items-center gap-1.5 rounded-md border border-surface-border px-3 py-2 text-[13px] text-text-secondary hover:text-gold">
               <UploadIcon className="h-4 w-4" />
               {uploading ? "Uploading…" : "Upload logo"}

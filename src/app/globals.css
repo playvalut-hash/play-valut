@@ -220,9 +220,7 @@ textarea {
   animation-timing-function: linear;
   animation-iteration-count: 1;
 }
-@media (prefers-reduced-motion: reduce) {
-  .pv-ticker-item-x,
-  .pv-ticker-item-y {
-    animation: none;
-  }
-}
+/* NOTE: deliberately NO prefers-reduced-motion override here. The
+   ticker IS the feature — a frozen ticker reads as broken, and the
+   user explicitly wants it moving on every screen (a laptop with
+   animation effects off was showing one static card). */
