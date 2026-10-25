@@ -16,8 +16,10 @@ import {
  *   sliding right-to-left, news-ticker style, pinned at the very top
  *   while the page scrolls, including above the support chat.
  * - Desktop: a right rail, a touch narrower than the left sidebar,
- *   one offer rising bottom-to-top like a live comment — it enters
- *   fully below the rail and disappears fully above it.
+ *   offers rising bottom-to-top like live comments — slow (20s
+ *   each), staggered (a new one enters every 10s while the previous
+ *   is still mid-rail), so the rail is never empty and offers
+ *   follow one after another.
  *
  * Both pieces stay mounted (returning null while hidden) and follow
  * the live store, so an added offer appears instantly, a
@@ -236,25 +238,70 @@ function MobileConveyor({ offers }: { offers: LiveTickerOffer[] }) {
   );
 }
 
-/** One crossing of the stream, Facebook-Live-comments style: slow and
- *  gentle (20s bottom-to-top), so the rise reads as a drift, not a
- *  flicker. It is keyed by the offer list above, so any real list
- *  change (add/remove) remounts it and restarts the cycle from the
- *  first offer instantly — a new order-0 offer does not wait out the
- *  previous crossing. */
+/** Desktop rail: a staggered stream, Facebook-Live-comments style.
+ *  Each card rises bottom-to-top over a slow 20s. With 2+ offers a
+ *  new card enters every 10s — while the previous one is still
+ *  mid-rail — so the rail is NEVER empty and offers follow one
+ *  after another instead of one card crossing a dark empty column
+ *  and the rail sitting blank between crossings. Each card removes
+ *  itself when its own rise ends, so at most two are ever in
+ *  flight. A LONE offer keeps the old single-card loop (a staggered
+ *  second copy of the same offer would read as a duplicate). The
+ *  list key above remounts the whole stream on any real list
+ *  change, so a new order-0 offer does not wait out the previous
+ *  crossing. */
+const RAIL_RISE_S = 20;
+const RAIL_STAGGER_S = 10;
+
 function DesktopStream({ offers }: { offers: LiveTickerOffer[] }) {
   const { current, cycle, advance } = useTickerCycle(offers);
-  if (!current) return null;
+  const [slots, setSlots] = useState<Array<{ key: number; index: number }>>(
+    () => (offers.length >= 2 ? [{ key: 0, index: 0 }] : []),
+  );
+  const nextRef = useRef(1);
+  useEffect(() => {
+    if (offers.length < 2) return;
+    const iv = setInterval(() => {
+      const key = nextRef.current;
+      const index = nextRef.current;
+      nextRef.current += 1;
+      setSlots((prev) => [...prev, { key, index }]);
+    }, RAIL_STAGGER_S * 1000);
+    return () => clearInterval(iv);
+  }, [offers]);
+  if (offers.length < 2) {
+    if (!current) return null;
+    return (
+      <Link
+        key={`${current.id}-${cycle}`}
+        href="/app/chat"
+        onAnimationEnd={advance}
+        className="pv-ticker-item-y absolute inset-x-3 rounded-xl border border-gold/30 bg-surface-card px-3 py-2.5 text-[13px] font-bold leading-snug text-text-primary transition-colors hover:border-gold/60"
+        style={{ animationDuration: `${RAIL_RISE_S}s` }}
+      >
+        {current.text}
+      </Link>
+    );
+  }
   return (
-    <Link
-      key={`${current.id}-${cycle}`}
-      href="/app/chat"
-      onAnimationEnd={advance}
-      className="pv-ticker-item-y absolute inset-x-3 rounded-xl border border-gold/30 bg-surface-card px-3 py-2.5 text-[13px] font-bold leading-snug text-text-primary transition-colors hover:border-gold/60"
-      style={{ animationDuration: "20s" }}
-    >
-      {current.text}
-    </Link>
+    <>
+      {slots.map((s) => {
+        const offer = offers[s.index % offers.length];
+        return (
+          <Link
+            key={s.key}
+            href="/app/chat"
+            onAnimationEnd={() =>
+              setSlots((prev) => prev.filter((x) => x.key !== s.key))
+            }
+            className="pv-ticker-item-y absolute inset-x-3 rounded-xl border border-gold/30 bg-surface-card px-3 py-2.5 text-[13px] font-bold leading-snug text-text-primary transition-colors hover:border-gold/60"
+            style={{ animationDuration: `${RAIL_RISE_S}s` }}
+          >
+            {offer.text}
+          </Link>
+        );
+      })}
+    </>
   );
 }
 
