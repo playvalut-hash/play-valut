@@ -88,6 +88,12 @@ export default function AdminShell({
     setUnreadCount((c) => Math.max(0, c - 1));
   }, []);
 
+  const handleNotificationsCleared = useCallback(() => {
+    setNotifications([]);
+    setUnreadCount(0);
+    setNotifHasMore(false);
+  }, []);
+
   // Initial load lives in the effect as an inner async function (the
   // standard fetch-then-set pattern) so the compiler lint accepts it;
   // refreshNotifications above stays the single handler for poll/open.
@@ -210,6 +216,7 @@ export default function AdminShell({
               onLoadMoreNotifications={() => void loadMoreNotifications()}
               onNotificationsOpen={() => void refreshNotifications()}
               onNotificationOpened={handleNotificationOpened}
+              onNotificationsCleared={handleNotificationsCleared}
             />
           </div>
           {/* Minimize the top bar — more room for the inbox */}

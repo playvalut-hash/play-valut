@@ -4,7 +4,10 @@ import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 
 import type { AdminInfo, NotificationView } from "../../_actions";
-import { markNotificationRead } from "../../_actions";
+import {
+  markAllNotificationsRead,
+  markNotificationRead,
+} from "../../_actions";
 import { cn } from "@/lib/utils";
 import { BellIcon, LogoutIcon, XIcon } from "@/components/icons";
 import { adminSignOut } from "../../_actions";
@@ -51,6 +54,7 @@ export default function TopBar({
   onLoadMoreNotifications,
   onNotificationsOpen,
   onNotificationOpened,
+  onNotificationsCleared,
 }: {
   admin: AdminInfo;
   notifications: NotificationView[];
@@ -60,10 +64,14 @@ export default function TopBar({
   onLoadMoreNotifications?: () => void;
   onNotificationsOpen?: () => void;
   onNotificationOpened?: (id: string) => void;
+  onNotificationsCleared?: () => void;
 }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [markingAll, setMarkingAll] = useState(false);
+  const [markAllError, setMarkAllError] = useState<string | null>(null);
+  const [dismissingId, setDismissingId] = useState<string | null>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -87,6 +95,39 @@ export default function TopBar({
     setOpen(false);
     router.push(`/admin?player=${n.playerId}`);
     router.refresh();
+  }
+
+  /** Dismiss one notification: mark it read (so it leaves the unread
+   *  panel) WITHOUT navigating — the panel stays open. */
+  async function dismissNotification(n: NotificationView) {
+    if (dismissingId) return;
+    setDismissingId(n.id);
+    try {
+      await markNotificationRead(admin.id, n.id);
+      onNotificationOpened?.(n.id);
+    } catch {
+      // Keep the item on failure; the next poll restores it anyway.
+    } finally {
+      setDismissingId(null);
+    }
+  }
+
+  async function markAll() {
+    if (markingAll) return;
+    setMarkingAll(true);
+    setMarkAllError(null);
+    try {
+      const res = await markAllNotificationsRead(admin.id);
+      if (!res.ok) {
+        setMarkAllError(res.error);
+      } else {
+        onNotificationsCleared?.();
+      }
+    } catch {
+      setMarkAllError("Could not mark all read");
+    } finally {
+      setMarkingAll(false);
+    }
   }
 
   async function logout() {
@@ -142,15 +183,35 @@ export default function TopBar({
                 <span className="text-xs font-semibold text-text-primary">
                   Notifications
                 </span>
-                <button
-                  type="button"
-                  onClick={() => setOpen(false)}
-                  aria-label="Close notifications"
-                  className="rounded p-1 text-text-muted hover:text-text-primary"
-                >
-                  <XIcon className="h-3.5 w-3.5" />
-                </button>
+                <span className="flex items-center gap-1">
+                  {notifications.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => void markAll()}
+                      disabled={markingAll}
+                      className="admin-focus rounded px-1.5 py-1 text-[11px] font-semibold text-gold hover:bg-surface-card disabled:opacity-40"
+                    >
+                      {markingAll ? "Marking…" : "Mark all read"}
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => setOpen(false)}
+                    aria-label="Close notifications"
+                    className="rounded p-1 text-text-muted hover:text-text-primary"
+                  >
+                    <XIcon className="h-3.5 w-3.5" />
+                  </button>
+                </span>
               </div>
+              {markAllError && (
+                <p
+                  role="alert"
+                  className="border-b border-surface-border px-3 py-2 text-[11px] text-danger"
+                >
+                  {markAllError}
+                </p>
+              )}
               <div className="admin-thin-scroll max-h-80 overflow-y-auto">
                 {notifications.length === 0 ? (
                   <p className="px-3 py-6 text-center text-xs text-text-muted">
@@ -158,27 +219,41 @@ export default function TopBar({
                   </p>
                 ) : (
                   notifications.map((n) => (
-                    <button
+                    <div
                       key={n.id}
-                      type="button"
-                      onClick={() => openNotification(n)}
-                      className="admin-focus block w-full border-b border-surface-border/60 px-3 py-2.5 text-left last:border-0 hover:bg-surface-card"
+                      className="flex items-start gap-1 border-b border-surface-border/60 last:border-0 hover:bg-surface-card"
                     >
-                      <div className="flex items-center justify-between gap-2">
-                        <span className="text-[11px] font-semibold text-gold">
-                          {kindLabel(n)}
-                        </span>
-                        <span className="text-[10px] text-text-muted">
-                          {timeAgo(n.createdAt)}
-                        </span>
-                      </div>
-                      <p className="mt-0.5 truncate text-xs text-text-primary">
-                        <span className="font-medium">{n.playerName}</span>
-                        {n.preview ? (
-                          <span className="text-text-secondary"> — {n.preview}</span>
-                        ) : null}
-                      </p>
-                    </button>
+                      <button
+                        type="button"
+                        onClick={() => openNotification(n)}
+                        className="admin-focus min-w-0 flex-1 px-3 py-2.5 text-left"
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="text-[11px] font-semibold text-gold">
+                            {kindLabel(n)}
+                          </span>
+                          <span className="text-[10px] text-text-muted">
+                            {timeAgo(n.createdAt)}
+                          </span>
+                        </div>
+                        <p className="mt-0.5 truncate text-xs text-text-primary">
+                          <span className="font-medium">{n.playerName}</span>
+                          {n.preview ? (
+                            <span className="text-text-secondary"> — {n.preview}</span>
+                          ) : null}
+                        </p>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => void dismissNotification(n)}
+                        disabled={dismissingId === n.id}
+                        aria-label="Dismiss notification"
+                        title="Dismiss"
+                        className="admin-focus mr-1.5 mt-1.5 shrink-0 rounded p-1 text-text-muted hover:text-text-primary disabled:opacity-40"
+                      >
+                        <XIcon className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
                   ))
                 )}
                 {hasMoreNotifications && (

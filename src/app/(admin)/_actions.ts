@@ -557,6 +557,28 @@ export async function markNotificationRead(
   await audit(adminId, "notifications.mark_read", notificationId);
 }
 
+/** Mark every unread notification read at once (bell "Mark all read").
+ *  Returns instead of throwing so the panel shows the real message
+ *  (React #441). One audit entry with the count as detail. */
+export async function markAllNotificationsRead(
+  adminId: string,
+): Promise<{ ok: true; count: number } | { ok: false; error: string }> {
+  await requireAdmin(adminId);
+  try {
+    const { data, error } = await svc()
+      .from("notifications")
+      .update({ is_read: true })
+      .eq("is_read", false)
+      .select("id");
+    if (error) return { ok: false, error: "Could not mark all read" };
+    const count = data?.length ?? 0;
+    await audit(adminId, "notifications.mark_all_read", `${count} notifications`);
+    return { ok: true, count };
+  } catch {
+    return { ok: false, error: "Could not mark all read" };
+  }
+}
+
 /* ── Inbox: players overview ───────────────────────────────────────────── */
 
 interface DbPlayer {
