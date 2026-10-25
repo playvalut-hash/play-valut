@@ -20,13 +20,13 @@ export default function GuestLink() {
       const supabase = createClient();
       const { error } = await supabase.auth.signInAnonymously();
       if (error) {
-        setNotice("Guest sign-in isn't enabled yet — sign in or create an account.");
+        setNotice("Guest sign-in isn't enabled yet — sign in with Google.");
         return;
       }
       router.push("/app");
       router.refresh();
     } catch {
-      setNotice("Guest sign-in isn't enabled yet — sign in or create an account.");
+      setNotice("Guest sign-in isn't enabled yet — sign in with Google.");
     }
   }
 

@@ -9,9 +9,14 @@ import { EyeIcon, EyeOffIcon } from "@/components/icons";
 export default function LoginForm({
   branding,
   oauthError,
+  guestModeEnabled,
 }: {
   branding: { brand_name: string; signin_heading: string; signin_subtext: string };
   oauthError: boolean;
+  /** Site-wide guest switch (migration 0029): false hides the guest
+   *  button entirely — new guests can't enter, existing ones keep
+   *  working and are pushed to activate instead. */
+  guestModeEnabled: boolean;
 }) {
   const router = useRouter();
   const [email, setEmail] = useState("");
@@ -236,13 +241,15 @@ export default function LoginForm({
           Continue with Google
         </button>
 
-        <button
-          type="button"
-          onClick={handleGuest}
-          className="mt-3 w-full text-center text-[14px] font-semibold text-gold hover:underline"
-        >
-          or continue as guest
-        </button>
+        {guestModeEnabled ? (
+          <button
+            type="button"
+            onClick={handleGuest}
+            className="mt-3 w-full text-center text-[14px] font-semibold text-gold hover:underline"
+          >
+            or continue as guest
+          </button>
+        ) : null}
       </div>
     </div>
   );

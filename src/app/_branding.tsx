@@ -10,6 +10,11 @@ export interface Branding {
   logo_path: string | null;
   signin_heading: string;
   signin_subtext: string;
+  /** Site-wide guest entry switch (migration 0029, super-admin only).
+   *  True = marketing + login offer "continue as guest". Existing
+   *  guest sessions keep working when off — they are pushed to
+   *  activate, never kicked out (kicking would orphan their chat). */
+  guest_mode_enabled: boolean;
 }
 
 export const FALLBACK_BRANDING: Branding = {
@@ -17,6 +22,7 @@ export const FALLBACK_BRANDING: Branding = {
   logo_path: null,
   signin_heading: "Welcome Back",
   signin_subtext: "Sign in to continue your lobby journey",
+  guest_mode_enabled: true,
 };
 
 /** Public URL for the brand logo (brand-logos bucket is public). */

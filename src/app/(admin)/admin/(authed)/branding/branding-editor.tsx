@@ -7,6 +7,7 @@ import type { AdminInfo, BrandingRow } from "../../../_actions";
 import {
   removeBrandLogo,
   updateBranding,
+  updateGuestMode,
   uploadBrandLogo,
 } from "../../../_actions";
 import { EyeIcon, ImageIcon, UploadIcon } from "@/components/icons";
@@ -73,6 +74,8 @@ export default function BrandingEditor({
   const [busy, setBusy] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [removing, setRemoving] = useState(false);
+  const [guestMode, setGuestMode] = useState(branding.guestModeEnabled);
+  const [guestBusy, setGuestBusy] = useState(false);
 
   const preview: BrandingRow = {
     brandName: form.brandName || branding.brandName,
@@ -80,6 +83,7 @@ export default function BrandingEditor({
     logoUrl,
     signinHeading: form.signinHeading || branding.signinHeading,
     signinSubtext: form.signinSubtext || branding.signinSubtext,
+    guestModeEnabled: guestMode,
   };
 
   async function save() {
@@ -127,6 +131,24 @@ export default function BrandingEditor({
       setError("Could not remove logo");
     } finally {
       setRemoving(false);
+    }
+  }
+
+  async function onToggleGuestMode(next: boolean) {
+    setGuestBusy(true);
+    setError(null);
+    try {
+      const res = await updateGuestMode(admin.id, next);
+      if (!res.ok) {
+        setError(res.error);
+      } else {
+        setGuestMode(next);
+        router.refresh();
+      }
+    } catch {
+      setError("Could not save guest mode");
+    } finally {
+      setGuestBusy(false);
     }
   }
 
@@ -223,6 +245,30 @@ export default function BrandingEditor({
           >
             {busy ? "Saving…" : "Save branding"}
           </button>
+
+          {admin.role === "super_admin" ? (
+            <div className="mt-6 border-t border-surface-border pt-4">
+              <span className={labelCls}>Guest mode</span>
+              <label className="flex cursor-pointer items-center gap-3">
+                <input
+                  type="checkbox"
+                  checked={guestMode}
+                  disabled={guestBusy}
+                  onChange={(e) => void onToggleGuestMode(e.target.checked)}
+                  className="admin-focus h-5 w-5 accent-[#d4af37] disabled:opacity-50"
+                />
+                <span className="text-[13px] text-text-primary">
+                  {guestMode ? "On — visitors can continue as guests" : "Off — no new guest entry"}
+                </span>
+              </label>
+              <p className="mt-1.5 text-[11px] leading-relaxed text-text-muted">
+                Super admin only. Off hides guest entry on the marketing
+                and login pages. Guests already inside keep working and
+                are pushed to activate — they are never kicked out, so
+                their chat is never lost. Needs migration 0029.
+              </p>
+            </div>
+          ) : null}
         </div>
 
         <div className="overflow-hidden rounded-lg border border-surface-border">

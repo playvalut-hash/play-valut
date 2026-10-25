@@ -711,6 +711,30 @@ export default function ThreadView({
     sendQueueRef.current = work.catch(() => {});
   }
 
+  const [sendLinkBusy, setSendLinkBusy] = useState(false);
+
+  // Guest activation link (guests have no email — that is the guest
+  // marker: every registered account, email or Google, has one).
+  // The guest taps the link in their OWN session, so /app opens with
+  // ?activate=1 and the activate sheet opens on its own. Same
+  // send/echo pattern as sendText.
+  async function sendActivationLink() {
+    if (sendLinkBusy) return;
+    setSendLinkBusy(true);
+    const url = `${window.location.origin}/app?activate=1`;
+    const text = `Activate your account to keep your chat, games and deposits: ${url} — tap the link, then Continue with Google.`;
+    const echo = makeEcho("text", { text });
+    onAppendOptimistic?.(echo);
+    try {
+      await sendAdminMessage(admin.id, { playerId: player.id, text });
+      await changed();
+    } catch {
+      onDropOptimistic?.(echo.id);
+    } finally {
+      setSendLinkBusy(false);
+    }
+  }
+
   async function sendList(kind: "games" | "pay") {
     if (sendListBusy) return;
     setSendListBusy(kind);
@@ -889,6 +913,17 @@ export default function ThreadView({
             💳 Payment methods
             <span className={cn("transition-transform", payOpen && "rotate-180")}>▾</span>
           </button>
+          {player.email === null ? (
+            <button
+              type="button"
+              onClick={() => void sendActivationLink()}
+              disabled={sendLinkBusy}
+              title="Send the guest an activation link"
+              className="flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border border-gold/50 px-2.5 py-1 text-[11px] font-semibold text-gold transition hover:bg-gold/10 disabled:opacity-40"
+            >
+              🔗 {sendLinkBusy ? "Sending…" : "Activation link"}
+            </button>
+          ) : null}
         </div>
         {gamesOpen && (
           <div className="mt-1.5 flex flex-wrap gap-1.5 rounded-xl border border-surface-border bg-navy p-2">

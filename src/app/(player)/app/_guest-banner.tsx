@@ -22,7 +22,14 @@ import {
  *  this same sheet. Until anonymous sign-ins are enabled in Supabase
  *  this banner never appears, because no anonymous session can
  *  exist. */
-export default function GuestBanner() {
+export default function GuestBanner({
+  guestModeEnabled,
+}: {
+  /** Site-wide guest switch (migration 0029): when false, new guest
+   *  entry is hidden elsewhere, but THIS banner stays — existing
+   *  guests are pushed to activate, never kicked out. */
+  guestModeEnabled: boolean;
+}) {
   const [isGuest, setIsGuest] = useState(false);
   const [open, setOpenState] = useState(isActivateOpen());
   const [notice, setNotice] = useState<string | null>(null);
@@ -45,6 +52,28 @@ export default function GuestBanner() {
     () => subscribeActivate(() => setOpenState(isActivateOpen())),
     [],
   );
+
+  // Admin-sent activation links land here: /app?activate=1 opens the
+  // sheet on its own, then the param is dropped so a refresh doesn't
+  // pop it again. (A registered player landing here sees nothing —
+  // the banner only renders for guests.)
+  useEffect(() => {
+    try {
+      const params = new URLSearchParams(window.location.search);
+      if (params.get("activate") === "1") {
+        setActivateOpen(true);
+        params.delete("activate");
+        const next = params.toString();
+        window.history.replaceState(
+          null,
+          "",
+          `${window.location.pathname}${next ? `?${next}` : ""}`,
+        );
+      }
+    } catch {
+      // Odd URL — the sidebar entry still opens the sheet by hand.
+    }
+  }, []);
 
   if (!isGuest) return null;
 
@@ -71,16 +100,21 @@ export default function GuestBanner() {
 
   return (
     <>
-      <div className="mb-3 flex flex-col gap-2 rounded-xl border border-[#d4af37]/40 bg-[#d4af37]/10 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
-        <p className="text-sm leading-relaxed text-[#eef2f7]">
-          You&apos;re chatting as a guest — your chat is saved here.
-          Activate your account to keep it.
+      {/* Sticky + solid gold: it used to scroll away at the top, so
+          guests lost it. Mobile sticks below the sticky offers
+          ticker (the --pv-ticker-h offset, 0 when no ticker);
+          desktop sticks straight to the viewport top. */}
+      <div className="sticky top-[var(--pv-ticker-h)] z-30 mb-3 flex flex-col gap-2 rounded-xl border border-[#d4af37] bg-[#d4af37] px-4 py-3 shadow-[0_4px_20px_rgba(212,175,55,0.35)] sm:flex-row sm:items-center sm:justify-between md:top-0">
+        <p className="text-sm font-bold leading-relaxed text-[#241a02]">
+          {guestModeEnabled
+            ? "You're chatting as a guest — your chat is saved here. Activate your account to keep it."
+            : "Guest mode is turned off — activate now to keep your chat, games and deposits."}
         </p>
         <button
           type="button"
           onClick={() => setActivateOpen(true)}
-          className="shrink-0 rounded-lg px-4 py-2 text-sm font-bold text-[#241a02] transition hover:brightness-110"
-          style={{ background: "#d4af37" }}
+          className="shrink-0 rounded-lg px-4 py-2 text-sm font-bold transition hover:brightness-110"
+          style={{ background: "#0b0e14", color: "#d4af37" }}
         >
           Activate account
         </button>

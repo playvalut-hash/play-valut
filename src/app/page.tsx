@@ -105,7 +105,7 @@ export default async function RootPage() {
           <p className="mt-4 text-xs text-[#6d7a8f]">
             No downloads · Live chat support · For players 18 and over
           </p>
-          <GuestLink />
+          {branding.guest_mode_enabled ? <GuestLink /> : null}
         </section>
 
         <section className="py-8">

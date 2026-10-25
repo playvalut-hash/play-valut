@@ -17,5 +17,5 @@ export default async function LoginPage({
   const params = await searchParams;
   const oauthError = params.error === "oauth";
 
-  return <LoginForm branding={branding} oauthError={oauthError} />;
+  return <LoginForm branding={branding} oauthError={oauthError} guestModeEnabled={branding.guest_mode_enabled} />;
 }

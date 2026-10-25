@@ -10,7 +10,7 @@ export async function getBranding(): Promise<Branding> {
     const supabase = await createClient();
     const { data } = await supabase
       .from("branding")
-      .select("brand_name, logo_path, signin_heading, signin_subtext")
+      .select("brand_name, logo_path, signin_heading, signin_subtext, guest_mode_enabled")
       .eq("id", 1)
       .maybeSingle();
     if (!data) return FALLBACK_BRANDING;
@@ -20,6 +20,9 @@ export async function getBranding(): Promise<Branding> {
       logo_path: row.logo_path ?? null,
       signin_heading: row.signin_heading ?? FALLBACK_BRANDING.signin_heading,
       signin_subtext: row.signin_subtext ?? FALLBACK_BRANDING.signin_subtext,
+      // Pre-migration the explicit select fails and the catch below
+      // returns the fallback (guest mode on) — same as today.
+      guest_mode_enabled: row.guest_mode_enabled ?? true,
     };
   } catch {
     return FALLBACK_BRANDING;

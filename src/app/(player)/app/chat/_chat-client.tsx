@@ -734,6 +734,37 @@ function PaymentCardMessage({
 
 /* ── one message ──────────────────────────────────────────────────────────── */
 
+/** Render chat text with http(s) URLs as tappable links. Admin-sent
+ *  activation links must be tappable for guests — plain text URLs
+ *  are not. React escapes the text nodes, so no HTML injection;
+ *  safeHref rejects non-http(s) schemes, and trailing punctuation
+ *  stays outside the anchor. */
+function renderLinkedText(text: string) {
+  const parts = text.split(/(https?:\/\/[^\s]+)/g);
+  return parts.map((part, i) => {
+    if (!/^https?:\/\//.test(part)) return <span key={i}>{part}</span>;
+    const m = part.match(/^(.*?)([.,;:!?)]+)$/);
+    const url = m ? m[1] : part;
+    const tail = m ? m[2] : "";
+    const href = safeHref(url);
+    if (!href) return <span key={i}>{part}</span>;
+    return (
+      <span key={i}>
+        <a
+          href={href}
+          target="_blank"
+          rel="noreferrer"
+          className="font-semibold underline decoration-gold/60 underline-offset-2"
+          onClick={(e) => e.stopPropagation()}
+        >
+          {url}
+        </a>
+        {tail}
+      </span>
+    );
+  });
+}
+
 function MessageView({
   message,
   onPicked,
@@ -833,7 +864,7 @@ function MessageView({
         }`}
       >
         <p className="whitespace-pre-line break-words">
-          {str(message.body["text"])}
+          {renderLinkedText(str(message.body["text"]))}
         </p>
         <p className="mt-1 text-right text-[10px] text-ink-3">
           {formatTime(message.created_at)}

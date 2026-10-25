@@ -1,5 +1,6 @@
 import { createClient } from "@/lib/supabase/server";
 import { createServiceClient } from "@/lib/supabase/service";
+import { getBranding } from "../../_branding-server";
 
 import { getTickerState, signOut } from "./_actions";
 import GuestBanner from "./_guest-banner";
@@ -84,6 +85,7 @@ export default async function PlayerLayout({
   const ticker = await getTickerState();
   const initialTicker = { enabled: ticker.enabled, offers: ticker.offers };
   const showTicker = ticker.enabled && ticker.offers.length > 0;
+  const branding = await getBranding();
 
   return (
     <div className="min-h-dvh bg-near-black flex justify-center">
@@ -108,7 +110,7 @@ export default async function PlayerLayout({
         />
         <MobileOffersTicker initial={initialTicker} />
         <main className="flex flex-1 flex-col pb-4 md:min-w-0 md:px-10 md:pb-0">
-          <GuestBanner />
+          <GuestBanner guestModeEnabled={branding.guest_mode_enabled} />
           {children}
         </main>
         <DesktopOffersRail initial={initialTicker} />

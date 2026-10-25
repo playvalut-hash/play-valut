@@ -231,6 +231,7 @@ export interface BrandingRow {
   logoUrl: string | null;
   signinHeading: string;
   signinSubtext: string;
+  guestModeEnabled: boolean;
 }
 
 export interface SheetLogRow {
@@ -2311,7 +2312,43 @@ export async function getBranding(): Promise<BrandingRow> {
     signinHeading: (row.signin_heading as string) ?? "Welcome Back",
     signinSubtext:
       (row.signin_subtext as string) ?? "Sign in to continue your lobby journey",
+    // Pre-migration (0029) the column is absent — default on, same
+    // as today's behaviour, so the toggle shows ON until it is run.
+    guestModeEnabled: (row.guest_mode_enabled as boolean | null) ?? true,
   };
+}
+
+/** Super-admin-only: flip the site-wide guest mode switch.
+ *  Returns instead of throwing (React #441): the toggle shows the
+ *  real message. A missing column means migration 0029 hasn't run
+ *  yet — the message says so instead of a generic failure. Turning
+ *  guest mode OFF only hides NEW guest entry (marketing + login);
+ *  existing guest sessions keep working and are pushed to activate,
+ *  because kicking them would orphan their chat. */
+export async function updateGuestMode(
+  adminId: string,
+  enabled: boolean,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    await requireSuperAdmin(adminId);
+    const { error } = await svc()
+      .from("branding")
+      .upsert({ id: 1, guest_mode_enabled: enabled });
+    if (error) {
+      if (error.message.includes("guest_mode_enabled")) {
+        return {
+          ok: false,
+          error: "Migration 0029 hasn't been run yet — run it in the SQL Editor, then try again.",
+        };
+      }
+      return { ok: false, error: "Could not save guest mode" };
+    }
+    await audit(adminId, "branding.guest_mode", enabled ? "on" : "off");
+    revalidateSection("/admin/branding");
+    return { ok: true };
+  } catch {
+    return { ok: false, error: "Not authorized — only the super admin can change guest mode" };
+  }
 }
 
 const brandingSchema = z.object({
