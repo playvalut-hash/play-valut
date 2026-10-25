@@ -2,6 +2,7 @@ import { createClient } from "@/lib/supabase/server";
 import { createServiceClient } from "@/lib/supabase/service";
 
 import { getTickerState, signOut } from "./_actions";
+import GuestBanner from "./_guest-banner";
 import PresenceHeartbeat from "./_presence";
 import Tabs from "./_tabs";
 import { DesktopOffersRail, MobileOffersTicker } from "./_offers-ticker";
@@ -104,6 +105,7 @@ export default async function PlayerLayout({
         />
         <MobileOffersTicker initial={initialTicker} />
         <main className="flex-1 pb-4 md:min-w-0 md:px-10 md:pb-0">
+          <GuestBanner />
           {children}
         </main>
         <DesktopOffersRail initial={initialTicker} />

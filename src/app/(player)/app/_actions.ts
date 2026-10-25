@@ -471,7 +471,7 @@ export async function sendChatMessage(
       display_name:
         (user.user_metadata?.display_name as string) ||
         user.email?.split("@")[0] ||
-        "Player",
+        `Guest-${user.id.slice(0, 4)}`,
       email: user.email ?? null,
     },
     { onConflict: "id" },

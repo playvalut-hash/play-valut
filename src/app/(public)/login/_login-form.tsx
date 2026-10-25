@@ -66,6 +66,30 @@ export default function LoginForm({
     }
   }
 
+  /** Guest entry: an anonymous Supabase session (no email, no password).
+   *  The session IS a real session, so the proxy lets it straight into
+   *  /app — games and chat work exactly like a signed-in player. The
+   *  guest later converts the SAME user (linkIdentity / updateUser),
+   *  so the chat carries over instead of being lost. Until anonymous
+   *  sign-ins are enabled in the Supabase dashboard this fails soft
+   *  with the same graceful notice as the Google button. */
+  async function handleGuest() {
+    setError(null);
+    setNotice(null);
+    try {
+      const supabase = createClient();
+      const { error: guestErr } = await supabase.auth.signInAnonymously();
+      if (guestErr) {
+        setNotice("Guest sign-in isn't enabled yet — sign in or create an account.");
+        return;
+      }
+      router.push("/app");
+      router.refresh();
+    } catch {
+      setNotice("Guest sign-in isn't enabled yet — sign in or create an account.");
+    }
+  }
+
   return (
     <div className="flex min-h-dvh flex-col items-center px-6 pb-10 pt-12" style={{ background: "#0c1424" }}>
       <div className="w-full max-w-[400px]">
@@ -210,6 +234,14 @@ export default function LoginForm({
             <path fill="#EA4335" d="M12 4.77c1.76 0 3.34.61 4.58 1.8l3.44-3.44A11.98 11.98 0 0 0 12 0 12 12 0 0 0 1.29 6.62l3.98 3.1C6.22 6.88 8.87 4.77 12 4.77z" />
           </svg>
           Continue with Google
+        </button>
+
+        <button
+          type="button"
+          onClick={handleGuest}
+          className="mt-3 w-full text-center text-[14px] font-semibold text-gold hover:underline"
+        >
+          or continue as guest
         </button>
 
         <p className="mt-6 text-center text-[14px]" style={{ color: "#a7b2c3" }}>

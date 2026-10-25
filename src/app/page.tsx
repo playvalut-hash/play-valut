@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 
 import { createClient } from "@/lib/supabase/server";
 import { getBranding } from "./_branding-server";
+import GuestLink from "./_guest-link";
 
 /** Auth-gated root: skip prerendering (same convention as the player
  *  layout). The page reads the session cookie to decide between the
@@ -114,6 +115,7 @@ export default async function RootPage() {
           <p className="mt-4 text-xs text-[#6d7a8f]">
             No downloads · Live chat support · For players 18 and over
           </p>
+          <GuestLink />
         </section>
 
         <section className="py-8">
