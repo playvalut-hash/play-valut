@@ -108,20 +108,29 @@ function findGame(text: string, games: Game[]): Game | null {
   )[0];
 }
 
+// Reports its result instead of swallowing it (v2 Phase 2, player
+// siblings of audit M4): most callers only lose a message on failure
+// and intentionally ignore the return, but deliverAccount's created
+// path must roll back the just-made account when its note/card fails.
 async function insertSystemMessage(
   playerId: string,
   kind: MessageKind,
   body: Record<string, unknown>,
-): Promise<void> {
+): Promise<{ id: string | null; error: unknown }> {
   const service = createServiceClient();
-  await service.from("chat_messages").insert({
-    player_id: playerId,
-    sender: "system",
-    kind,
-    body,
-    is_read_by_admin: true,
-    is_read_by_player: false,
-  });
+  const { data, error } = await service
+    .from("chat_messages")
+    .insert({
+      player_id: playerId,
+      sender: "system",
+      kind,
+      body,
+      is_read_by_admin: true,
+      is_read_by_player: false,
+    })
+    .select("id")
+    .single();
+  return { id: (data as { id: string } | null)?.id ?? null, error };
 }
 
 async function notifyAdmin(
@@ -261,19 +270,37 @@ async function deliverAccount(playerId: string, game: Game): Promise<void> {
   }
 
   await notifyAdmin("account_request", playerId, `Account requested: ${game.name}`, accountId);
-  await insertSystemMessage(playerId, "text", {
-    text: `On it! Getting your ${game.name} account ready — give me just a sec 👍`,
-  });
-  // Human pacing (Build 56): the card must NOT land in the same instant as
-  // the "On it!" note — a real agent takes a beat. Typing dots show on the
-  // player's side while the card is "prepared"; the card lands ~1.2s later.
-  void broadcastAgentTyping(playerId);
-  await sleep(1200);
-  await insertSystemMessage(playerId, "account", {
-    game_id: game.id,
-    account_id: accountId,
-    status: "creating",
-  });
+  // Checked writes + rollback (v2 Phase 2, player sibling of audit M4):
+  // a failed note/card used to succeed silently, leaving an orphan
+  // "creating" account with no card. Any failure now removes the note
+  // (if it landed) and the just-created account, then surfaces.
+  // The !created path above needs no rollback — that account pre-existed.
+  let noteId: string | null = null;
+  try {
+    const note = await insertSystemMessage(playerId, "text", {
+      text: `On it! Getting your ${game.name} account ready — give me just a sec 👍`,
+    });
+    if (note.error || !note.id) throw new Error("Could not send setup note");
+    noteId = note.id;
+    // Human pacing (Build 56): the card must NOT land in the same instant as
+    // the "On it!" note — a real agent takes a beat. Typing dots show on the
+    // player's side while the card is "prepared"; the card lands ~1.2s later.
+    void broadcastAgentTyping(playerId);
+    await sleep(1200);
+    const card = await insertSystemMessage(playerId, "account", {
+      game_id: game.id,
+      account_id: accountId,
+      status: "creating",
+    });
+    if (card.error) throw new Error("Could not send account card");
+  } catch (err) {
+    const service = createServiceClient();
+    if (noteId) {
+      await service.from("chat_messages").delete().eq("id", noteId);
+    }
+    await service.from("game_accounts").delete().eq("id", accountId);
+    throw err;
+  }
 }
 
 /**
@@ -780,6 +807,11 @@ export async function submitDeposit(formData: FormData): Promise<ActionResult> {
     status: "pending",
   });
   if (depositError) {
+    // Orphan cleanup (v2 Phase 2, player sibling of audit M11): the
+    // screenshot is already in storage and nothing references it.
+    await createServiceClient()
+      .storage.from("screenshots")
+      .remove([screenshotPath]);
     return { ok: false, error: "Couldn't record the deposit. Try again." };
   }
 
@@ -833,6 +865,10 @@ export async function submitChatDeposit(formData: FormData): Promise<ActionResul
     status: "pending",
   });
   if (depositError) {
+    // Orphan cleanup (v2 Phase 2, player sibling of audit M11).
+    await createServiceClient()
+      .storage.from("screenshots")
+      .remove([screenshotPath]);
     return { ok: false, error: "Couldn't record the deposit. Try again." };
   }
 
@@ -899,7 +935,13 @@ export async function sendChatImage(formData: FormData): Promise<ActionResult> {
     is_read_by_admin: false,
     is_read_by_player: true,
   });
-  if (error) return { ok: false, error: "Couldn't send the image. Try again." };
+  if (error) {
+    // Orphan cleanup (v2 Phase 2, player sibling of audit M11).
+    await createServiceClient()
+      .storage.from("screenshots")
+      .remove([screenshotPath]);
+    return { ok: false, error: "Couldn't send the image. Try again." };
+  }
   await notifyAdmin("message", user.id, "Sent an image in chat");
   return { ok: true };
 }
