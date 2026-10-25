@@ -531,7 +531,7 @@ export default function DetailsPanel({
     .toUpperCase();
 
   return (
-    <div className="flex h-full flex-col gap-3 overflow-y-auto bg-navy p-3.5">
+    <div className="flex h-full flex-col gap-3 overflow-y-auto bg-navy p-4">
       {/* Player header */}
       <div className="flex flex-col items-center pt-2 text-center">
         <span className="flex h-14 w-14 items-center justify-center rounded-full bg-gradient-to-br from-amber-600 to-orange-800 text-lg font-extrabold text-white">
