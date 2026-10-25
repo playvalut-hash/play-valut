@@ -9,8 +9,8 @@ import Tabs from "./_tabs";
 export const instant = false;
 
 /**
- * Player app shell: phone frame (max-width 440px) centered on desktop,
- * bottom tab bar. Zero admin surface (R8).
+ * Player app shell: phone frame on mobile (max-width 440px), full-width
+ * like the admin app on desktop, bottom tab bar. Zero admin surface (R8).
  *
  * Blocked players (Build 43) get a lockout screen instead of the app:
  * the players row is checked once per page load (PK lookup), and the
@@ -42,7 +42,7 @@ export default async function PlayerLayout({
   if (blocked) {
     return (
       <div className="flex min-h-dvh justify-center bg-near-black">
-        <div className="flex w-full max-w-[440px] flex-col items-center justify-center bg-bg px-8 text-center md:border-x md:border-line">
+        <div className="flex w-full max-w-[440px] flex-col items-center justify-center bg-bg px-8 text-center md:max-w-none">
           <span className="flex h-16 w-16 items-center justify-center rounded-full border border-red-500/40 bg-red-500/10 text-3xl">
             🚫
           </span>
@@ -69,10 +69,9 @@ export default async function PlayerLayout({
 
   return (
     <div className="min-h-dvh bg-near-black flex justify-center">
-      {/* Phone frame, centered on desktop — wider than the old 440px so
-          the app fills a desktop window better without turning into a
-          stretched admin-style dashboard. Bottom tab bar stays. */}
-      <div className="relative flex min-h-dvh w-full max-w-[440px] flex-col bg-bg md:max-w-[560px] md:border-x md:border-line md:shadow-[0_0_80px_rgba(0,0,0,0.7)]">
+      {/* Full-width on desktop like the admin app; the phone frame
+          applies on mobile only. Bottom tab bar stays. */}
+      <div className="relative flex min-h-dvh w-full max-w-[440px] flex-col bg-bg md:max-w-none">
         <main className="flex-1 pb-24">{children}</main>
         <Tabs />
         <PresenceHeartbeat />
