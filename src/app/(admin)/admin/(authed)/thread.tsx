@@ -13,12 +13,10 @@ import {
   getShortcutsForChat,
   sendGamesList,
   sendPayList,
-  sendQuickReply,
   sendSingleGame,
   sendSingleMethod,
   getThreadOlder,
 } from "../../_actions";
-import { QUICK_REPLIES } from "../../_quick-replies";
 import { cn } from "@/lib/utils";
 import {
   CheckIcon,
@@ -429,6 +427,8 @@ export default function ThreadView({
   methods,
   methodsCount,
   onMutated,
+  onAppendOptimistic,
+  onDropOptimistic,
   onPrependOlder,
   onBack,
   onShowDetails,
@@ -443,6 +443,10 @@ export default function ThreadView({
   methods: Array<{ id: string; name: string; brandColor: string | null }>;
   methodsCount: number;
   onMutated?: () => Promise<void>;
+  /** Optimistic sends: append a local echo instantly, drop it on failure
+   *  (the shell prunes it once the real message arrives on refresh). */
+  onAppendOptimistic?: (msg: ChatMessageView) => void;
+  onDropOptimistic?: (id: string) => void;
   /** Prepend older pages loaded by the thread itself (audit M3). */
   onPrependOlder?: (messages: ChatMessageView[]) => void;
   /** Mobile only: back to the player list / open the details panel. The
@@ -562,16 +566,67 @@ export default function ThreadView({
     }
   }
 
+  // Optimistic echoes: a send shows instantly (like typing in the
+  // editor) instead of waiting out the server round trip. The shell
+  // prunes an echo once the refreshed thread contains its real message;
+  // on failure the sender drops it and restores the draft.
+  function makeEcho(
+    kind: ChatMessageView["kind"],
+    fields: Partial<ChatMessageView>,
+  ): ChatMessageView {
+    return {
+      id: `echo-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      playerId: player.id,
+      sender: "admin",
+      kind,
+      createdAt: new Date().toISOString(),
+      text: null,
+      account: null,
+      listTitle: null,
+      picked: null,
+      pickedName: null,
+      paymentCard: null,
+      screenshotUrl: null,
+      screenshotCaption: null,
+      readByPlayer: false,
+      readByAdmin: true,
+      ...fields,
+    };
+  }
+
+  // Image echoes use blob URLs — revoke them once the echo leaves the
+  // thread (cleanup only, no state change, so no effect-setState issue).
+  const echoUrlsRef = useRef<Map<string, string>>(new Map());
+  useEffect(() => {
+    const ids = new Set(thread.map((m) => m.id));
+    for (const [id, url] of echoUrlsRef.current) {
+      if (!ids.has(id)) {
+        URL.revokeObjectURL(url);
+        echoUrlsRef.current.delete(id);
+      }
+    }
+  }, [thread]);
+  useEffect(
+    () => () => {
+      for (const url of echoUrlsRef.current.values()) URL.revokeObjectURL(url);
+      echoUrlsRef.current.clear();
+    },
+    [],
+  );
+
   async function sendText() {
     const text = draft.trim();
     if (!text || sending) return;
+    const echo = makeEcho("text", { text });
+    onAppendOptimistic?.(echo);
+    setDraft("");
     setSending(true);
     try {
       await sendAdminMessage(admin.id, { playerId: player.id, text });
-      setDraft("");
       await changed();
     } catch {
-      // keep draft
+      onDropOptimistic?.(echo.id);
+      setDraft(text);
     } finally {
       setSending(false);
     }
@@ -611,6 +666,13 @@ export default function ThreadView({
   async function sendImageFile(file: File) {
     if (sending) return;
     if (!file.type.startsWith("image/") || file.size > 8 * 1024 * 1024) return;
+    const url = URL.createObjectURL(file);
+    const echo = makeEcho("shot", {
+      screenshotUrl: url,
+      screenshotCaption: "Image from support",
+    });
+    echoUrlsRef.current.set(echo.id, url);
+    onAppendOptimistic?.(echo);
     setSending(true);
     try {
       const fd = new FormData();
@@ -618,18 +680,11 @@ export default function ThreadView({
       await adminSendChatImage(admin.id, player.id, fd);
       await changed();
     } catch {
-      // keep composer state
+      onDropOptimistic?.(echo.id);
+      URL.revokeObjectURL(url);
+      echoUrlsRef.current.delete(echo.id);
     } finally {
       setSending(false);
-    }
-  }
-
-  async function quickReply(key: string) {
-    try {
-      await sendQuickReply(admin.id, { playerId: player.id, key });
-      await changed();
-    } catch {
-      // ignore
     }
   }
 
@@ -870,21 +925,6 @@ export default function ThreadView({
             />
           ))
         )}
-      </div>
-
-      {/* Quick replies */}
-      <div className="admin-thin-scroll flex shrink-0 gap-1.5 overflow-x-auto border-t border-surface-border bg-navy px-4 py-1.5 md:px-6">
-        {Object.entries(QUICK_REPLIES).map(([key, q]) => (
-          <button
-            key={key}
-            type="button"
-            onClick={() => quickReply(key)}
-            title={q.message}
-            className="admin-focus shrink-0 rounded-full border border-surface-border bg-surface-card px-2.5 py-1 text-[11px] text-text-secondary transition-colors hover:border-gold/50 hover:text-gold"
-          >
-            {q.label}
-          </button>
-        ))}
       </div>
 
       {/* Player typing indicator */}

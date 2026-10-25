@@ -308,6 +308,40 @@ export default function InboxShell({
     );
   }, []);
 
+  /* ── Optimistic UI (instant sends / tags / creating accounts) ─────────
+   * Server actions take seconds on a cold start, and the user saw NOTHING
+   * until the round trip finished. So sends append a local echo instantly,
+   * tags patch the detail instantly, and a creating account shows a
+   * placeholder row instantly. Server truth always wins on refresh:
+   * echoes whose real message arrived are pruned below, and detail
+   * patches are overwritten by the refetched detail. Failures revert
+   * (the caller drops its echo / re-patches the snapshot). */
+  const [optimisticMsgs, setOptimisticMsgs] = useState<ChatMessageView[]>([]);
+  const appendOptimistic = useCallback((msg: ChatMessageView) => {
+    setOptimisticMsgs((prev) => [...prev, msg]);
+  }, []);
+  const dropOptimistic = useCallback((id: string) => {
+    setOptimisticMsgs((prev) => prev.filter((m) => m.id !== id));
+  }, []);
+  const patchDetailOptimistic = useCallback(
+    (
+      playerId: string,
+      patch: { tags?: string[]; accounts?: PlayerDetailView["accounts"] },
+    ) => {
+      if (selectedIdRef.current !== playerId) return;
+      setDetail((prev) =>
+        prev && prev.player.id === playerId ? { ...prev, ...patch } : prev,
+      );
+      if (patch.tags) {
+        const tags = patch.tags;
+        setOverview((prev) =>
+          prev.map((p) => (p.id === playerId ? { ...p, tags } : p)),
+        );
+      }
+    },
+    [],
+  );
+
   const refreshSeqRef = useRef(0);
   const refreshSelected = useCallback(async () => {
     const id = selectedIdRef.current;
@@ -326,6 +360,23 @@ export default function InboxShell({
         : t;
       if (t.length < 500) hasOlderRef.current = false;
       cache.set(id, { thread: t, detail: d });
+      // Prune confirmed echoes: a local echo whose real message is in
+      // this fresh thread drops out (the real one renders instead). A
+      // superseded refresh returns early above, so it never drops a
+      // live echo — the winning refresh prunes it instead.
+      setOptimisticMsgs((prev) =>
+        prev.filter(
+          (e) =>
+            e.playerId !== id ||
+            !t.some(
+              (m) =>
+                m.sender === e.sender &&
+                m.kind === e.kind &&
+                (m.text ?? null) === (e.text ?? null) &&
+                Date.parse(m.createdAt) >= Date.parse(e.createdAt) - 10000,
+            ),
+        ),
+      );
       if (selectedIdRef.current === id) {
         threadRef.current = merged;
         setThread(merged);
@@ -748,12 +799,17 @@ export default function InboxShell({
               <ThreadView
                 admin={admin}
                 player={selected}
-                thread={thread}
+                thread={[
+                  ...thread,
+                  ...optimisticMsgs.filter((m) => m.playerId === selectedId),
+                ]}
                 games={games}
                 gamesCount={gamesCount}
                 methods={methods}
                 methodsCount={methodsCount}
                 onMutated={refreshSelected}
+                onAppendOptimistic={appendOptimistic}
+                onDropOptimistic={dropOptimistic}
                 onPrependOlder={(older) => {
                   const existing = new Set(threadRef.current.map((m) => m.id));
                   const fresh = older.filter((m) => !existing.has(m.id));
@@ -845,6 +901,9 @@ export default function InboxShell({
               detail={detail}
               games={games}
               onMutated={refreshSelected}
+              onAppendOptimistic={appendOptimistic}
+              onDropOptimistic={dropOptimistic}
+              onDetailPatch={patchDetailOptimistic}
             />
           </div>
         </div>

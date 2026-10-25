@@ -3,7 +3,9 @@
 import { useState } from "react";
 
 import type {
+  AdminAccountView,
   AdminInfo,
+  ChatMessageView,
   PendingDepositView,
   PlayerDetailView,
 } from "../../_actions";
@@ -489,11 +491,22 @@ export default function DetailsPanel({
   detail,
   games,
   onMutated,
+  onAppendOptimistic,
+  onDropOptimistic,
+  onDetailPatch,
 }: {
   admin: AdminInfo;
   detail: PlayerDetailView;
   games: Array<{ id: string; name: string }>;
   onMutated?: () => Promise<void>;
+  /** Optimistic UI (same contract as the thread): instant local feedback,
+   *  reverted on failure, overwritten by server truth on refresh. */
+  onAppendOptimistic?: (msg: ChatMessageView) => void;
+  onDropOptimistic?: (id: string) => void;
+  onDetailPatch?: (
+    playerId: string,
+    patch: { tags?: string[]; accounts?: AdminAccountView[] },
+  ) => void;
 }) {
   const [newTag, setNewTag] = useState("");
   const [noteBody, setNoteBody] = useState("");
@@ -518,6 +531,25 @@ export default function DetailsPanel({
     try {
       await fn();
       if (onMutated) await onMutated();
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  // Optimistic tags: the chip appears instantly; the refresh overwrites
+  // with server truth (same tags on success). On failure the snapshot
+  // goes back. Returns false on failure so callers can restore input.
+  async function runTag(fn: () => Promise<void>, nextTags: string[]): Promise<boolean> {
+    const prevTags = detail.tags;
+    onDetailPatch?.(detail.player.id, { tags: nextTags });
+    setBusy(true);
+    try {
+      await fn();
+      if (onMutated) await onMutated();
+      return true;
+    } catch {
+      onDetailPatch?.(detail.player.id, { tags: prevTags });
+      return false;
     } finally {
       setBusy(false);
     }
@@ -596,7 +628,12 @@ export default function DetailsPanel({
               {tag}
               <button
                 type="button"
-                onClick={() => run(() => removePlayerTag(admin.id, { playerId: detail.player.id, tag }))}
+                onClick={() =>
+                  void runTag(
+                    () => removePlayerTag(admin.id, { playerId: detail.player.id, tag }),
+                    detail.tags.filter((t) => t !== tag),
+                  )
+                }
                 className="ml-0.5 hover:text-blue-200"
                 aria-label={`Remove ${tag}`}
               >
@@ -611,7 +648,12 @@ export default function DetailsPanel({
               key={p}
               type="button"
               disabled={busy}
-              onClick={() => run(() => addPlayerTag(admin.id, { playerId: detail.player.id, tag: p }))}
+              onClick={() =>
+                void runTag(
+                  () => addPlayerTag(admin.id, { playerId: detail.player.id, tag: p }),
+                  [...detail.tags, normalizeTag(p)],
+                )
+              }
               className="rounded-full border border-dashed border-surface-border px-2.5 py-1 text-[11px] text-text-muted hover:border-gold/50 hover:text-gold disabled:opacity-40"
             >
               + {p}
@@ -624,9 +666,13 @@ export default function DetailsPanel({
             onChange={(e) => setNewTag(e.target.value)}
             onKeyDown={(e) => {
               if (e.key === "Enter" && newTag.trim()) {
-                run(async () => {
-                  await addPlayerTag(admin.id, { playerId: detail.player.id, tag: newTag.trim() });
-                  setNewTag("");
+                const tag = newTag.trim();
+                setNewTag("");
+                void runTag(
+                  () => addPlayerTag(admin.id, { playerId: detail.player.id, tag }),
+                  [...detail.tags, normalizeTag(tag)],
+                ).then((ok) => {
+                  if (!ok) setNewTag(tag);
                 });
               }
             }}
@@ -636,12 +682,16 @@ export default function DetailsPanel({
           <button
             type="button"
             disabled={busy || !newTag.trim()}
-            onClick={() =>
-              run(async () => {
-                await addPlayerTag(admin.id, { playerId: detail.player.id, tag: newTag.trim() });
-                setNewTag("");
-              })
-            }
+            onClick={() => {
+              const tag = newTag.trim();
+              setNewTag("");
+              void runTag(
+                () => addPlayerTag(admin.id, { playerId: detail.player.id, tag }),
+                [...detail.tags, normalizeTag(tag)],
+              ).then((ok) => {
+                if (!ok) setNewTag(tag);
+              });
+            }}
             className="rounded-lg bg-surface-elevated px-4 py-2 text-[13px] font-semibold text-text-primary hover:text-gold disabled:opacity-40"
           >
             Add
@@ -714,9 +764,28 @@ export default function DetailsPanel({
           {detail.accounts.length === 0 && (
             <p className="text-[12px] text-text-muted">No accounts yet</p>
           )}
-          {detail.accounts.map((a) => (
-            <AccountCard key={a.id} admin={admin} account={a} onBusy={setBusy} onMutated={onMutated} />
-          ))}
+          {/* Optimistic placeholder rows render as a plain pending row,
+              never as an AccountCard (their Approve action would hit a
+              row that does not exist yet). The refresh replaces them
+              with the real creating rows. */}
+          {detail.accounts
+            .filter((a) => !a.id.startsWith("optimistic-"))
+            .map((a) => (
+              <AccountCard key={a.id} admin={admin} account={a} onBusy={setBusy} onMutated={onMutated} />
+            ))}
+          {detail.accounts
+            .filter((a) => a.id.startsWith("optimistic-"))
+            .map((a) => (
+              <div
+                key={a.id}
+                className="flex items-center gap-2 rounded-lg border border-dashed border-gold/40 bg-gold/5 px-3 py-2.5"
+              >
+                <span className="h-4 w-4 animate-spin rounded-full border-2 border-gold/30 border-t-gold" />
+                <span className="text-[13px] text-text-secondary">
+                  Creating {a.gameName} account…
+                </span>
+              </div>
+            ))}
         </div>
       </Collapsible>
 
@@ -744,12 +813,52 @@ export default function DetailsPanel({
                 type="button"
                 disabled={creating || !effectiveGame}
                 onClick={async () => {
+                  const gameId = effectiveGame;
+                  const game = games.find((g) => g.id === gameId);
+                  if (!game) return;
+                  // Optimistic: the setup note echoes in the thread and a
+                  // "Creating…" row appears in the panel INSTANTLY; the
+                  // refresh replaces both with server truth. On failure
+                  // both revert and the error shows.
+                  const noteEcho: ChatMessageView = {
+                    id: `echo-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+                    playerId: detail.player.id,
+                    sender: "system",
+                    kind: "text",
+                    createdAt: new Date().toISOString(),
+                    text: `Setting up your ${game.name} account — give me just a sec 👍`,
+                    account: null,
+                    listTitle: null,
+                    picked: null,
+                    pickedName: null,
+                    paymentCard: null,
+                    screenshotUrl: null,
+                    screenshotCaption: null,
+                    readByPlayer: false,
+                    readByAdmin: true,
+                  };
+                  const prevAccounts = detail.accounts;
+                  const placeholder: AdminAccountView = {
+                    id: `optimistic-${gameId}`,
+                    gameId,
+                    gameName: game.name,
+                    username: "Creating…",
+                    status: "creating",
+                    createdAt: new Date().toISOString(),
+                    activatedAt: null,
+                  };
+                  onAppendOptimistic?.(noteEcho);
+                  onDetailPatch?.(detail.player.id, {
+                    accounts: [...prevAccounts, placeholder],
+                  });
                   setCreating(true);
                   setCreateError(null);
                   try {
-                    await createGameAccountForPlayer(admin.id, detail.player.id, effectiveGame);
+                    await createGameAccountForPlayer(admin.id, detail.player.id, gameId);
                     if (onMutated) await onMutated();
                   } catch (e) {
+                    onDropOptimistic?.(noteEcho.id);
+                    onDetailPatch?.(detail.player.id, { accounts: prevAccounts });
                     setCreateError(
                       e instanceof Error ? e.message : "Could not create account",
                     );
