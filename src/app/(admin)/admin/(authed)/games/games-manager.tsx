@@ -95,10 +95,14 @@ function GameForm({
       const fd = new FormData();
       fd.set("gameId", initial.id);
       fd.set("file", file);
-      await uploadGameIcon(admin.id, fd);
-      router.refresh();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not upload icon");
+      const res = await uploadGameIcon(admin.id, fd);
+      if (!res.ok) {
+        setError(res.error);
+      } else {
+        router.refresh();
+      }
+    } catch {
+      setError("Could not upload icon");
     } finally {
       setUploading(false);
     }
@@ -109,10 +113,14 @@ function GameForm({
     setUploading(true);
     setError(null);
     try {
-      await clearCustomGameIcon(admin.id, initial.id);
-      router.refresh();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not remove icon");
+      const res = await clearCustomGameIcon(admin.id, initial.id);
+      if (!res.ok) {
+        setError(res.error);
+      } else {
+        router.refresh();
+      }
+    } catch {
+      setError("Could not remove icon");
     } finally {
       setUploading(false);
     }

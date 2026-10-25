@@ -53,16 +53,14 @@ export default function MenuClient({
     if (!notificationsOpen || dismissed || updates.length === 0) return;
     let cancelled = false;
     markUpdatesRead()
-      .then(() => {
-        if (!cancelled) setDismissed(true);
+      .then((res) => {
+        if (cancelled) return;
+        if (res.ok) setDismissed(true);
+        else setReadError(res.error);
       })
-      .catch((err) => {
+      .catch(() => {
         if (!cancelled) {
-          setReadError(
-            err instanceof Error
-              ? err.message
-              : "Could not mark notifications as read",
-          );
+          setReadError("Could not mark notifications as read");
         }
       });
     return () => {

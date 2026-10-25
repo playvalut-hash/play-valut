@@ -358,13 +358,17 @@ export async function signOut(): Promise<void> {
  *  Notifications section calls this: everything decided/activated up to
  *  now is dismissed, and only newer updates appear afterwards. The
  *  watermark is the newest visible update time (not "now"), so an
- *  update created mid-call is never wrongly dismissed. */
-export async function markUpdatesRead(): Promise<void> {
+ *  update created mid-call is never wrongly dismissed.
+ *
+ *  Returns (never throws) a result: thrown action errors surface in
+ *  production as a minified React digest instead of the message, so a
+ *  user-facing explanation must travel as data. */
+export async function markUpdatesRead(): Promise<ActionResult> {
   const supabase = await createClient();
   const {
     data: { user },
   } = await supabase.auth.getUser();
-  if (!user) throw new Error("Not signed in");
+  if (!user) return { ok: false, error: "Not signed in" };
   const service = createServiceClient();
   const [{ data: deposits }, { data: accounts }] = await Promise.all([
     service
@@ -387,7 +391,7 @@ export async function markUpdatesRead(): Promise<void> {
       new Date(a.activated_at).getTime(),
     ),
   ].filter((t) => Number.isFinite(t));
-  if (times.length === 0) return;
+  if (times.length === 0) return { ok: true };
   const seenAt = new Date(Math.max(...times)).toISOString();
   const { error } = await service
     .from("players")
@@ -395,12 +399,15 @@ export async function markUpdatesRead(): Promise<void> {
     .eq("id", user.id);
   if (error) {
     if (/updates_seen_at/.test(error.message ?? "")) {
-      throw new Error(
-        "Notifications need migration 0025 — please run it in the SQL Editor first.",
-      );
+      return {
+        ok: false,
+        error:
+          "Notifications need migration 0025 — please run it in the SQL Editor first.",
+      };
     }
-    throw new Error("Could not mark notifications as read");
+    return { ok: false, error: "Could not mark notifications as read" };
   }
+  return { ok: true };
 }
 
 /* ── blocking (Build 43) ─────────────────────────────────────────────────── */

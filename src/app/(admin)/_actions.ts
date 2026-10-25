@@ -2061,19 +2061,27 @@ export async function deleteGame(adminId: string, gameId: string): Promise<void>
 
 const MAX_UPLOAD_BYTES = 8 * 1024 * 1024;
 
-/** Upload a game icon to the public game-icons bucket. Returns the stored path.
+/** Upload a game icon to the public game-icons bucket.
  *  The upload becomes the game's CUSTOM icon (custom_icon_path) — the
  *  original artwork in icon_path is never overwritten, so Remove can
- *  always bring it back. Needs migration 0024 (custom_icon_path). */
+ *  always bring it back. Needs migration 0024 (custom_icon_path).
+ *
+ *  Returns (never throws) a result: thrown action errors surface in
+ *  production as a minified React digest instead of the message, so a
+ *  user-facing explanation must travel as data. Auth failures still
+ *  throw, as elsewhere. */
 export async function uploadGameIcon(
   adminId: string,
   formData: FormData,
-): Promise<{ path: string; url: string }> {
+): Promise<
+  | { ok: true; path: string; url: string }
+  | { ok: false; error: string }
+> {
   await requireAdmin(adminId);
   const gameId = String(formData.get("gameId") ?? "");
   const file = formData.get("file");
-  z.string().min(1).parse(gameId);
-  if (!(file instanceof File)) throw new Error("No file provided");
+  if (!gameId) return { ok: false, error: "No game selected" };
+  if (!(file instanceof File)) return { ok: false, error: "No file provided" };
   const validated = await validateImageFile(file, MAX_UPLOAD_BYTES);
   const path = `${gameId}.${validated.extension}`;
   const client = svc();
@@ -2088,7 +2096,7 @@ export async function uploadGameIcon(
   const { error: uploadError } = await client.storage
     .from("game-icons")
     .upload(path, validated.bytes, { contentType: validated.contentType, upsert: true });
-  if (uploadError) throw new Error("Could not upload icon");
+  if (uploadError) return { ok: false, error: "Could not upload icon" };
 
   const { error: updateError } = await client
     .from("games")
@@ -2098,11 +2106,13 @@ export async function uploadGameIcon(
     // Don't leave an orphan behind when the DB write fails.
     await client.storage.from("game-icons").remove([path]);
     if (/custom_icon_path/.test(updateError.message ?? "")) {
-      throw new Error(
-        "Custom icons need migration 0024 — please run it in the SQL Editor first.",
-      );
+      return {
+        ok: false,
+        error:
+          "Custom icons need migration 0024 — please run it in the SQL Editor first.",
+      };
     }
-    throw new Error("Could not upload icon");
+    return { ok: false, error: "Could not upload icon" };
   }
   // A replaced upload with a different extension orphans the old file.
   if (oldPath && oldPath !== path) {
@@ -2110,16 +2120,17 @@ export async function uploadGameIcon(
   }
   await audit(adminId, "games.upload_icon", gameId);
   revalidateSection("/admin/games");
-  return { path, url: publicUrl("game-icons", path) };
+  return { path, url: publicUrl("game-icons", path), ok: true };
 }
 
 /** Remove a game's custom icon — the original artwork shows everywhere again.
  *  The stored upload is deleted too (best-effort); the column clear is
- *  what restores the original, so a storage failure never blocks it. */
+ *  what restores the original, so a storage failure never blocks it.
+ *  Returns a result (see uploadGameIcon for why it never throws). */
 export async function clearCustomGameIcon(
   adminId: string,
   gameId: string,
-): Promise<void> {
+): Promise<{ ok: true } | { ok: false; error: string }> {
   await requireAdmin(adminId);
   z.string().min(1).parse(gameId);
   const client = svc();
@@ -2137,17 +2148,20 @@ export async function clearCustomGameIcon(
     .eq("id", gameId);
   if (error) {
     if (/custom_icon_path/.test(error.message ?? "")) {
-      throw new Error(
-        "Custom icons need migration 0024 — please run it in the SQL Editor first.",
-      );
+      return {
+        ok: false,
+        error:
+          "Custom icons need migration 0024 — please run it in the SQL Editor first.",
+      };
     }
-    throw new Error("Could not remove icon");
+    return { ok: false, error: "Could not remove icon" };
   }
   if (oldPath) {
     await client.storage.from("game-icons").remove([oldPath]);
   }
   await audit(adminId, "games.clear_custom_icon", gameId);
   revalidateSection("/admin/games");
+  return { ok: true };
 }
 
 /* ── Payment Methods ───────────────────────────────────────────────────── */
