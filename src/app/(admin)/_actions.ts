@@ -1502,7 +1502,7 @@ export async function deletePlayerNote(
 const editAccountSchema = z.object({
   accountId: z.string().uuid(),
   username: z.string().trim().min(3).max(64),
-  password: z.string().min(6).max(128).optional(),
+  password: z.string().min(12).max(128).optional(),
 });
 
 export async function editGameAccount(
@@ -1514,10 +1514,26 @@ export async function editGameAccount(
   const client = svc();
   const { data: existing } = await client
     .from("game_accounts")
-    .select("id, player_id")
+    .select("id, player_id, game_id")
     .eq("id", accountId)
     .single();
   if (!existing) throw new Error("Account not found");
+
+  // Per-game username uniqueness on manual edit (v2 Phase 2, audit
+  // M12): the H6 unique index already rejects duplicates at the DB,
+  // but with a cryptic error — this pre-check gives the admin a clear
+  // message instead. The account itself is excluded, so saving
+  // unchanged still works.
+  const { data: clash } = await client
+    .from("game_accounts")
+    .select("id")
+    .eq("game_id", (existing as { game_id: string }).game_id)
+    .eq("username", username)
+    .neq("id", accountId)
+    .maybeSingle();
+  if (clash) {
+    throw new Error("Another account already uses this username for this game");
+  }
 
   const patch: Record<string, string> = { username };
   if (password) patch.password_enc = encryptPassword(password);
