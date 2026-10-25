@@ -232,6 +232,7 @@ export interface BrandingRow {
   signinHeading: string;
   signinSubtext: string;
   guestModeEnabled: boolean;
+  marketingPageEnabled: boolean;
 }
 
 export interface SheetLogRow {
@@ -2315,6 +2316,8 @@ export async function getBranding(): Promise<BrandingRow> {
     // Pre-migration (0029) the column is absent — default on, same
     // as today's behaviour, so the toggle shows ON until it is run.
     guestModeEnabled: (row.guest_mode_enabled as boolean | null) ?? true,
+    // Same pre-migration story as guestModeEnabled (0030).
+    marketingPageEnabled: (row.marketing_page_enabled as boolean | null) ?? true,
   };
 }
 
@@ -2348,6 +2351,36 @@ export async function updateGuestMode(
     return { ok: true };
   } catch {
     return { ok: false, error: "Not authorized — only the super admin can change guest mode" };
+  }
+}
+
+/** Super-admin-only: flip the marketing page switch. Same shape and
+ *  guards as updateGuestMode (missing column -> run-0030 message).
+ *  OFF sends every guest straight to /login; signed-in players
+ *  still land in /app, so this never locks a player out. */
+export async function updateMarketingPage(
+  adminId: string,
+  enabled: boolean,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    await requireSuperAdmin(adminId);
+    const { error } = await svc()
+      .from("branding")
+      .upsert({ id: 1, marketing_page_enabled: enabled });
+    if (error) {
+      if (error.message.includes("marketing_page_enabled")) {
+        return {
+          ok: false,
+          error: "Migration 0030 hasn't been run yet — run it in the SQL Editor, then try again.",
+        };
+      }
+      return { ok: false, error: "Could not save marketing page setting" };
+    }
+    await audit(adminId, "branding.marketing_page", enabled ? "on" : "off");
+    revalidateSection("/admin/branding");
+    return { ok: true };
+  } catch {
+    return { ok: false, error: "Not authorized — only the super admin can change the marketing page" };
   }
 }
 

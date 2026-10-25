@@ -59,6 +59,11 @@ export default async function RootPage() {
   const branding = await getBranding();
   const brand = branding.brand_name || "PlayVault";
 
+  // Marketing page switch (migration 0030, super-admin only): OFF
+  // sends every guest straight to /login. Signed-in players already
+  // redirected to /app above, so this never locks a player out.
+  if (!branding.marketing_page_enabled) redirect("/login");
+
   return (
     <div className="min-h-dvh bg-[#0b0e14] text-[#eef2f7]">
       <header className="mx-auto flex w-full max-w-5xl items-center justify-between px-5 py-4">

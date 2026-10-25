@@ -8,6 +8,7 @@ import {
   removeBrandLogo,
   updateBranding,
   updateGuestMode,
+  updateMarketingPage,
   uploadBrandLogo,
 } from "../../../_actions";
 import { EyeIcon, ImageIcon, UploadIcon } from "@/components/icons";
@@ -76,6 +77,8 @@ export default function BrandingEditor({
   const [removing, setRemoving] = useState(false);
   const [guestMode, setGuestMode] = useState(branding.guestModeEnabled);
   const [guestBusy, setGuestBusy] = useState(false);
+  const [marketingPage, setMarketingPage] = useState(branding.marketingPageEnabled);
+  const [marketingBusy, setMarketingBusy] = useState(false);
 
   const preview: BrandingRow = {
     brandName: form.brandName || branding.brandName,
@@ -84,6 +87,7 @@ export default function BrandingEditor({
     signinHeading: form.signinHeading || branding.signinHeading,
     signinSubtext: form.signinSubtext || branding.signinSubtext,
     guestModeEnabled: guestMode,
+    marketingPageEnabled: marketingPage,
   };
 
   async function save() {
@@ -149,6 +153,24 @@ export default function BrandingEditor({
       setError("Could not save guest mode");
     } finally {
       setGuestBusy(false);
+    }
+  }
+
+  async function onToggleMarketingPage(next: boolean) {
+    setMarketingBusy(true);
+    setError(null);
+    try {
+      const res = await updateMarketingPage(admin.id, next);
+      if (!res.ok) {
+        setError(res.error);
+      } else {
+        setMarketingPage(next);
+        router.refresh();
+      }
+    } catch {
+      setError("Could not save marketing page setting");
+    } finally {
+      setMarketingBusy(false);
     }
   }
 
@@ -266,6 +288,26 @@ export default function BrandingEditor({
                 and login pages. Guests already inside keep working and
                 are pushed to activate — they are never kicked out, so
                 their chat is never lost. Needs migration 0029.
+              </p>
+              <span className="mb-1 mt-4 block text-[11px] font-medium text-text-secondary">Marketing page</span>
+              <label className="flex cursor-pointer items-center gap-3">
+                <input
+                  type="checkbox"
+                  checked={marketingPage}
+                  disabled={marketingBusy}
+                  onChange={(e) => void onToggleMarketingPage(e.target.checked)}
+                  className="admin-focus h-5 w-5 accent-[#d4af37] disabled:opacity-50"
+                />
+                <span className="text-[13px] text-text-primary">
+                  {marketingPage ? "On — guests see the marketing page" : "Off — guests go straight to login"}
+                </span>
+              </label>
+              <p className="mt-1.5 text-[11px] leading-relaxed text-text-muted">
+                Super admin only. Off sends every guest at / straight to
+                /login — no public marketing face. Signed-in players
+                still land in the app, and guest entry on the login page
+                follows the guest mode switch above. Needs migration
+                0030.
               </p>
             </div>
           ) : null}

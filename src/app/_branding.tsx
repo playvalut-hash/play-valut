@@ -15,6 +15,11 @@ export interface Branding {
    *  guest sessions keep working when off — they are pushed to
    *  activate, never kicked out (kicking would orphan their chat). */
   guest_mode_enabled: boolean;
+  /** Marketing page switch (migration 0030, super-admin only).
+   *  True = guests see the marketing page at /. False = every guest
+   *  is sent straight to /login (signed-in players still land in
+   *  /app). */
+  marketing_page_enabled: boolean;
 }
 
 export const FALLBACK_BRANDING: Branding = {
@@ -23,6 +28,7 @@ export const FALLBACK_BRANDING: Branding = {
   signin_heading: "Welcome Back",
   signin_subtext: "Sign in to continue your lobby journey",
   guest_mode_enabled: true,
+  marketing_page_enabled: true,
 };
 
 /** Public URL for the brand logo (brand-logos bucket is public). */
