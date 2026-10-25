@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
@@ -10,6 +10,11 @@ import {
   UserIcon,
   WalletIcon,
 } from "@/components/icons";
+import {
+  isDrawerOpen,
+  setDrawerOpen,
+  subscribeDrawer,
+} from "./_nav-drawer-store";
 
 const TABS = [
   { href: "/app", label: "Home", Icon: HomeIcon },
@@ -26,40 +31,50 @@ function isActiveTab(pathname: string, href: string): boolean {
 
 /**
  * Player navigation — two faces of the same tabs:
- * - Mobile: a slim sticky header (WhatsApp-style app bar) with a
- *   hamburger that slides a sidebar drawer in from the left. No bottom
- *   tab bar — it ate vertical space and looked out of place.
+ * - Mobile: a slim header (WhatsApp-style app bar) with a hamburger
+ *   that slides a sidebar drawer in from the left. The header is an
+ *   ordinary in-flow row, NOT pinned — it scrolls away with the page
+ *   and only the offers ticker stays pinned. On the chat page the
+ *   header is hidden entirely and its hamburger lives in the chat's
+ *   own Support header instead (three stacked bars looked bad).
  * - Desktop: left sidebar (like the admin's player-list column), sticky
  *   so it stays put while the page scrolls.
  */
 export default function Tabs() {
   const pathname = usePathname();
-  const [drawerOpen, setDrawerOpen] = useState(false);
+  const [drawerOpen, setDrawerOpenState] = useState(isDrawerOpen());
+  useEffect(
+    () => subscribeDrawer(() => setDrawerOpenState(isDrawerOpen())),
+    [],
+  );
+  const hideMobileHeader = pathname === "/app/chat";
   return (
     <>
       {/* Mobile header + drawer */}
-      <div className="sticky top-0 z-40 flex h-12 shrink-0 items-center gap-2 border-b border-line bg-bg/95 px-3 backdrop-blur-xl md:hidden">
-        <button
-          type="button"
-          onClick={() => setDrawerOpen(true)}
-          aria-label="Open navigation menu"
-          aria-expanded={drawerOpen}
-          className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-text-primary transition hover:bg-white/5"
-        >
-          {/* Hamburger: three dashes */}
-          <span className="flex flex-col gap-[5px]" aria-hidden="true">
-            <span className="block h-[2px] w-5 rounded bg-current" />
-            <span className="block h-[2px] w-5 rounded bg-current" />
-            <span className="block h-[2px] w-5 rounded bg-current" />
+      {!hideMobileHeader && (
+        <div className="flex h-12 shrink-0 items-center gap-2 border-b border-line bg-bg px-3 md:hidden">
+          <button
+            type="button"
+            onClick={() => setDrawerOpen(true)}
+            aria-label="Open navigation menu"
+            aria-expanded={drawerOpen}
+            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-text-primary transition hover:bg-white/5"
+          >
+            {/* Hamburger: three dashes */}
+            <span className="flex flex-col gap-[5px]" aria-hidden="true">
+              <span className="block h-[2px] w-5 rounded bg-current" />
+              <span className="block h-[2px] w-5 rounded bg-current" />
+              <span className="block h-[2px] w-5 rounded bg-current" />
+            </span>
+          </button>
+          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-gold font-display text-[11px] font-extrabold text-black">
+            PV
           </span>
-        </button>
-        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-gold font-display text-[11px] font-extrabold text-black">
-          PV
-        </span>
-        <span className="font-display text-base font-extrabold text-text-primary">
-          PlayVault
-        </span>
-      </div>
+          <span className="font-display text-base font-extrabold text-text-primary">
+            PlayVault
+          </span>
+        </div>
+      )}
       {/* Drawer: always mounted, slides in from the left like a sidebar */}
       <div className="md:hidden" aria-hidden={!drawerOpen}>
         <button

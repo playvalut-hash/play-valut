@@ -183,20 +183,23 @@ textarea {
    never sits on screen twice (the old doubled track showed one offer
    as two identical cards). Mobile slides right-to-left across the top
    bar (news ticker); desktop rises bottom-to-top through the rail
-   (live-comments stream). The item is absolutely positioned and
-   animated by its offset (left/top from one edge to past the other),
-   so it starts fully off one end and ends fully off the other, slowly
-   and smoothly. Hover pauses it; reduced-motion users get a still
+   (live-comments stream). Mobile travel uses viewport units
+   (100vw → -own width) instead of the bar's own width: the offer
+   enters immediately from the right edge and leaves the moment it
+   clears the left edge, so the bar is empty only briefly between
+   crossings (the old left:100%→-100% run hid a short offer for a
+   third of every cycle) — and it runs slower (16s), so it reads
+   comfortably. Hover pauses it; reduced-motion users get a still
    offer instead of motion. The React side swaps the item (and its
    animation key) when each crossing ends, cycling through live
    offers; with a single offer the same card simply comes around
    again after a gap, never duplicated. */
 @keyframes pv-ticker-item-x {
   from {
-    left: 100%;
+    transform: translate(100vw, -50%);
   }
   to {
-    left: -100%;
+    transform: translate(-100%, -50%);
   }
 }
 @keyframes pv-ticker-item-y {

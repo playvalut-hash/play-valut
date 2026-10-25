@@ -70,8 +70,8 @@ function MobileStream({ offers }: { offers: LiveTickerOffer[] }) {
       key={`${current.id}-${cycle}`}
       href="/app/chat"
       onAnimationEnd={advance}
-      className="pv-ticker-item-x absolute top-1/2 -translate-y-1/2 whitespace-nowrap text-[13px] font-bold text-gold hover:[animation-play-state:paused]"
-      style={{ animationDuration: "12s" }}
+      className="pv-ticker-item-x absolute left-0 top-1/2 whitespace-nowrap text-[13px] font-bold text-gold hover:[animation-play-state:paused]"
+      style={{ animationDuration: "16s" }}
     >
       ✦ {current.text}
     </Link>
@@ -100,7 +100,7 @@ export function MobileOffersTicker({ initial }: { initial: TickerState }) {
   return (
     <div
       aria-label="Offers"
-      className="relative sticky top-12 z-40 h-10 shrink-0 overflow-hidden border-b border-gold/30 bg-navy md:hidden"
+      className="relative sticky top-0 z-40 h-10 shrink-0 overflow-hidden border-b border-gold/30 bg-navy md:hidden"
     >
       <MobileStream key={offers.map((o) => o.id).join(",")} offers={offers} />
     </div>

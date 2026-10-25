@@ -28,6 +28,7 @@ import {
 } from "../_actions";
 import type { AccountCard, ChatMessage } from "../_types";
 import { safeHref } from "@/lib/urls";
+import { setDrawerOpen } from "../_nav-drawer-store";
 
 /* ── body helpers ─────────────────────────────────────────────────────────── */
 
@@ -1357,9 +1358,23 @@ export default function ChatClient({
   })();
 
   return (
-    <div className="flex h-[calc(100dvh-3rem-var(--pv-ticker-h,0px))] flex-col md:h-dvh">
-      {/* Header — support identity, Messenger-style */}
+    <div className="flex h-[calc(100dvh-var(--pv-ticker-h,0px))] flex-col md:h-dvh">
+      {/* Header — support identity, Messenger-style. On mobile the
+          nav hamburger lives here (merged in) — the app header is
+          hidden on this page so the top never stacks three bars. */}
       <header className="flex shrink-0 items-center gap-3 border-b border-surface-border bg-navy px-4 py-3">
+        <button
+          type="button"
+          onClick={() => setDrawerOpen(true)}
+          aria-label="Open navigation menu"
+          className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-text-primary transition hover:bg-white/5 md:hidden"
+        >
+          <span className="flex flex-col gap-[5px]" aria-hidden="true">
+            <span className="block h-[2px] w-5 rounded bg-current" />
+            <span className="block h-[2px] w-5 rounded bg-current" />
+            <span className="block h-[2px] w-5 rounded bg-current" />
+          </span>
+        </button>
         <span className="relative flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-gold font-display text-[13px] font-extrabold text-black">
           PV
           <span className="absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full border-2 border-navy bg-success" />

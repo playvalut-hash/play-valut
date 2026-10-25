@@ -86,10 +86,12 @@ export default async function PlayerLayout({
       {/* Full-width on desktop like the admin app; the phone frame
           applies on mobile only. Navigation is a left sidebar on
           desktop (like the admin's player-list column) and a slim
-          header + hamburger drawer on mobile. Main gets side padding
-          on desktop so nothing sits flush against the window edges.
-          The offers ticker rides on the right on desktop and on top
-          (under the header) on mobile. */}
+          header + hamburger drawer on mobile (the header scrolls away
+          with the page; on the chat page it is hidden and its
+          hamburger lives in the Support header instead). Main gets
+          side padding on desktop so nothing sits flush against the
+          window edges. The offers ticker rides on the right on
+          desktop and pinned at the very top on mobile. */}
       <div
         id="pv-player-shell"
         className="relative flex min-h-dvh w-full max-w-[440px] flex-col bg-bg md:max-w-none md:flex-row"
