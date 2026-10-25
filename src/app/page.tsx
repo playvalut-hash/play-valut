@@ -28,8 +28,8 @@ const PAYMENTS = ["Cash App", "Venmo", "Zelle", "Chime", "Bitcoin"];
 const STEPS = [
   {
     n: "1",
-    title: "Create your account",
-    body: "Sign up in a minute — no downloads, everything runs in your browser.",
+    title: "Sign in",
+    body: "Sign in with Google or your email — no downloads, everything runs in your browser.",
   },
   {
     n: "2",
@@ -44,9 +44,11 @@ const STEPS = [
 ];
 
 /** Public marketing page (v3). Signed-in players skip it and land
- *  straight in the app; guests see the one-page site with Sign in /
- *  Create account. No admin link anywhere here — the player side
- *  never links to the admin app. */
+ *  straight in the app; guests see the one-page site with Sign in.
+ *  Registration is deliberately gone: new players enter with
+ *  Continue with Google on the login page (which creates their
+ *  account on first sign-in) or as a guest. No admin link anywhere
+ *  here — the player side never links to the admin app. */
 export default async function RootPage() {
   const supabase = await createClient();
   const {
@@ -69,16 +71,10 @@ export default async function RootPage() {
         <span className="flex items-center gap-2">
           <Link
             href="/login"
-            className="rounded-lg border border-[#232c3e] px-3.5 py-2 text-sm font-semibold text-[#eef2f7] transition hover:border-[#d4af37]/50"
-          >
-            Sign in
-          </Link>
-          <Link
-            href="/signup"
             className="rounded-lg px-3.5 py-2 text-sm font-bold text-[#241a02] transition hover:brightness-110"
             style={{ background: "#d4af37" }}
           >
-            Create account
+            Sign in
           </Link>
         </span>
       </header>
@@ -99,15 +95,9 @@ export default async function RootPage() {
           </p>
           <div className="mt-7 flex flex-col items-center justify-center gap-3 sm:flex-row">
             <Link
-              href="/signup"
+              href="/login"
               className="w-full rounded-xl px-6 py-3.5 text-center text-base font-bold text-[#241a02] transition hover:brightness-110 sm:w-auto"
               style={{ background: "#d4af37" }}
-            >
-              Create account
-            </Link>
-            <Link
-              href="/login"
-              className="w-full rounded-xl border border-[#232c3e] px-6 py-3.5 text-center text-base font-semibold transition hover:border-[#d4af37]/50 sm:w-auto"
             >
               Sign in
             </Link>
@@ -189,17 +179,14 @@ export default async function RootPage() {
 
         <section className="py-8 text-center">
           <Link
-            href="/signup"
+            href="/login"
             className="inline-block rounded-xl px-8 py-3.5 text-base font-bold text-[#241a02] transition hover:brightness-110"
             style={{ background: "#d4af37" }}
           >
-            Get started — create your account
+            Sign in
           </Link>
           <p className="mt-3 text-sm text-[#a7b2c3]">
-            Already a player?{" "}
-            <Link href="/login" className="font-bold text-[#d4af37] hover:underline">
-              Sign in
-            </Link>
+            New here? Sign in with Google — your account is created on first sign-in.
           </p>
         </section>
       </main>
@@ -209,10 +196,6 @@ export default async function RootPage() {
           {brand} ·{" "}
           <Link href="/login" className="hover:text-[#eef2f7]">
             Sign in
-          </Link>{" "}
-          ·{" "}
-          <Link href="/signup" className="hover:text-[#eef2f7]">
-            Create account
           </Link>{" "}
           ·{" "}
           <Link href="/privacy" className="hover:text-[#eef2f7]">

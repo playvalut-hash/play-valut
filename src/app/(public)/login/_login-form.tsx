@@ -80,13 +80,13 @@ export default function LoginForm({
       const supabase = createClient();
       const { error: guestErr } = await supabase.auth.signInAnonymously();
       if (guestErr) {
-        setNotice("Guest sign-in isn't enabled yet — sign in or create an account.");
+        setNotice("Guest sign-in isn't enabled yet — sign in with Google or email.");
         return;
       }
       router.push("/app");
       router.refresh();
     } catch {
-      setNotice("Guest sign-in isn't enabled yet — sign in or create an account.");
+      setNotice("Guest sign-in isn't enabled yet — sign in with Google or email.");
     }
   }
 
@@ -243,13 +243,6 @@ export default function LoginForm({
         >
           or continue as guest
         </button>
-
-        <p className="mt-6 text-center text-[14px]" style={{ color: "#a7b2c3" }}>
-          Don&apos;t have an account?{" "}
-          <Link href="/signup" className="font-bold text-gold hover:underline">
-            Sign up
-          </Link>
-        </p>
       </div>
     </div>
   );
