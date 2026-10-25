@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { EyeIcon, EyeOffIcon } from "@/components/icons";
 
-export default function SignupForm({ branding }: { branding: { brand_name: string } }) {
+export default function SignupForm() {
   const router = useRouter();
   const [displayName, setDisplayName] = useState("");
   const [email, setEmail] = useState("");
