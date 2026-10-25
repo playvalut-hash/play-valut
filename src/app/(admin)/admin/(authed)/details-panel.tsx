@@ -807,11 +807,22 @@ export default function DetailsPanel({
                 onChange={(e) => setSelectedGame(e.target.value)}
                 className="min-w-0 flex-1 rounded-lg border border-surface-border bg-surface-input px-3 py-2.5 text-[14px] text-text-primary"
               >
-                {creatableGames.map((g) => (
-                  <option key={g.id} value={g.id}>
-                    {g.name}
-                  </option>
-                ))}
+                {/* Every active game shows here (DB-driven, so a newly
+                    added active game appears automatically). Games the
+                    player already has are disabled + labelled instead of
+                    hidden — hiding them made the list look incomplete,
+                    and the browser's own dropdown scrolls when the list
+                    is taller than the screen. */}
+                {games.map((g) => {
+                  const owned = detail.accounts.some(
+                    (a) => a.gameId === g.id,
+                  );
+                  return (
+                    <option key={g.id} value={g.id} disabled={owned}>
+                      {owned ? `${g.name} — already has account` : g.name}
+                    </option>
+                  );
+                })}
               </select>
               <button
                 type="button"

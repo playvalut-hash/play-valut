@@ -76,7 +76,7 @@ export default async function PlayerLayout({
           nothing sits flush against the window edges. */}
       <div className="relative flex min-h-dvh w-full max-w-[440px] flex-col bg-bg md:max-w-none md:flex-row">
         <Tabs />
-        <main className="flex-1 pb-24 md:min-w-0 md:px-10 md:pb-0">
+        <main className="flex-1 px-4 pb-24 md:min-w-0 md:px-10 md:pb-0">
           {children}
         </main>
         <PresenceHeartbeat />
