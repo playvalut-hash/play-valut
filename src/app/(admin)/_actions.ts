@@ -14,6 +14,7 @@ import { z } from "zod";
 import { revalidatePath } from "next/cache";
 
 import { createClient } from "@/lib/supabase/server";
+import { computeOnline } from "@/lib/presence";
 import { createServiceClient } from "@/lib/supabase/service";
 import { decryptPassword, encryptPassword } from "@/lib/crypto";
 import { escapeLikePattern, normalizeTag } from "@/lib/utils";
@@ -282,14 +283,9 @@ async function audit(
  * A player counts as online only when is_online is set AND the last
  * heartbeat is fresh. last_seen_at arrives with migration 0013; until
  * then the separate fail-soft lookup just yields an empty map and the
- * flag alone decides — the inbox never breaks either way. */
-const ONLINE_WINDOW_MS = 75_000;
+ * flag alone decides — the inbox never breaks either way.
+ * computeOnline itself lives in @/lib/presence (v2 Phase 4, testable). */
 
-function computeOnline(isOnline: boolean, lastSeen: string | null | undefined): boolean {
-  if (!isOnline) return false;
-  if (!lastSeen) return true;
-  return Date.now() - new Date(lastSeen).getTime() < ONLINE_WINDOW_MS;
-}
 
 async function fetchLastSeenMap(
   client: ReturnType<typeof svc>,

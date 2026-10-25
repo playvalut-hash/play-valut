@@ -25,4 +25,13 @@ describe("security headers (audit M7)", () => {
     expect(map.has("Strict-Transport-Security")).toBe(false);
     expect(nextConfig.poweredByHeader).toBe(false);
   });
+
+  it("keeps the Build 50 screenshot body limit (server actions)", async () => {
+    // The 1 MB default silently killed real phone screenshots; the
+    // 9 MB limit is load-bearing for chat + deposit uploads.
+    const experimental = nextConfig.experimental as
+      | { serverActions?: { bodySizeLimit?: string } }
+      | undefined;
+    expect(experimental?.serverActions?.bodySizeLimit).toBe("9mb");
+  });
 });
