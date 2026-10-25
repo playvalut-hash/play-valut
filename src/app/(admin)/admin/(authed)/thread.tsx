@@ -477,7 +477,12 @@ export default function ThreadView({
   onTogglePanel?: () => void;
 }) {
   const [draft, setDraft] = useState("");
-  const [sending, setSending] = useState(false);
+  // Composer send queue: rapid sends must never wait on the send
+  // button. Each click echoes instantly and clears the composer at
+  // once; the server work runs in click order on this chain, so no
+  // message is lost and server order always matches send order. The
+  // button is therefore never disabled by an in-flight send.
+  const sendQueueRef = useRef<Promise<void>>(Promise.resolve());
   const [sendListBusy, setSendListBusy] = useState<"games" | "pay" | "single" | "single-method" | null>(null);
   const [gamesOpen, setGamesOpen] = useState(false);
   const [payOpen, setPayOpen] = useState(false);
@@ -634,20 +639,21 @@ export default function ThreadView({
 
   async function sendText() {
     const text = draft.trim();
-    if (!text || sending) return;
+    if (!text) return;
     const echo = makeEcho("text", { text });
     onAppendOptimistic?.(echo);
     setDraft("");
-    setSending(true);
-    try {
-      await sendAdminMessage(admin.id, { playerId: player.id, text });
-      await changed();
-    } catch {
-      onDropOptimistic?.(echo.id);
-      setDraft(text);
-    } finally {
-      setSending(false);
-    }
+    const work = sendQueueRef.current.then(async () => {
+      try {
+        await sendAdminMessage(admin.id, { playerId: player.id, text });
+        await changed();
+      } catch {
+        onDropOptimistic?.(echo.id);
+        // Restore the lost message without clobbering text typed since.
+        setDraft((prev) => (prev ? `${text}\n${prev}` : text));
+      }
+    });
+    sendQueueRef.current = work.catch(() => {});
   }
 
   // Text shortcuts (Build 59): enabled shortcuts load once per admin and
@@ -682,7 +688,6 @@ export default function ThreadView({
   const imageInputRef = useRef<HTMLInputElement>(null);
 
   async function sendImageFile(file: File) {
-    if (sending) return;
     if (!file.type.startsWith("image/") || file.size > 8 * 1024 * 1024) return;
     const url = URL.createObjectURL(file);
     const echo = makeEcho("shot", {
@@ -691,19 +696,19 @@ export default function ThreadView({
     });
     echoUrlsRef.current.set(echo.id, url);
     onAppendOptimistic?.(echo);
-    setSending(true);
-    try {
-      const fd = new FormData();
-      fd.append("screenshot", file);
-      await adminSendChatImage(admin.id, player.id, fd);
-      await changed();
-    } catch {
-      onDropOptimistic?.(echo.id);
-      URL.revokeObjectURL(url);
-      echoUrlsRef.current.delete(echo.id);
-    } finally {
-      setSending(false);
-    }
+    const work = sendQueueRef.current.then(async () => {
+      try {
+        const fd = new FormData();
+        fd.append("screenshot", file);
+        await adminSendChatImage(admin.id, player.id, fd);
+        await changed();
+      } catch {
+        onDropOptimistic?.(echo.id);
+        URL.revokeObjectURL(url);
+        echoUrlsRef.current.delete(echo.id);
+      }
+    });
+    sendQueueRef.current = work.catch(() => {});
   }
 
   async function sendList(kind: "games" | "pay") {
@@ -1014,7 +1019,6 @@ export default function ThreadView({
         <button
           type="button"
           onClick={() => imageInputRef.current?.click()}
-          disabled={sending}
           aria-label="Send an image"
           title="Send an image (or paste one)"
           className="admin-focus flex h-[42px] w-[42px] shrink-0 items-center justify-center rounded-full border border-surface-border text-text-secondary transition hover:text-gold disabled:opacity-40"
@@ -1068,7 +1072,7 @@ export default function ThreadView({
         <button
           type="button"
           onClick={sendText}
-          disabled={sending || !draft.trim()}
+          disabled={!draft.trim()}
           aria-label="Send message"
           className="admin-focus flex h-[42px] w-[42px] shrink-0 items-center justify-center rounded-full bg-gold text-navy transition-opacity hover:opacity-90 disabled:opacity-40"
         >

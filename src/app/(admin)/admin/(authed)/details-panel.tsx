@@ -493,6 +493,7 @@ export default function DetailsPanel({
   onMutated,
   onAppendOptimistic,
   onDropOptimistic,
+  onClearOptimistic,
   onDetailPatch,
 }: {
   admin: AdminInfo;
@@ -503,6 +504,8 @@ export default function DetailsPanel({
    *  reverted on failure, overwritten by server truth on refresh. */
   onAppendOptimistic?: (msg: ChatMessageView) => void;
   onDropOptimistic?: (id: string) => void;
+  /** Instant thread blank on clear confirm; the server delete runs after. */
+  onClearOptimistic?: (playerId: string, olderThanDays?: number) => void;
   onDetailPatch?: (
     playerId: string,
     patch: { tags?: string[]; accounts?: AdminAccountView[] },
@@ -514,6 +517,7 @@ export default function DetailsPanel({
   const [viewer, setViewer] = useState<{ src: string; caption: string } | null>(null);
   const [pending, setPending] = useState<null | "block" | "clear" | "delete">(null);
   const [clearMode, setClearMode] = useState<"all" | "5" | "10" | "custom">("all");
+  const [clearError, setClearError] = useState<string | null>(null);
   const [customDays, setCustomDays] = useState("");
   const [selectedGame, setSelectedGame] = useState(games[0]?.id ?? "");
   const [creating, setCreating] = useState(false);
@@ -927,6 +931,7 @@ export default function DetailsPanel({
                 onClick={() => {
                   setClearMode("all");
                   setCustomDays("");
+                  setClearError(null);
                   setPending("clear");
                 }}
                 className="w-full rounded-lg border border-amber-500/50 bg-amber-500/10 px-3 py-2.5 text-[13px] font-bold text-amber-400 hover:bg-amber-500/20 disabled:opacity-40"
@@ -943,6 +948,11 @@ export default function DetailsPanel({
               >
                 Delete player (permanent)
               </button>
+            )}
+            {clearError && (
+              <p className="rounded-lg border border-red-500/30 bg-red-500/5 px-3 py-2 text-[12px] leading-relaxed text-red-300">
+                {clearError}
+              </p>
             )}
             <p className="px-1 text-[11px] leading-relaxed text-text-muted">
               Clear chat removes messages only. Delete removes the player, their game
@@ -1055,7 +1065,23 @@ export default function DetailsPanel({
                         : clearMode === "custom"
                           ? Number.parseInt(customDays, 10)
                           : Number.parseInt(clearMode, 10);
-                    await run(() => clearPlayerChat(admin.id, detail.player.id, days));
+                    // UI blanks INSTANTLY; the server delete (rows +
+                    // storage objects) takes seconds to catch up.
+                    onClearOptimistic?.(detail.player.id, days);
+                    setClearError(null);
+                    setBusy(true);
+                    try {
+                      await clearPlayerChat(admin.id, detail.player.id, days);
+                      if (onMutated) await onMutated();
+                    } catch {
+                      // Rows are still in the DB — refetch restores them.
+                      if (onMutated) await onMutated();
+                      setClearError(
+                        "Clear failed — the chat was not deleted. Please try again.",
+                      );
+                    } finally {
+                      setBusy(false);
+                    }
                   } else {
                     await run(() => deletePlayer(admin.id, detail.player.id));
                   }

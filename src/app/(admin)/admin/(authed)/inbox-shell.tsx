@@ -331,6 +331,40 @@ export default function InboxShell({
   const dropOptimistic = useCallback((id: string) => {
     setOptimisticMsgs((prev) => prev.filter((m) => m.id !== id));
   }, []);
+  /* Optimistic clear: the thread blanks the instant the admin confirms
+     — even though the server delete (rows + storage objects) takes
+     seconds. The cache entry is filtered too, so reopening the player
+     cannot resurrect cleared rows while the delete is still running.
+     On failure the caller refetches (server truth restores the view;
+     in-flight echoes reappear when their own sends land). */
+  const clearThreadOptimistic = useCallback(
+    (playerId: string, olderThanDays?: number) => {
+      const cutoff =
+        olderThanDays === undefined
+          ? null
+          : Date.now() - olderThanDays * 24 * 60 * 60 * 1000;
+      // Scoped clear keeps the recent days; full clear keeps nothing.
+      const keep = (m: ChatMessageView) =>
+        cutoff !== null && Date.parse(m.createdAt) >= cutoff;
+      const entry = cache.get(playerId);
+      if (entry) {
+        cache.set(playerId, {
+          thread: entry.thread.filter(keep),
+          detail: entry.detail,
+        });
+      }
+      if (selectedIdRef.current === playerId) {
+        const next = threadRef.current.filter(keep);
+        threadRef.current = next;
+        setThread(next);
+        if (cutoff === null) hasOlderRef.current = false;
+      }
+      setOptimisticMsgs((prev) =>
+        prev.filter((m) => m.playerId !== playerId || keep(m)),
+      );
+    },
+    [cache],
+  );
   const patchDetailOptimistic = useCallback(
     (
       playerId: string,
@@ -911,6 +945,7 @@ export default function InboxShell({
               onMutated={refreshSelected}
               onAppendOptimistic={appendOptimistic}
               onDropOptimistic={dropOptimistic}
+              onClearOptimistic={clearThreadOptimistic}
               onDetailPatch={patchDetailOptimistic}
             />
           </div>
