@@ -733,7 +733,7 @@ function MessageView({
     return <ShotMessage message={message} resolvedUrl={resolvedShotUrl} />;
   if (message.kind === "account")
     return <AccountCardMessage message={message} resolvedCard={resolvedCard} />;
-  if (message.kind === "system") {
+  if (message.kind === "system" || message.kind === "player_note") {
     return (
       <div className="flex justify-center">
         <p className="max-w-[85%] rounded-full bg-surface-card px-4 py-1.5 text-center text-xs italic text-text-secondary">

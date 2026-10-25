@@ -90,7 +90,12 @@ export type ChatKind =
   | "pay_list"
   | "payment_card"
   | "shot"
-  | "system";
+  | "system"
+  // Side-specific notes (already-active picks): a note only its own side
+  // may see. Admin read paths filter the player side's kind out (plus
+  // the legacy kind="text" wordings below, which predate these kinds).
+  | "player_note"
+  | "admin_note";
 
 export interface ThreadAccountCard {
   gameId: string;
@@ -1040,6 +1045,27 @@ async function resolveThreadViews(
 }
 
 /** Full chat thread for one player, with card/list payloads resolved server-side. */
+/**
+ * True when a thread row must NOT reach the admin app: the player's
+ * already-created note, new kind or legacy wording. Callers filter with
+ * this after fetching (one mechanism for new + legacy rows).
+ */
+function isPlayerOnlyMessage(m: {
+  kind: string;
+  sender: string;
+  body: Record<string, unknown>;
+}): boolean {
+  if (m.kind === "player_note") return true;
+  if (m.kind !== "text" || m.sender !== "system") return false;
+  const text = typeof m.body["text"] === "string" ? m.body["text"] : "";
+  if (text === "Your this account is already created — please check here.")
+    return true;
+  return (
+    text.startsWith("You already have a ") &&
+    text.includes("right here in our chat")
+  );
+}
+
 export async function getThread(playerId: string): Promise<ChatMessageView[]> {
   await requireSessionAdmin();
   z.string().uuid().parse(playerId);
@@ -1062,9 +1088,18 @@ export async function getThread(playerId: string): Promise<ChatMessageView[]> {
     client.from("payment_methods").select("id, name"),
   ]);
 
+  // Side-specific notes: the player's already-created note never reaches
+  // the admin app (new kind + legacy wordings, see isPlayerOnlyMessage).
+  const visibleRows = (
+    (messagesRes.data ?? []) as Array<{
+      kind: string;
+      sender: string;
+      body: Record<string, unknown>;
+    }>
+  ).filter((m) => !isPlayerOnlyMessage(m));
   return resolveThreadViews(
     client,
-    messagesRes.data,
+    visibleRows,
     gamesRes.data,
     methodsRes.data,
   );
@@ -1105,9 +1140,19 @@ export async function getThreadOlder(
   const rows = ((messagesRes.data ?? []) as unknown[]).slice();
   const hasMore = rows.length > 200;
   const page = hasMore ? rows.slice(0, 200) : rows;
+  // Side-specific notes (see isPlayerOnlyMessage): the player's
+  // already-created note never reaches the admin app. hasMore stays
+  // computed on raw rows — there are more rows below, just filtered.
+  const visiblePage = (
+    page as Array<{
+      kind: string;
+      sender: string;
+      body: Record<string, unknown>;
+    }>
+  ).filter((m) => !isPlayerOnlyMessage(m));
   const views = await resolveThreadViews(
     client,
-    page,
+    visiblePage,
     gamesRes.data,
     methodsRes.data,
   );

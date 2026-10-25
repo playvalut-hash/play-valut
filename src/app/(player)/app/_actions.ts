@@ -23,6 +23,7 @@ import type {
   MessageKind,
   PaymentMethod,
 } from "./_types";
+import { isAdminOnlyMessage } from "./_types";
 
 /* ── input schemas (PRD §7.5: zod on every server action input) ─────────── */
 
@@ -213,22 +214,6 @@ async function createOrReturnAccount(
   };
 }
 
-/** Does an account card message for this account already exist in the thread? */
-async function accountCardExists(
-  playerId: string,
-  accountId: string,
-): Promise<boolean> {
-  const service = createServiceClient();
-  const { data } = await service
-    .from("chat_messages")
-    .select("id")
-    .eq("player_id", playerId)
-    .eq("kind", "account")
-    .eq("body->>account_id", accountId)
-    .limit(1);
-  return (data?.length ?? 0) > 0;
-}
-
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 /**
@@ -253,24 +238,20 @@ async function deliverAccount(playerId: string, game: Game): Promise<void> {
   const { accountId, status, created } = await createOrReturnAccount(playerId, game.id);
 
   if (!created) {
-    const exists = await accountCardExists(playerId, accountId);
-    if (exists) {
-      await insertSystemMessage(playerId, "text", {
-        text: "Your this account is already created — please check here.",
-      });
-    } else {
-      // Account exists but was made from the lobby: surface the saved card,
-      // plus the same already-created note so the player does not mistake
-      // it for a brand-new account.
-      await insertSystemMessage(playerId, "account", {
-        game_id: game.id,
-        account_id: accountId,
-        status,
-      });
-      await insertSystemMessage(playerId, "text", {
-        text: "Your this account is already created — please check here.",
-      });
-    }
+    // Account exists: surface the saved card again (well-formatted card,
+    // same component as a new account — not a duplicate account, just
+    // the card message at this point in the thread), then the
+    // player-only note. The admin-only discussion note + bell follow in
+    // the active branch below; each side's read path filters the other
+    // side's note out, so each side sees only its own relevant message.
+    await insertSystemMessage(playerId, "account", {
+      game_id: game.id,
+      account_id: accountId,
+      status,
+    });
+    await insertSystemMessage(playerId, "player_note", {
+      text: "Your this account is already created — please check here.",
+    });
     // Already-created AND active: the admin must be told, not just shown
     // a card. This path used to ring no bell at all — unlike a new
     // request, no notification row was created, so the admin saw nothing
@@ -293,7 +274,7 @@ async function deliverAccount(playerId: string, game: Game): Promise<void> {
         `${name} picked ${game.name} (already active) — needs discussion`,
         accountId,
       );
-      await insertSystemMessage(playerId, "text", {
+      await insertSystemMessage(playerId, "admin_note", {
         text: `${name} want to play this game that already created and active please further discuss them!`,
       });
     }
@@ -630,7 +611,11 @@ export async function getThread(): Promise<ChatMessage[]> {
     .order("created_at", { ascending: false })
     .order("id", { ascending: false })
     .limit(500);
-  return ((data ?? []) as unknown as ChatMessage[]).reverse();
+  // Side-specific notes (see _types): the admin's discussion note never
+  // reaches the player app.
+  return ((data ?? []) as unknown as ChatMessage[])
+    .filter((m) => !isAdminOnlyMessage(m))
+    .reverse();
 }
 
 const threadOlderCursorSchema = z.object({
@@ -669,7 +654,10 @@ export async function getThreadOlder(
   const rows = ((data ?? []) as unknown as ChatMessage[]).slice();
   const hasMore = rows.length > 200;
   const page = hasMore ? rows.slice(0, 200) : rows;
-  return { messages: page.reverse(), hasMore };
+  // Side-specific notes (see _types): the admin's discussion note never
+  // reaches the player app. hasMore stays computed on raw rows — there
+  // are more rows below, just filtered from this page.
+  return { messages: page.filter((m) => !isAdminOnlyMessage(m)).reverse(), hasMore };
 }
 
 /** Mark admin/system messages as read by the player. */

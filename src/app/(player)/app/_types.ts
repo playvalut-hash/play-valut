@@ -60,7 +60,30 @@ export type MessageKind =
   | "pay_list"
   | "payment_card"
   | "shot"
-  | "system";
+  | "system"
+  // Side-specific notes (already-active picks): a note only its own side
+  // may see. Read paths filter the other side's kind out (plus the
+  // legacy kind="text" wordings below, which predate these kinds).
+  | "player_note"
+  | "admin_note";
+
+/**
+ * True when a thread row must NOT reach the player app: the admin's
+ * discussion note, new kind or legacy wording. Callers filter with this
+ * after fetching (one mechanism for new + legacy rows).
+ */
+export function isAdminOnlyMessage(m: {
+  kind: string;
+  sender: string;
+  body: Record<string, unknown>;
+}): boolean {
+  if (m.kind === "admin_note") return true;
+  if (m.kind !== "text" || m.sender !== "system") return false;
+  const text = typeof m.body["text"] === "string" ? m.body["text"] : "";
+  return text.includes(
+    "that already created and active please further discuss them!",
+  );
+}
 
 export interface ChatMessage {
   id: string;

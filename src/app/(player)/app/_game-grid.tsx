@@ -25,12 +25,11 @@ function GameTile({ tile, isPaid }: { tile: TileData; isPaid: boolean }) {
       aria-label={`${game.name} — ${accountStatus ? "account ready" : "get an account"}`}
     >
       <span
-        className="gtile-art relative block overflow-hidden"
+        className="gtile-art relative mx-auto block w-full max-w-[180px] overflow-hidden"
         style={{
           background: `linear-gradient(135deg, ${c1}, ${c2})`,
           borderRadius: "16px",
           aspectRatio: "1 / 1",
-          maxHeight: "82px",
         }}
       >
         {game.icon_path ? (
@@ -171,7 +170,7 @@ export default function GameGrid({
             No games match “{query}”.
           </p>
         ) : (
-          <div className="mt-3 grid grid-cols-3 gap-[11px] pb-6">
+          <div className="mt-3 grid grid-cols-3 gap-3 pb-6 md:grid-cols-4 lg:grid-cols-5">
             {filtered.map((tile) => (
               <GameTile key={tile.game.id} tile={tile} isPaid={isPaid} />
             ))}

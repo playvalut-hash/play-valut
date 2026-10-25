@@ -2,6 +2,7 @@ import { createClient } from "@/lib/supabase/server";
 import { decryptPassword } from "@/lib/crypto";
 
 import type { AccountCard, ChatMessage } from "../_types";
+import { isAdminOnlyMessage } from "../_types";
 import ChatClient from "./_chat-client";
 
 /**
@@ -33,7 +34,11 @@ export default async function ChatPage() {
     .order("created_at", { ascending: false })
     .limit(500);
 
-  const initialMessages = ((data ?? []) as unknown as ChatMessage[]).reverse();
+  // Side-specific notes: the admin's discussion note never reaches the
+  // player app (new kind + legacy wordings, see _types).
+  const initialMessages = (
+    (data ?? []) as unknown as ChatMessage[]
+  ).filter((m) => !isAdminOnlyMessage(m)).reverse();
 
   // ── Batch-resolve account cards (one query for all cards in the thread) ──
   const accountIds = [

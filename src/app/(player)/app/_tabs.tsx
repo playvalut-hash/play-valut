@@ -12,9 +12,9 @@ import {
 
 const TABS = [
   { href: "/app", label: "Home", Icon: HomeIcon },
+  { href: "/app/chat", label: "Chat", Icon: ChatIcon },
   { href: "/app/accounts", label: "Accounts", Icon: GamepadIcon },
   { href: "/app/wallet", label: "Wallet", Icon: WalletIcon },
-  { href: "/app/chat", label: "Chat", Icon: ChatIcon },
   { href: "/app/menu", label: "Menu", Icon: UserIcon },
 ] as const;
 
