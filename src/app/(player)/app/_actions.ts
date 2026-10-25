@@ -1048,14 +1048,17 @@ export async function touchPresence(online: boolean): Promise<void> {
 }
 
 /* ── Offers ticker (migration 0026) ──────────────────────────────────────
- * What the player layout renders: every ACTIVE offer (admin order) +
+ * What the player layout renders: every LIVE offer (admin order) +
  * the global switch. Fails soft to "no ticker" on ANY error — before
  * migration 0026 runs, the tables don't exist and the player app must
  * keep working exactly as before. No caching here: an offer the admin
- * just added must show on the player's next page load. */
+ * just added must show on the player's next page load — and the live
+ * ticker (see _ticker-sync) refetches this on every realtime event,
+ * so open pages update without any reload at all. Expired rows are
+ * filtered here by server time, and again client-side by the sweep. */
 export async function getTickerState(): Promise<{
   enabled: boolean;
-  offers: Array<{ id: string; text: string }>;
+  offers: Array<{ id: string; text: string; expiresAt: string | null }>;
 }> {
   try {
     const service = createServiceClient();
@@ -1067,7 +1070,7 @@ export async function getTickerState(): Promise<{
         .maybeSingle(),
       service
         .from("offers")
-        .select("id, text, is_active, sort_order, created_at")
+        .select("id, text, is_active, sort_order, created_at, expires_at")
         .eq("is_active", true)
         .order("sort_order", { ascending: true })
         .order("created_at", { ascending: true }),
@@ -1076,11 +1079,26 @@ export async function getTickerState(): Promise<{
     const enabled = settings
       ? (settings as { ticker_enabled: boolean }).ticker_enabled
       : true;
+    const nowMs = Date.now();
+    const live = ((rows ?? []) as Array<{
+      id: string;
+      text: string;
+      is_active: boolean;
+      sort_order: number;
+      created_at: string;
+      expires_at: string | null;
+    }>).filter(
+      (r) =>
+        r.is_active &&
+        (!r.expires_at || new Date(r.expires_at).getTime() > nowMs),
+    );
     return {
       enabled,
-      offers: ((rows ?? []) as Array<{ id: string; text: string }>).map(
-        (r) => ({ id: r.id, text: r.text }),
-      ),
+      offers: live.map((r) => ({
+        id: r.id,
+        text: r.text,
+        expiresAt: r.expires_at,
+      })),
     };
   } catch {
     return { enabled: false, offers: [] };

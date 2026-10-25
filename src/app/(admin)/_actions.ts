@@ -3293,6 +3293,10 @@ export interface OfferRow {
   is_active: boolean;
   sort_order: number;
   created_at: string;
+  expires_at: string | null;
+  // Computed server-side at list time (server clock), so the client
+  // never calls Date.now() during render (React purity rule).
+  expired: boolean;
 }
 
 type OfferResult =
@@ -3307,6 +3311,8 @@ const offerSchema = z.object({
     .max(120, "Keep the offer under 120 characters so it fits the ticker"),
   sortOrder: z.number().int().min(0).max(999).default(0),
   isActive: z.boolean().default(true),
+  // null = never expires; undefined (update only) = keep the current end.
+  expiresAt: z.string().datetime().nullable().optional(),
 });
 
 const MIGRATION_0026_MSG =
@@ -3325,13 +3331,21 @@ export async function listOffers(
   try {
     const { data, error } = await svc()
       .from("offers")
-      .select("id, text, is_active, sort_order, created_at")
+      .select("id, text, is_active, sort_order, created_at, expires_at")
       .order("sort_order", { ascending: true })
       .order("created_at", { ascending: true });
     if (error) {
       return { offers: [], needsMigration: isMissingOffersTable(error) };
     }
-    return { offers: (data ?? []) as OfferRow[], needsMigration: false };
+    const nowMs = Date.now();
+    const offers = ((data ?? []) as Array<
+      Omit<OfferRow, "expired"> & { expires_at: string | null }
+    >).map((r) => ({
+      ...r,
+      expired:
+        !!r.expires_at && new Date(r.expires_at).getTime() <= nowMs,
+    }));
+    return { offers, needsMigration: false };
   } catch {
     return { offers: [], needsMigration: true };
   }
@@ -3339,13 +3353,19 @@ export async function listOffers(
 
 export async function createOffer(
   adminId: string,
-  input: { text: string; sortOrder?: number; isActive?: boolean },
+  input: {
+    text: string;
+    sortOrder?: number;
+    isActive?: boolean;
+    expiresAt?: string | null;
+  },
 ): Promise<OfferResult> {
   await requireAdmin(adminId);
   const parsed = offerSchema.safeParse({
     text: input.text,
     sortOrder: input.sortOrder ?? 0,
     isActive: input.isActive ?? true,
+    expiresAt: input.expiresAt ?? null,
   });
   if (!parsed.success) {
     return { ok: false, error: parsed.error.issues[0]?.message ?? "Invalid offer" };
@@ -3356,6 +3376,7 @@ export async function createOffer(
       text: parsed.data.text,
       sort_order: parsed.data.sortOrder,
       is_active: parsed.data.isActive,
+      expires_at: parsed.data.expiresAt,
     })
     .select("id")
     .single();
@@ -3375,25 +3396,39 @@ export async function createOffer(
 export async function updateOffer(
   adminId: string,
   id: string,
-  input: { text: string; sortOrder?: number; isActive?: boolean },
+  input: {
+    text: string;
+    sortOrder?: number;
+    isActive?: boolean;
+    expiresAt?: string | null;
+  },
 ): Promise<OfferResult> {
   await requireAdmin(adminId);
   const parsed = offerSchema.safeParse({
     text: input.text,
     sortOrder: input.sortOrder ?? 0,
     isActive: input.isActive ?? true,
+    expiresAt: input.expiresAt,
   });
   if (!parsed.success) {
     return { ok: false, error: parsed.error.issues[0]?.message ?? "Invalid offer" };
   }
-  const { error } = await svc()
-    .from("offers")
-    .update({
-      text: parsed.data.text,
-      sort_order: parsed.data.sortOrder,
-      is_active: parsed.data.isActive,
-    })
-    .eq("id", id);
+  // expiresAt undefined (form "keep") leaves the current end untouched;
+  // an explicit value (or null) overwrites it.
+  const patch: {
+    text: string;
+    sort_order: number;
+    is_active: boolean;
+    expires_at?: string | null;
+  } = {
+    text: parsed.data.text,
+    sort_order: parsed.data.sortOrder,
+    is_active: parsed.data.isActive,
+  };
+  if (parsed.data.expiresAt !== undefined) {
+    patch.expires_at = parsed.data.expiresAt;
+  }
+  const { error } = await svc().from("offers").update(patch).eq("id", id);
   if (error) {
     return {
       ok: false,

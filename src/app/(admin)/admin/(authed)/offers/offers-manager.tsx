@@ -19,6 +19,25 @@ import {
   XIcon,
 } from "@/components/icons";
 
+type ExpiryChoice =
+  | "keep"
+  | "never"
+  | "1"
+  | "10"
+  | "30"
+  | "60"
+  | "360"
+  | "1440";
+
+const EXPIRY_OPTIONS: Array<{ value: ExpiryChoice; label: string }> = [
+  { value: "1", label: "1 minute (flash / test)" },
+  { value: "10", label: "10 minutes" },
+  { value: "30", label: "30 minutes" },
+  { value: "60", label: "1 hour" },
+  { value: "360", label: "6 hours" },
+  { value: "1440", label: "24 hours" },
+];
+
 function OfferForm({
   initial,
   admin,
@@ -35,6 +54,12 @@ function OfferForm({
     initial ? String(initial.sort_order) : "0",
   );
   const [isActive, setIsActive] = useState(initial?.is_active ?? true);
+  // Editing an offer with a live end date defaults to keeping it, so a
+  // plain text edit never silently clears the expiry.
+  const hasLiveEnd = !!initial?.expires_at && !initial.expired;
+  const [expiry, setExpiry] = useState<ExpiryChoice>(
+    hasLiveEnd ? "keep" : "never",
+  );
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
@@ -47,16 +72,26 @@ function OfferForm({
     setError(null);
     setSaving(true);
     try {
+      // keep = omit (update leaves the current end alone);
+      // never = null; a duration = now + minutes.
+      const expiresAt =
+        expiry === "keep"
+          ? undefined
+          : expiry === "never"
+            ? null
+            : new Date(Date.now() + Number(expiry) * 60000).toISOString();
       const res = initial
         ? await updateOffer(admin.id, initial.id, {
             text,
             sortOrder: Number(sortOrder) || 0,
             isActive,
+            expiresAt,
           })
         : await createOffer(admin.id, {
             text,
             sortOrder: Number(sortOrder) || 0,
             isActive,
+            expiresAt,
           });
       if (!res.ok) {
         setError(res.error);
@@ -108,7 +143,7 @@ function OfferForm({
           className={inputCls}
         />
         <span className="mt-1 block text-right text-[11px] text-text-muted">
-          {text.length}/120
+          {text.length}/120 · under 60 reads instantly on the mobile bar
         </span>
       </label>
 
@@ -124,16 +159,40 @@ function OfferForm({
             className={inputCls}
           />
         </label>
-        <label className="flex items-end gap-2 pb-1.5">
-          <input
-            type="checkbox"
-            checked={isActive}
-            onChange={(e) => setIsActive(e.target.checked)}
-            className="admin-focus h-4 w-4 accent-[#D4AF37]"
-          />
-          <span className="text-[13px] text-text-primary">Active</span>
+        <label className="block">
+          <span className={labelCls}>
+            Ends after
+            {hasLiveEnd && initial?.expires_at
+              ? ` (currently ${new Date(initial.expires_at).toLocaleString()})`
+              : ""}
+          </span>
+          <select
+            value={expiry}
+            onChange={(e) => setExpiry(e.target.value as ExpiryChoice)}
+            className={inputCls}
+          >
+            {hasLiveEnd && (
+              <option value="keep">Keep current end</option>
+            )}
+            <option value="never">Never (runs until paused/deleted)</option>
+            {EXPIRY_OPTIONS.map((o) => (
+              <option key={o.value} value={o.value}>
+                {o.label}
+              </option>
+            ))}
+          </select>
         </label>
       </div>
+
+      <label className="mt-3 flex items-center gap-2">
+        <input
+          type="checkbox"
+          checked={isActive}
+          onChange={(e) => setIsActive(e.target.checked)}
+          className="admin-focus h-4 w-4 accent-[#D4AF37]"
+        />
+        <span className="text-[13px] text-text-primary">Active</span>
+      </label>
 
       <div className="mt-4 flex justify-end gap-2">
         <button
@@ -232,8 +291,8 @@ export default function OffersManager({
           role="alert"
           className="mb-3 rounded-md border border-danger/40 bg-danger/10 px-3 py-2 text-xs text-danger"
         >
-          Offers need migration 0026 — please run it in the SQL Editor
-          first. Adding offers is disabled until then.
+          Offers need migrations 0026–0027 — please run them in the SQL
+          Editor first. Adding offers is disabled until then.
         </div>
       )}
       {actionError && (
@@ -296,15 +355,31 @@ export default function OffersManager({
             it stays above the support chat too.
           </li>
           <li>
+            <strong className="text-text-primary">Instant, no
+            reload:</strong> an added, edited, paused or deleted offer
+            — and the switch above — reaches every open player page
+            within seconds. Players never need to refresh.
+          </li>
+          <li>
+            <strong className="text-text-primary">Expiry:</strong> pick
+            how long an offer runs (1 minute to 24 hours, or Never).
+            When the time passes it vanishes from the ticker on its own
+            — it stays in this list marked Expired until you delete it.
+          </li>
+          <li>
+            Tapping an offer on the player side opens support chat, so
+            an interested player is one tap from asking about it.
+          </li>
+          <li>
             <strong className="text-text-primary">Order</strong> decides
             the sequence (lowest first); equal orders run oldest first.
             Short text works best — under 60 characters reads instantly
-            on the mobile bar.
+            on the mobile bar — and 3–5 active offers at a time is the
+            sweet spot, so no offer waits long to come around again.
           </li>
           <li>
             Pause one offer without deleting it with its Active button;
-            turn the whole ticker off with the switch above. A new or
-            edited offer appears on each player&apos;s next page load.
+            turn the whole ticker off with the switch above.
           </li>
         </ul>
       </div>
@@ -343,7 +418,18 @@ export default function OffersManager({
               </p>
               <p className="mt-1.5 text-[11px] text-text-secondary">
                 Order {o.sort_order} ·{" "}
-                {o.is_active ? "Active — in the ticker" : "Paused"}
+                {o.expired ? (
+                  <span className="text-danger">
+                    Expired — not in ticker
+                  </span>
+                ) : o.is_active ? (
+                  "Active — in the ticker"
+                ) : (
+                  "Paused"
+                )}
+                {o.expires_at && !o.expired && (
+                  <> · Ends {new Date(o.expires_at).toLocaleString()}</>
+                )}
               </p>
               <div className="mt-3 flex items-center gap-1.5">
                 <button

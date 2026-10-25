@@ -5,6 +5,7 @@ import { getTickerState, signOut } from "./_actions";
 import PresenceHeartbeat from "./_presence";
 import Tabs from "./_tabs";
 import { DesktopOffersRail, MobileOffersTicker } from "./_offers-ticker";
+import TickerSync from "./_ticker-sync";
 
 /** All pages here are auth-gated: skip prerendering. */
 export const instant = false;
@@ -68,13 +69,17 @@ export default async function PlayerLayout({
     );
   }
 
-  // Offers ticker (migration 0026): every active offer, every player.
-  // Fails soft pre-migration (no ticker, no crash). The mobile bar is
-  // 2.5rem tall, so the chat's mobile height subtracts it via the
-  // --pv-ticker-h variable (desktop rail needs no such adjustment).
+  // Offers ticker (migrations 0026/0027): every live offer, every
+  // player. Fails soft pre-migration (no ticker, no crash). The bar,
+  // rail and sync engine render UNCONDITIONALLY — they return null
+  // while hidden but stay subscribed, so the ticker appears,
+  // disappears and reorders live with no page reload. The mobile bar
+  // is 2.5rem tall, so the chat's mobile height subtracts it via the
+  // --pv-ticker-h variable (the sync engine keeps that variable true
+  // as the ticker changes live; desktop rail needs no adjustment).
   const ticker = await getTickerState();
+  const initialTicker = { enabled: ticker.enabled, offers: ticker.offers };
   const showTicker = ticker.enabled && ticker.offers.length > 0;
-  const offerTexts = ticker.offers.map((o) => o.text);
 
   return (
     <div className="min-h-dvh bg-near-black flex justify-center">
@@ -85,15 +90,20 @@ export default async function PlayerLayout({
           nothing sits flush against the window edges. The offers
           ticker rides on the right on desktop and on top on mobile. */}
       <div
+        id="pv-player-shell"
         className="relative flex min-h-dvh w-full max-w-[440px] flex-col bg-bg md:max-w-none md:flex-row"
         style={{ "--pv-ticker-h": showTicker ? "2.5rem" : "0px" } as React.CSSProperties}
       >
         <Tabs />
-        {showTicker ? <MobileOffersTicker offers={offerTexts} /> : null}
+        <TickerSync
+          initialEnabled={ticker.enabled}
+          initialOffers={ticker.offers}
+        />
+        <MobileOffersTicker initial={initialTicker} />
         <main className="flex-1 pb-24 md:min-w-0 md:px-10 md:pb-0">
           {children}
         </main>
-        {showTicker ? <DesktopOffersRail offers={offerTexts} /> : null}
+        <DesktopOffersRail initial={initialTicker} />
         <PresenceHeartbeat />
       </div>
     </div>

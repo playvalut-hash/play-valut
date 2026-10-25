@@ -1,6 +1,16 @@
-import { tickerDurationSeconds } from "@/lib/offers";
+"use client";
 
-/** Offers ticker — pure CSS animation, no client JS.
+import { useEffect, useState } from "react";
+import Link from "next/link";
+
+import { tickerDurationSeconds } from "@/lib/offers";
+import {
+  getTickerSnapshot,
+  subscribeTicker,
+  type TickerState,
+} from "./_ticker-store";
+
+/** Offers ticker — live, no page reload.
  *
  * - Mobile: a top bar that scrolls right-to-left, news-ticker style.
  *   It sits above every player page (including the support chat) and
@@ -8,11 +18,26 @@ import { tickerDurationSeconds } from "@/lib/offers";
  * - Desktop: a right rail, a touch narrower than the left sidebar,
  *   whose offers stream bottom-to-top like live comments.
  *
+ * Both pieces stay mounted (returning null while hidden) and follow
+ * the live store, so an offer the admin just added appears instantly,
+ * a paused/deleted/expired offer vanishes instantly, and the on/off
+ * switch hides the whole ticker instantly — the player never reloads.
  * The list is rendered twice so the loop restarts invisibly; hovering
- * pauses either track. A single offer loops on its own, slowly, until
- * the admin turns the ticker off or deletes it. */
+ * pauses either track. A single offer loops on its own, slowly.
+ * Tapping an offer opens support chat. */
 
-export function MobileOffersTicker({ offers }: { offers: string[] }) {
+function useLiveTicker(initial: TickerState): TickerState {
+  const [state, setState] = useState(initial);
+  useEffect(
+    () => subscribeTicker(() => setState(getTickerSnapshot())),
+    [],
+  );
+  return state;
+}
+
+export function MobileOffersTicker({ initial }: { initial: TickerState }) {
+  const { enabled, offers } = useLiveTicker(initial);
+  if (!enabled || offers.length === 0) return null;
   return (
     <div
       aria-label="Offers"
@@ -24,20 +49,23 @@ export function MobileOffersTicker({ offers }: { offers: string[] }) {
           animationDuration: `${tickerDurationSeconds(offers.length, 8)}s`,
         }}
       >
-        {[...offers, ...offers].map((text, i) => (
-          <span
-            key={i}
+        {[...offers, ...offers].map((o, i) => (
+          <Link
+            key={`${o.id}-${i}`}
+            href="/app/chat"
             className="whitespace-nowrap text-[13px] font-bold text-gold"
           >
-            ✦ {text}
-          </span>
+            ✦ {o.text}
+          </Link>
         ))}
       </div>
     </div>
   );
 }
 
-export function DesktopOffersRail({ offers }: { offers: string[] }) {
+export function DesktopOffersRail({ initial }: { initial: TickerState }) {
+  const { enabled, offers } = useLiveTicker(initial);
+  if (!enabled || offers.length === 0) return null;
   return (
     <aside
       aria-label="Offers"
@@ -53,13 +81,14 @@ export function DesktopOffersRail({ offers }: { offers: string[] }) {
             animationDuration: `${tickerDurationSeconds(offers.length, 7)}s`,
           }}
         >
-          {[...offers, ...offers].map((text, i) => (
-            <p
-              key={i}
-              className="rounded-xl border border-gold/30 bg-surface-card px-3 py-2.5 text-[13px] font-bold leading-snug text-text-primary"
+          {[...offers, ...offers].map((o, i) => (
+            <Link
+              key={`${o.id}-${i}`}
+              href="/app/chat"
+              className="rounded-xl border border-gold/30 bg-surface-card px-3 py-2.5 text-[13px] font-bold leading-snug text-text-primary transition hover:border-gold/60"
             >
-              {text}
-            </p>
+              {o.text}
+            </Link>
           ))}
         </div>
       </div>
