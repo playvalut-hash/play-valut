@@ -19,6 +19,7 @@ import { createServiceClient } from "@/lib/supabase/service";
 import { decryptPassword, encryptPassword } from "@/lib/crypto";
 import { escapeLikePattern, normalizeTag } from "@/lib/utils";
 import { isSafeHttpUrl } from "@/lib/urls";
+import { maskEmail } from "@/lib/email";
 import { resolveGameIconUrl } from "@/lib/game-icon";
 import { validateImageFile } from "@/lib/uploads";
 import { QUICK_REPLIES } from "./_quick-replies";
@@ -779,7 +780,7 @@ export async function getInboxOverview(opts?: {
   limit?: number;
   offset?: number;
 }): Promise<PlayerOverview[]> {
-  await requireSessionAdmin();
+  const me = await requireSessionAdmin();
   const client = svc();
   const limit = Math.min(Math.max(opts?.limit ?? 100, 1), 1000);
   const offset = Math.max(opts?.offset ?? 0, 0);
@@ -839,7 +840,12 @@ export async function getInboxOverview(opts?: {
     return {
       id: p.id,
       displayName: p.display_name,
-      email: p.email,
+      // Player emails are visible in full to the super admin only;
+      // agents get the masked form (server-side, so the full value
+      // never reaches an agent's browser). Server-side search above
+      // still matches full addresses.
+      email:
+        me.role === "super_admin" ? p.email : maskEmail(p.email),
       avatarUrl: p.avatar_url,
       isOnline: computeOnline(p.is_online, lastSeenMap.get(p.id)),
       createdAt: p.created_at,
@@ -1350,7 +1356,7 @@ export async function sendSingleMethod(
 export async function getPlayerDetail(
   playerId: string,
 ): Promise<PlayerDetailView | null> {
-  await requireSessionAdmin();
+  const me = await requireSessionAdmin();
   z.string().uuid().parse(playerId);
   const client = svc();
   const { data: player } = await client
@@ -1442,7 +1448,10 @@ export async function getPlayerDetail(
     player: {
       id: player.id as string,
       displayName: player.display_name as string,
-      email: (player.email as string | null) ?? null,
+      email:
+        me.role === "super_admin"
+          ? ((player.email as string | null) ?? null)
+          : maskEmail(player.email as string | null),
       avatarUrl: (player.avatar_url as string | null) ?? null,
       isOnline: computeOnline((player.is_online as boolean) ?? false, lastSeenMap.get(playerId)),
       isBlocked: (player.is_blocked as boolean) ?? false,
@@ -2316,7 +2325,7 @@ export async function uploadBrandLogo(
 /* ── Sheet Log ─────────────────────────────────────────────────────────── */
 
 export async function getSheetLog(): Promise<SheetLogRow[]> {
-  await requireSessionAdmin();
+  const me = await requireSessionAdmin();
   const client = svc();
 
   // Full export, no silent cap (v2 Phase 2, audit M14): the old
@@ -2387,7 +2396,10 @@ export async function getSheetLog(): Promise<SheetLogRow[]> {
       accountId: a.id,
       username: a.username,
       playerName: p?.display_name ?? "—",
-      playerEmail: p?.email ?? null,
+      playerEmail:
+        me.role === "super_admin"
+          ? (p?.email ?? null)
+          : maskEmail(p?.email ?? null),
       gameName: gameMap.get(a.game_id) ?? a.game_id,
       status: a.status as "creating" | "active",
       createdAt: a.created_at,

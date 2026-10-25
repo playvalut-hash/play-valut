@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import type { AdminInfo, MethodFormData, PaymentMethodRow } from "../../../_actions";
 import { deletePaymentMethod, upsertPaymentMethod } from "../../../_actions";
 import { cn } from "@/lib/utils";
+import AdminModal from "../../../_modal";
 import {
   CardIcon,
   CheckIcon,
@@ -268,14 +269,14 @@ export default function MethodsManager({
       )}
 
       {formFor && (
-        <div className="mb-4 max-w-2xl">
+        <AdminModal onClose={() => setFormFor(null)}>
           <MethodForm
             initial={formFor === "new" ? null : formFor}
             admin={admin}
             onDone={() => setFormFor(null)}
             onCancel={() => setFormFor(null)}
           />
-        </div>
+        </AdminModal>
       )}
 
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">

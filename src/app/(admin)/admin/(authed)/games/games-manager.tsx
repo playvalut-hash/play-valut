@@ -11,6 +11,7 @@ import {
   uploadGameIcon,
 } from "../../../_actions";
 import { cn } from "@/lib/utils";
+import AdminModal from "../../../_modal";
 import {
   CheckIcon,
   ChevronDownIcon,
@@ -399,14 +400,14 @@ export default function GamesManager({
       )}
 
       {formFor && (
-        <div className="mb-4 max-w-2xl">
+        <AdminModal onClose={() => setFormFor(null)}>
           <GameForm
             initial={formFor === "new" ? null : formFor}
             admin={admin}
             onDone={() => setFormFor(null)}
             onCancel={() => setFormFor(null)}
           />
-        </div>
+        </AdminModal>
       )}
 
       {/* Card grid — same format as Payment Methods (Build 60) */}

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import {
   BellIcon,
@@ -10,7 +10,8 @@ import {
   LogoutIcon,
   SendIcon,
 } from "@/components/icons";
-import { signOut } from "../_actions";
+import { maskEmail } from "@/lib/email";
+import { markUpdatesRead, signOut } from "../_actions";
 import type { PlayerUpdate } from "./page";
 
 interface PlayerProfile {
@@ -43,6 +44,32 @@ export default function MenuClient({
   updates: PlayerUpdate[];
 }) {
   const [notificationsOpen, setNotificationsOpen] = useState(false);
+  // Opening the section reads everything visible: the server records
+  // the watermark and the list clears. On failure the items stay, so
+  // a failed mark-as-read never silently eats a notification.
+  const [dismissed, setDismissed] = useState(false);
+  const [readError, setReadError] = useState<string | null>(null);
+  useEffect(() => {
+    if (!notificationsOpen || dismissed || updates.length === 0) return;
+    let cancelled = false;
+    markUpdatesRead()
+      .then(() => {
+        if (!cancelled) setDismissed(true);
+      })
+      .catch((err) => {
+        if (!cancelled) {
+          setReadError(
+            err instanceof Error
+              ? err.message
+              : "Could not mark notifications as read",
+          );
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [notificationsOpen, dismissed, updates.length]);
+  const visible = dismissed ? [] : updates;
   const initial = (profile.display_name.slice(0, 1) || "P").toUpperCase();
 
   return (
@@ -70,7 +97,7 @@ export default function MenuClient({
           </p>
           {profile.email ? (
             <p className="truncate text-sm text-text-secondary">
-              {profile.email}
+              {maskEmail(profile.email)}
             </p>
           ) : null}
         </div>
@@ -99,9 +126,9 @@ export default function MenuClient({
             <span className="flex-1 text-left text-sm font-bold text-text-primary">
               Notifications
             </span>
-            {updates.length > 0 ? (
+            {visible.length > 0 ? (
               <span className="rounded-full bg-gold px-2 py-0.5 text-[11px] font-extrabold text-black">
-                {updates.length}
+                {visible.length}
               </span>
             ) : null}
             <ChevronDownIcon
@@ -112,14 +139,19 @@ export default function MenuClient({
           </button>
           {notificationsOpen ? (
             <div className="border-t border-surface-border px-4 py-2">
-              {updates.length === 0 ? (
+              {readError ? (
+                <p role="alert" className="py-2 text-xs text-danger">
+                  {readError}
+                </p>
+              ) : null}
+              {visible.length === 0 ? (
                 <p className="py-3 text-center text-sm text-text-secondary">
                   No updates yet. Deposit decisions and new accounts will show
                   up here.
                 </p>
               ) : (
                 <ul className="divide-y divide-surface-border">
-                  {updates.map((u) => (
+                  {visible.map((u) => (
                     <li key={u.id} className="flex items-start gap-2.5 py-3">
                       <span className="mt-1.5">
                         <ToneDot tone={u.tone} />

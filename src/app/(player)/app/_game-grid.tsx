@@ -81,10 +81,13 @@ export default function GameGrid({
   branding,
   tiles,
   isPaid,
+  hasAccount,
 }: {
   branding: Branding;
   tiles: TileData[];
   isPaid: boolean;
+  /** The player already holds at least one game account. */
+  hasAccount: boolean;
 }) {
   const [query, setQuery] = useState("");
   const logoUrl = brandLogoUrl(branding.logo_path);
@@ -119,12 +122,15 @@ export default function GameGrid({
             className="text-xl font-extrabold tracking-tight"
           />
         </div>
-        <a
-          href="#games"
+        {/* Header: brand + gold Play Now pill. Players who already hold
+            an account go straight to their accounts to play; new players
+            go to support chat to get set up. */}
+        <Link
+          href={hasAccount ? "/app/accounts" : "/app/chat"}
           className="rounded-full bg-gold px-5 py-2 text-sm font-bold text-black shadow-[0_4px_20px_rgba(212,175,55,0.25)] transition hover:brightness-110"
         >
           Play Now
-        </a>
+        </Link>
       </header>
 
       {/* Search */}

@@ -352,6 +352,57 @@ export async function signOut(): Promise<void> {
   redirect("/login");
 }
 
+/* ── menu notifications: mark-as-read watermark (migration 0025) ─────── */
+
+/** Mark the player's currently-visible updates as read. Opening the
+ *  Notifications section calls this: everything decided/activated up to
+ *  now is dismissed, and only newer updates appear afterwards. The
+ *  watermark is the newest visible update time (not "now"), so an
+ *  update created mid-call is never wrongly dismissed. */
+export async function markUpdatesRead(): Promise<void> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) throw new Error("Not signed in");
+  const service = createServiceClient();
+  const [{ data: deposits }, { data: accounts }] = await Promise.all([
+    service
+      .from("deposits")
+      .select("decided_at")
+      .eq("player_id", user.id)
+      .not("decided_at", "is", null),
+    service
+      .from("game_accounts")
+      .select("activated_at")
+      .eq("player_id", user.id)
+      .eq("status", "active")
+      .not("activated_at", "is", null),
+  ]);
+  const times = [
+    ...((deposits ?? []) as Array<{ decided_at: string }>).map((d) =>
+      new Date(d.decided_at).getTime(),
+    ),
+    ...((accounts ?? []) as Array<{ activated_at: string }>).map((a) =>
+      new Date(a.activated_at).getTime(),
+    ),
+  ].filter((t) => Number.isFinite(t));
+  if (times.length === 0) return;
+  const seenAt = new Date(Math.max(...times)).toISOString();
+  const { error } = await service
+    .from("players")
+    .update({ updates_seen_at: seenAt })
+    .eq("id", user.id);
+  if (error) {
+    if (/updates_seen_at/.test(error.message ?? "")) {
+      throw new Error(
+        "Notifications need migration 0025 — please run it in the SQL Editor first.",
+      );
+    }
+    throw new Error("Could not mark notifications as read");
+  }
+}
+
 /* ── blocking (Build 43) ─────────────────────────────────────────────────── */
 
 async function isPlayerBlocked(userId: string): Promise<boolean> {

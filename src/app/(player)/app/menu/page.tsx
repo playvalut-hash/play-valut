@@ -28,15 +28,25 @@ export default async function MenuPage() {
     avatar_url: null,
   };
   const updates: PlayerUpdate[] = [];
+  let seenAt: string | null = null;
 
   if (user) {
     // Profile + deposit updates in parallel (both depend only on user).
+    // The player row retries without updates_seen_at when migration
+    // 0025 has not run yet, so the deploy never breaks on the old DB.
+    const playerPromise = (async () => {
+      const run = (cols: string) =>
+        supabase.from("players").select(cols).eq("id", user.id).maybeSingle();
+      const first = await run(
+        "display_name, email, avatar_url, updates_seen_at",
+      );
+      if (first.error && /updates_seen_at/.test(first.error.message ?? "")) {
+        return run("display_name, email, avatar_url");
+      }
+      return first;
+    })();
     const [{ data: playerRow }, { data: deposits }] = await Promise.all([
-      supabase
-        .from("players")
-        .select("display_name, email, avatar_url")
-        .eq("id", user.id)
-        .maybeSingle(),
+      playerPromise,
       supabase
         .from("deposits")
         .select(
@@ -48,12 +58,15 @@ export default async function MenuPage() {
         .limit(10),
     ]);
     if (playerRow) {
-      const row = playerRow as unknown as PlayerProfile;
+      const row = playerRow as unknown as PlayerProfile & {
+        updates_seen_at?: string | null;
+      };
       profile = {
         display_name: row.display_name || "Player",
         email: row.email ?? user.email ?? null,
         avatar_url: row.avatar_url ?? null,
       };
+      seenAt = row.updates_seen_at ?? null;
     }
     for (const d of (deposits ?? []) as unknown as Array<{
       id: string;
@@ -100,6 +113,16 @@ export default async function MenuPage() {
     updates.sort(
       (a, b) => new Date(b.at).getTime() - new Date(a.at).getTime(),
     );
+    // Seen updates never show again: the watermark (migration 0025)
+    // hides everything the player had already seen when they last
+    // opened Notifications. Without the column (pre-migration) every
+    // update shows, as before.
+    if (seenAt) {
+      const seenMs = new Date(seenAt).getTime();
+      for (let i = updates.length - 1; i >= 0; i--) {
+        if (new Date(updates[i].at).getTime() <= seenMs) updates.splice(i, 1);
+      }
+    }
   }
 
   return <MenuClient profile={profile} updates={updates} />;
