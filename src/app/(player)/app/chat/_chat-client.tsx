@@ -1212,6 +1212,39 @@ export default function ChatClient({
     sendQueueRef.current = work.catch(() => {});
   }
 
+  // Offer-interest clicks (ticker): the click must show the text
+  // INSTANTLY, not after a server round trip — so the ticker never
+  // sends itself. Cross-page it stores the message and navigates
+  // here; this mount effect consumes the key and sends through
+  // send() above (instant echo, same failure handling as a typed
+  // message). Same-page (the layout renders the ticker above and
+  // beside the chat too) the ticker dispatches an event instead,
+  // because navigating to the page you're already on remounts
+  // nothing. The mount send runs on a tick after commit, not
+  // synchronously in the effect, so the mount commit lands first.
+  useEffect(() => {
+    const pending = sessionStorage.getItem("pv_offer_interest");
+    if (!pending) return;
+    sessionStorage.removeItem("pv_offer_interest");
+    const t = setTimeout(() => send(pending), 0);
+    return () => clearTimeout(t);
+    // send() is intentionally called once per mount here, not on
+    // every render — the key is consumed above, so a remount
+    // cannot resend it.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  useEffect(() => {
+    function onOfferInterest(e: Event) {
+      const text = (e as CustomEvent<string>).detail;
+      if (typeof text === "string" && text) send(text);
+    }
+    window.addEventListener("pv:offer-interest", onOfferInterest);
+    return () =>
+      window.removeEventListener("pv:offer-interest", onOfferInterest);
+    // Same once-per-mount reasoning as above.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const imageInputRef = useRef<HTMLInputElement>(null);
   const composerRef = useRef<HTMLTextAreaElement>(null);
 

@@ -1,6 +1,12 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type MouseEvent as ReactMouseEvent,
+} from "react";
 import Link from "next/link";
 
 import {
@@ -25,8 +31,37 @@ import {
  * the live store, so an added offer appears instantly, a
  * paused/deleted/expired offer vanishes instantly, and the on/off
  * switch hides the whole ticker instantly — the player never reloads.
- * Tapping an offer opens support chat. (Hover-pause was removed: a
+ * Tapping an offer sends "I am interested in {offer}" into the
+ * player's support thread (the same send path as a typed message,
+ * so support is notified of it like any other message) and opens
+ * the chat so support can answer. (Hover-pause was removed: a
  * cursor resting on the ticker froze it and read as broken.) */
+
+/** Clicking a running offer: the interest text must show INSTANTLY
+ *  in the chat, not after a server round trip — so the click never
+ *  awaits a send. Cross-page, it stores the message and lets the
+ *  Link navigate; the chat page consumes the key on mount and
+ *  sends through its own send path (instant echo, same failure
+ *  handling as a typed message). Same-page — the layout renders
+ *  the ticker above/beside the chat too, so a click there would
+ *  not remount the page — it dispatches an event the chat page
+ *  listens for instead. */
+const OFFER_INTEREST_KEY = "pv_offer_interest";
+
+function handleOfferClick(
+  e: ReactMouseEvent<HTMLAnchorElement>,
+  text: string,
+): void {
+  const message = `I am interested in ${text}`;
+  if (window.location.pathname === "/app/chat") {
+    e.preventDefault();
+    window.dispatchEvent(
+      new CustomEvent<string>("pv:offer-interest", { detail: message }),
+    );
+  } else {
+    sessionStorage.setItem(OFFER_INTEREST_KEY, message);
+  }
+}
 
 function useLiveTicker(initial: TickerState): TickerState {
   const [state, setState] = useState(initial);
@@ -93,12 +128,17 @@ function ConveyorSlot({
   onMeasured,
   onEnd,
   infinite,
+  onOfferClick,
 }: {
   slot: ConveyorSlotState;
   onMeasured: (width: number, barWidth: number) => void;
   onEnd: () => void;
   /** A lone offer loops in pure CSS — no JS restart, no second copy. */
   infinite?: boolean;
+  onOfferClick: (
+    e: ReactMouseEvent<HTMLAnchorElement>,
+    text: string,
+  ) => void;
 }) {
   // Measure-then-animate: the slot first lays out hidden (no animation
   // class, so no instant 0s run firing animationEnd), reports its
@@ -119,6 +159,7 @@ function ConveyorSlot({
     <Link
       ref={measureRef}
       href="/app/chat"
+      onClick={(e) => onOfferClick(e, slot.offer.text)}
       onAnimationEnd={animated && !infinite ? onEnd : undefined}
       className={
         animated
@@ -231,6 +272,7 @@ function MobileConveyor({ offers }: { offers: LiveTickerOffer[] }) {
         onMeasured={onMeasuredA}
         onEnd={onEndA}
         infinite={single}
+        onOfferClick={handleOfferClick}
       />
       {slotB && (
         <ConveyorSlot
@@ -238,6 +280,7 @@ function MobileConveyor({ offers }: { offers: LiveTickerOffer[] }) {
           slot={slotB}
           onMeasured={onMeasuredB}
           onEnd={onEndB}
+          onOfferClick={handleOfferClick}
         />
       )}
     </>
@@ -282,6 +325,7 @@ function DesktopStream({ offers }: { offers: LiveTickerOffer[] }) {
       <Link
         key={`${current.id}-${cycle}`}
         href="/app/chat"
+        onClick={(e) => handleOfferClick(e, current.text)}
         onAnimationEnd={advance}
         className="pv-ticker-item-y absolute inset-x-3 rounded-xl border border-gold/30 bg-surface-card px-3 py-2.5 text-[13px] font-bold leading-snug text-text-primary transition-colors hover:border-gold/60"
         style={{ animationDuration: `${RAIL_RISE_S}s` }}
@@ -298,6 +342,7 @@ function DesktopStream({ offers }: { offers: LiveTickerOffer[] }) {
           <Link
             key={s.key}
             href="/app/chat"
+            onClick={(e) => handleOfferClick(e, offer.text)}
             onAnimationEnd={() =>
               setSlots((prev) => prev.filter((x) => x.key !== s.key))
             }
