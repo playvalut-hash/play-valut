@@ -97,31 +97,37 @@ export default function TopBar({
     router.refresh();
   }
 
-  /** Dismiss one notification: mark it read (so it leaves the unread
-   *  panel) WITHOUT navigating — the panel stays open. */
+  /** Dismiss one notification: the row must vanish the INSTANT it
+   *  is crossed — not after the server round trip. So the row (and
+   *  the badge count) drop from local state first and the server
+   *  call runs in the background; if it fails, the next 30s poll
+   *  (or reopening the panel) restores the row from the server. */
   async function dismissNotification(n: NotificationView) {
-    if (dismissingId) return;
+    if (dismissingId === n.id) return;
     setDismissingId(n.id);
+    onNotificationOpened?.(n.id);
     try {
       await markNotificationRead(admin.id, n.id);
-      onNotificationOpened?.(n.id);
     } catch {
-      // Keep the item on failure; the next poll restores it anyway.
+      // Keep the local removal; the poll restores it on failure.
     } finally {
       setDismissingId(null);
     }
   }
 
+  /** Mark all read, same instant rule: the panel empties and the
+   *  badge drops to 0 at once; the server call runs behind it. On
+   *  failure the error line shows and the next poll restores the
+   *  true list. */
   async function markAll() {
     if (markingAll) return;
     setMarkingAll(true);
     setMarkAllError(null);
+    onNotificationsCleared?.();
     try {
       const res = await markAllNotificationsRead(admin.id);
       if (!res.ok) {
         setMarkAllError(res.error);
-      } else {
-        onNotificationsCleared?.();
       }
     } catch {
       setMarkAllError("Could not mark all read");

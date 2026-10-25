@@ -364,12 +364,14 @@ function PickerMessage({
   title,
   onPicked,
   onPickStart,
+  onPickSettled,
 }: {
   message: ChatMessage;
   items: PickItem[];
   title: string;
   onPicked: () => void;
   onPickStart?: () => void;
+  onPickSettled?: () => void;
 }) {
   const serverPicked = message.body["picked"] as
     | { id: string; at: string }
@@ -404,6 +406,7 @@ function PickerMessage({
       setPickError("Couldn't select — tap again.");
     } finally {
       setPicking(false);
+      onPickSettled?.();
     }
   }
 
@@ -735,6 +738,7 @@ function MessageView({
   message,
   onPicked,
   onPickStart,
+  onPickSettled,
   onDepositSend,
   receipt,
   resolvedCard,
@@ -743,6 +747,7 @@ function MessageView({
   message: ChatMessage;
   onPicked: (kind: ChatMessage["kind"]) => void;
   onPickStart: (kind: ChatMessage["kind"]) => void;
+  onPickSettled?: (kind: ChatMessage["kind"]) => void;
   onDepositSend: (args: {
     methodId: string;
     methodName: string;
@@ -779,6 +784,7 @@ function MessageView({
         title={str(message.body["title"]) || "Pick a game"}
         onPicked={() => onPicked(message.kind)}
         onPickStart={() => onPickStart(message.kind)}
+        onPickSettled={() => onPickSettled?.(message.kind)}
       />
     );
   }
@@ -798,6 +804,7 @@ function MessageView({
         title={str(message.body["title"]) || "Choose how to pay"}
         onPicked={() => onPicked(message.kind)}
         onPickStart={() => onPickStart(message.kind)}
+        onPickSettled={() => onPickSettled?.(message.kind)}
       />
     );
   }
@@ -1370,16 +1377,47 @@ export default function ChatClient({
 
   // Bare callback references (not inline arrows): the React Compiler
   // lint flags inline arrows that call ref-reading callbacks as props.
+  // Pick ticks: while a game pick runs, the server inserts the
+  // "On it!" text well before the account card (Build 56 sleeps
+  // 1.2s between them) — but a single refresh at the end used to
+  // show both at once, which reads as robotic. Ticking refresh
+  // every 500ms during the pick surfaces the text first, then the
+  // card, like a real agent typing. Capped at 12s so a hung pick
+  // can never spin refreshes forever; cleared on settle/unmount.
+  const pickTickRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const pickTickCapRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const clearPickTick = useCallback(() => {
+    if (pickTickRef.current) {
+      clearInterval(pickTickRef.current);
+      pickTickRef.current = null;
+    }
+    if (pickTickCapRef.current) {
+      clearTimeout(pickTickCapRef.current);
+      pickTickCapRef.current = null;
+    }
+  }, []);
+  useEffect(() => () => clearPickTick(), [clearPickTick]);
   const handlePickStart = useCallback(
     (kind: ChatMessage["kind"]) => {
-      if (kind === "games_list") startPreparing("account");
+      if (kind === "games_list") {
+        startPreparing("account");
+        clearPickTick();
+        pickTickRef.current = setInterval(() => {
+          void refresh();
+        }, 500);
+        pickTickCapRef.current = setTimeout(() => clearPickTick(), 12000);
+      }
     },
-    [startPreparing],
+    [startPreparing, refresh, clearPickTick],
   );
   const handlePicked = useCallback(() => {
     noteAwaiting();
     void refresh();
-  }, [noteAwaiting, refresh]);
+    clearPickTick();
+  }, [noteAwaiting, refresh, clearPickTick]);
+  const handlePickSettled = useCallback(() => {
+    clearPickTick();
+  }, [clearPickTick]);
 
   const showSlicks = !loading && visibleMessages.length === 0;
   const lastOwnTextId = (() => {
@@ -1487,6 +1525,7 @@ export default function ChatClient({
               }
               onPickStart={handlePickStart}
               onPicked={handlePicked}
+              onPickSettled={handlePickSettled}
               onDepositSend={sendDeposit}
               receipt={
                 m.id === lastOwnTextId
