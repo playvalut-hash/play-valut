@@ -58,32 +58,58 @@ function useTickerCycle(offers: LiveTickerOffer[]) {
   return { current, cycle, advance };
 }
 
+/** One crossing of the stream. It is keyed by the offer list above,
+ *  so any real list change (add/remove) remounts it and restarts the
+ *  cycle from the first offer instantly — a new order-0 offer does
+ *  not wait out the previous crossing. */
+function MobileStream({ offers }: { offers: LiveTickerOffer[] }) {
+  const { current, cycle, advance } = useTickerCycle(offers);
+  if (!current) return null;
+  return (
+    <Link
+      key={`${current.id}-${cycle}`}
+      href="/app/chat"
+      onAnimationEnd={advance}
+      className="pv-ticker-item-x absolute top-1/2 -translate-y-1/2 whitespace-nowrap text-[13px] font-bold text-gold hover:[animation-play-state:paused]"
+      style={{ animationDuration: "12s" }}
+    >
+      ✦ {current.text}
+    </Link>
+  );
+}
+
+function DesktopStream({ offers }: { offers: LiveTickerOffer[] }) {
+  const { current, cycle, advance } = useTickerCycle(offers);
+  if (!current) return null;
+  return (
+    <Link
+      key={`${current.id}-${cycle}`}
+      href="/app/chat"
+      onAnimationEnd={advance}
+      className="pv-ticker-item-y absolute inset-x-3 rounded-xl border border-gold/30 bg-surface-card px-3 py-2.5 text-[13px] font-bold leading-snug text-text-primary transition-colors hover:border-gold/60 hover:[animation-play-state:paused]"
+      style={{ animationDuration: "10s" }}
+    >
+      {current.text}
+    </Link>
+  );
+}
+
 export function MobileOffersTicker({ initial }: { initial: TickerState }) {
   const { enabled, offers } = useLiveTicker(initial);
-  const { current, cycle, advance } = useTickerCycle(offers);
-  if (!enabled || !current) return null;
+  if (!enabled || offers.length === 0) return null;
   return (
     <div
       aria-label="Offers"
       className="relative sticky top-12 z-40 h-10 shrink-0 overflow-hidden border-b border-gold/30 bg-navy md:hidden"
     >
-      <Link
-        key={`${current.id}-${cycle}`}
-        href="/app/chat"
-        onAnimationEnd={advance}
-        className="pv-ticker-item-x absolute top-1/2 -translate-y-1/2 whitespace-nowrap text-[13px] font-bold text-gold hover:[animation-play-state:paused]"
-        style={{ animationDuration: "12s" }}
-      >
-        ✦ {current.text}
-      </Link>
+      <MobileStream key={offers.map((o) => o.id).join(",")} offers={offers} />
     </div>
   );
 }
 
 export function DesktopOffersRail({ initial }: { initial: TickerState }) {
   const { enabled, offers } = useLiveTicker(initial);
-  const { current, cycle, advance } = useTickerCycle(offers);
-  if (!enabled || !current) return null;
+  if (!enabled || offers.length === 0) return null;
   return (
     <aside
       aria-label="Offers"
@@ -93,15 +119,10 @@ export function DesktopOffersRail({ initial }: { initial: TickerState }) {
         Offers
       </h2>
       <div className="relative min-h-0 flex-1 overflow-hidden px-3 pb-4">
-        <Link
-          key={`${current.id}-${cycle}`}
-          href="/app/chat"
-          onAnimationEnd={advance}
-          className="pv-ticker-item-y absolute inset-x-3 rounded-xl border border-gold/30 bg-surface-card px-3 py-2.5 text-[13px] font-bold leading-snug text-text-primary transition-colors hover:border-gold/60 hover:[animation-play-state:paused]"
-          style={{ animationDuration: "10s" }}
-        >
-          {current.text}
-        </Link>
+        <DesktopStream
+          key={offers.map((o) => o.id).join(",")}
+          offers={offers}
+        />
       </div>
     </aside>
   );
