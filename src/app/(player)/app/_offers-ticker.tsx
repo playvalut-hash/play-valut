@@ -236,10 +236,12 @@ function MobileConveyor({ offers }: { offers: LiveTickerOffer[] }) {
   );
 }
 
-/** One crossing of the stream. It is keyed by the offer list above,
- *  so any real list change (add/remove) remounts it and restarts the
- *  cycle from the first offer instantly — a new order-0 offer does
- *  not wait out the previous crossing. */
+/** One crossing of the stream, Facebook-Live-comments style: slow and
+ *  gentle (20s bottom-to-top), so the rise reads as a drift, not a
+ *  flicker. It is keyed by the offer list above, so any real list
+ *  change (add/remove) remounts it and restarts the cycle from the
+ *  first offer instantly — a new order-0 offer does not wait out the
+ *  previous crossing. */
 function DesktopStream({ offers }: { offers: LiveTickerOffer[] }) {
   const { current, cycle, advance } = useTickerCycle(offers);
   if (!current) return null;
@@ -249,7 +251,7 @@ function DesktopStream({ offers }: { offers: LiveTickerOffer[] }) {
       href="/app/chat"
       onAnimationEnd={advance}
       className="pv-ticker-item-y absolute inset-x-3 rounded-xl border border-gold/30 bg-surface-card px-3 py-2.5 text-[13px] font-bold leading-snug text-text-primary transition-colors hover:border-gold/60"
-      style={{ animationDuration: "10s" }}
+      style={{ animationDuration: "20s" }}
     >
       {current.text}
     </Link>
