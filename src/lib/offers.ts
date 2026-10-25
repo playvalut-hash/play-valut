@@ -1,14 +1,14 @@
 /** Offers ticker helpers (pure, unit-tested).
  *
- * The ticker shows every LIVE offer, in the admin's order
- * (sort_order, then oldest first), looping one after another. Live
- * means: active AND not expired. The player layout hides the whole
- * ticker when the global switch is off or when no live offer exists —
- * even a single offer loops on its own, slowly, until the admin turns
- * it off, deletes it, pauses it, or its expiry passes. Expiry is
- * enforced in two places: the server filters expired rows on every
- * fetch, and the player's live ticker drops them the moment they pass
- * (no page reload on either side). */
+ * The ticker streams every LIVE offer, one at a time, in the admin's
+ * order (sort_order, then oldest first) — never two copies at once.
+ * Live means: active AND not expired. The player layout hides the
+ * whole ticker when the global switch is off or when no live offer
+ * exists. A lone offer simply comes around again after a gap, slowly,
+ * until the admin turns it off, deletes it, pauses it, or its expiry
+ * passes. Expiry is enforced in two places: the server filters expired
+ * rows on every fetch, and the player's live ticker drops them the
+ * moment they pass (no page reload on either side). */
 
 export interface TickerOffer {
   id: string;
@@ -45,11 +45,4 @@ export function visibleOffers(
         new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
       );
     });
-}
-
-/** Loop duration for the ticker animation: slow on purpose (news
- *  ticker pace), growing with the offer count so a long list never
- *  rushes past. Seconds. */
-export function tickerDurationSeconds(count: number, perOffer: number): number {
-  return Math.max(count * perOffer, perOffer * 2);
 }

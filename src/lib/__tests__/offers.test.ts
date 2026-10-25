@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 
 import {
   isLiveOffer,
-  tickerDurationSeconds,
   visibleOffers,
   type TickerOffer,
 } from "../offers";
@@ -104,12 +103,5 @@ describe("visibleOffers", () => {
     expect(
       visibleOffers([offer({ id: "a", is_active: false })], NOW),
     ).toEqual([]);
-  });
-});
-
-describe("tickerDurationSeconds", () => {
-  it("grows with the offer count but never rushes a short list", () => {
-    expect(tickerDurationSeconds(1, 7)).toBe(14);
-    expect(tickerDurationSeconds(5, 7)).toBe(35);
   });
 });

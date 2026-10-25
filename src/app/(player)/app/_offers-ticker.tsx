@@ -3,28 +3,34 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 
-import { tickerDurationSeconds } from "@/lib/offers";
 import {
   getTickerSnapshot,
   subscribeTicker,
+  type LiveTickerOffer,
   type TickerState,
 } from "./_ticker-store";
 
-/** Offers ticker — live, no page reload.
+/** Offers ticker — live, no page reload, one offer at a time.
  *
- * - Mobile: a top bar that scrolls right-to-left, news-ticker style.
- *   It sits above every player page (including the support chat) and
- *   stays pinned to the top while the page scrolls.
+ * - Mobile: a top bar, one offer sliding right-to-left, news-ticker
+ *   style — it enters fully off the right end and leaves fully off
+ *   the left end, slowly and smoothly, then the next offer follows.
+ *   It stays pinned (under the app header) while the page scrolls,
+ *   including above the support chat.
  * - Desktop: a right rail, a touch narrower than the left sidebar,
- *   whose offers stream bottom-to-top like live comments.
+ *   one offer rising bottom-to-top like a live comment — it enters
+ *   fully below the rail and disappears fully above it.
+ *
+ * The old doubled-track loop showed a single offer as two identical
+ * cards at once; this stream never duplicates: the item (and its
+ * animation key) swaps when each crossing ends, cycling through live
+ * offers. A lone offer simply comes around again after a gap.
  *
  * Both pieces stay mounted (returning null while hidden) and follow
- * the live store, so an offer the admin just added appears instantly,
- * a paused/deleted/expired offer vanishes instantly, and the on/off
+ * the live store, so an added offer appears instantly, a
+ * paused/deleted/expired offer vanishes instantly, and the on/off
  * switch hides the whole ticker instantly — the player never reloads.
- * The list is rendered twice so the loop restarts invisibly; hovering
- * pauses either track. A single offer loops on its own, slowly.
- * Tapping an offer opens support chat. */
+ * Hovering pauses the crossing. Tapping an offer opens support chat. */
 
 function useLiveTicker(initial: TickerState): TickerState {
   const [state, setState] = useState(initial);
@@ -35,37 +41,49 @@ function useLiveTicker(initial: TickerState): TickerState {
   return state;
 }
 
+/** Cycles through live offers, one crossing at a time. The position
+ *  wraps with modulo, so a deleted offer is replaced instantly by
+ *  whatever now sits at that position — no stale card lingers until
+ *  its crossing would have ended. The cycle counter forces a fresh
+ *  animation even when the same lone offer comes around again. */
+function useTickerCycle(offers: LiveTickerOffer[]) {
+  const [pos, setPos] = useState(0);
+  const [cycle, setCycle] = useState(0);
+  const current =
+    offers.length === 0 ? null : offers[pos % offers.length];
+  const advance = () => {
+    setPos((p) => p + 1);
+    setCycle((c) => c + 1);
+  };
+  return { current, cycle, advance };
+}
+
 export function MobileOffersTicker({ initial }: { initial: TickerState }) {
   const { enabled, offers } = useLiveTicker(initial);
-  if (!enabled || offers.length === 0) return null;
+  const { current, cycle, advance } = useTickerCycle(offers);
+  if (!enabled || !current) return null;
   return (
     <div
       aria-label="Offers"
-      className="sticky top-0 z-40 flex h-10 shrink-0 items-center overflow-hidden border-b border-gold/30 bg-navy md:hidden"
+      className="relative sticky top-12 z-40 h-10 shrink-0 overflow-hidden border-b border-gold/30 bg-navy md:hidden"
     >
-      <div
-        className="pv-ticker-x flex w-max items-center gap-10 pr-10 hover:[animation-play-state:paused]"
-        style={{
-          animationDuration: `${tickerDurationSeconds(offers.length, 8)}s`,
-        }}
+      <Link
+        key={`${current.id}-${cycle}`}
+        href="/app/chat"
+        onAnimationEnd={advance}
+        className="pv-ticker-item-x absolute top-1/2 -translate-y-1/2 whitespace-nowrap text-[13px] font-bold text-gold hover:[animation-play-state:paused]"
+        style={{ animationDuration: "12s" }}
       >
-        {[...offers, ...offers].map((o, i) => (
-          <Link
-            key={`${o.id}-${i}`}
-            href="/app/chat"
-            className="whitespace-nowrap text-[13px] font-bold text-gold"
-          >
-            ✦ {o.text}
-          </Link>
-        ))}
-      </div>
+        ✦ {current.text}
+      </Link>
     </div>
   );
 }
 
 export function DesktopOffersRail({ initial }: { initial: TickerState }) {
   const { enabled, offers } = useLiveTicker(initial);
-  if (!enabled || offers.length === 0) return null;
+  const { current, cycle, advance } = useTickerCycle(offers);
+  if (!enabled || !current) return null;
   return (
     <aside
       aria-label="Offers"
@@ -74,23 +92,16 @@ export function DesktopOffersRail({ initial }: { initial: TickerState }) {
       <h2 className="shrink-0 px-3 pb-2 pt-4 text-xs font-extrabold uppercase tracking-wider text-gold">
         Offers
       </h2>
-      <div className="min-h-0 flex-1 overflow-hidden px-3 pb-4">
-        <div
-          className="pv-ticker-y flex flex-col gap-3 hover:[animation-play-state:paused]"
-          style={{
-            animationDuration: `${tickerDurationSeconds(offers.length, 7)}s`,
-          }}
+      <div className="relative min-h-0 flex-1 overflow-hidden px-3 pb-4">
+        <Link
+          key={`${current.id}-${cycle}`}
+          href="/app/chat"
+          onAnimationEnd={advance}
+          className="pv-ticker-item-y absolute inset-x-3 rounded-xl border border-gold/30 bg-surface-card px-3 py-2.5 text-[13px] font-bold leading-snug text-text-primary transition-colors hover:border-gold/60 hover:[animation-play-state:paused]"
+          style={{ animationDuration: "10s" }}
         >
-          {[...offers, ...offers].map((o, i) => (
-            <Link
-              key={`${o.id}-${i}`}
-              href="/app/chat"
-              className="rounded-xl border border-gold/30 bg-surface-card px-3 py-2.5 text-[13px] font-bold leading-snug text-text-primary transition hover:border-gold/60"
-            >
-              {o.text}
-            </Link>
-          ))}
-        </div>
+          {current.text}
+        </Link>
       </div>
     </aside>
   );

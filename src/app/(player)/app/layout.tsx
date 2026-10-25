@@ -85,10 +85,11 @@ export default async function PlayerLayout({
     <div className="min-h-dvh bg-near-black flex justify-center">
       {/* Full-width on desktop like the admin app; the phone frame
           applies on mobile only. Navigation is a left sidebar on
-          desktop (like the admin's player-list column) and the bottom
-          tab bar on mobile. Main gets side padding on desktop so
-          nothing sits flush against the window edges. The offers
-          ticker rides on the right on desktop and on top on mobile. */}
+          desktop (like the admin's player-list column) and a slim
+          header + hamburger drawer on mobile. Main gets side padding
+          on desktop so nothing sits flush against the window edges.
+          The offers ticker rides on the right on desktop and on top
+          (under the header) on mobile. */}
       <div
         id="pv-player-shell"
         className="relative flex min-h-dvh w-full max-w-[440px] flex-col bg-bg md:max-w-none md:flex-row"
@@ -100,7 +101,7 @@ export default async function PlayerLayout({
           initialOffers={ticker.offers}
         />
         <MobileOffersTicker initial={initialTicker} />
-        <main className="flex-1 pb-24 md:min-w-0 md:px-10 md:pb-0">
+        <main className="flex-1 pb-4 md:min-w-0 md:px-10 md:pb-0">
           {children}
         </main>
         <DesktopOffersRail initial={initialTicker} />
