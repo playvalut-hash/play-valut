@@ -226,6 +226,13 @@ export default function LoginForm({
           <span className="h-px flex-1" style={{ background: "#232c3e" }} />
         </div>
 
+        {/* Registration is gone, so new players need the pointer:
+            no account? The Google button below IS the way in —
+            their account is created on first sign-in. */}
+        <p className="mb-3 text-center text-[14px]" style={{ color: "#a7b2c3" }}>
+          Don&apos;t have an account?
+        </p>
+
         <button
           type="button"
           onClick={handleGoogle}
