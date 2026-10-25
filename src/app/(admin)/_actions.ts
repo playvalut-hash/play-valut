@@ -407,34 +407,31 @@ const signInSchema = z.object({
   password: z.string().min(1, "Enter your password"),
 });
 
-/** Admin sign-in. Signs the user in, verifies admin_users, signs out if not an admin. */
+/** Admin sign-in. Every failure returns the SAME message (v2 Phase 2,
+ * audit M8): the old code answered "No account found with this email"
+ * for unknown emails and "Incorrect password" for known ones — a trivial
+ * admin-account enumeration oracle. Now the message reveals nothing,
+ * whichever step failed. Residual note: a valid-but-unauthorized account
+ * takes one extra round trip (sign-out), so timing still differs
+ * slightly; closing that needs dummy-work comparison and is beyond
+ * this fix. */
 export async function adminSignIn(
   input: z.input<typeof signInSchema>,
 ): Promise<{ ok: true }> {
   const { email, password } = signInSchema.parse(input);
   const supabase = await createClient();
 
-  // Specific "no account" error WITHOUT downloading the whole auth user
-  // list (listUsers was a full-table Auth Admin call on every attempt):
-  // one indexed admin_users lookup by email does the same job.
-  const { data: emailRow } = await svc()
-    .from("admin_users")
-    .select("id")
-    .eq("email", email.toLowerCase())
-    .maybeSingle();
-  if (!emailRow) throw new Error("No account found with this email");
-
   const { error: signInError } = await supabase.auth.signInWithPassword({
     email,
     password,
   });
   if (signInError) {
-    throw new Error("Incorrect password — please try again");
+    throw new Error("Invalid email or password");
   }
   const {
     data: { user },
   } = await supabase.auth.getUser();
-  if (!user) throw new Error("Sign in failed — please try again");
+  if (!user) throw new Error("Invalid email or password");
 
   const { data: adminRow } = await svc()
     .from("admin_users")
@@ -444,7 +441,7 @@ export async function adminSignIn(
 
   if (!adminRow || adminRow.is_active !== true) {
     await supabase.auth.signOut();
-    throw new Error("This account is not authorized for admin access");
+    throw new Error("Invalid email or password");
   }
   await audit(user.id, "admin.sign_in");
   return { ok: true };
