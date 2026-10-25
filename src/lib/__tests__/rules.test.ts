@@ -118,6 +118,22 @@ describe("chat intent matcher", () => {
     expect(matchChatIntent("aur kuch nahi chahiye", GAMES)).toBe("closing");
   });
 
+  it("answers only a bare thanks — thanks + other words stays silent", () => {
+    // User rule (2026-10-25): the extra words are the real message
+    // (often a question), so no canned "you're welcome" may swallow them.
+    expect(matchChatIntent("thank you!", GAMES)).toBe("thanks");
+    expect(matchChatIntent("ok thank you", GAMES)).toBe("thanks");
+    expect(matchChatIntent("thanks a lot", GAMES)).toBe("thanks");
+    expect(matchChatIntent("Ok thank you. is it Freeplay.?", GAMES)).toBe(
+      "silent",
+    );
+    expect(matchChatIntent("thank you, is it freeplay?", GAMES)).toBe(
+      "silent",
+    );
+    expect(matchChatIntent("thanks, juwa chahiye", GAMES)).toBe("silent");
+    expect(matchChatIntent("shukriya, game chahiye", GAMES)).toBe("silent");
+  });
+
   it("routes cashout mentions to the cashout intent (manual handling)", () => {
     expect(matchChatIntent("paisa nikalna hai", GAMES)).toBe("cashout");
     expect(matchChatIntent("I want to withdraw", GAMES)).toBe("cashout");

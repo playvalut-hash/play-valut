@@ -62,6 +62,52 @@ const THANKS_PATTERNS: RegExp[] = [
   /jazakallah/,
 ];
 
+/**
+ * Words that carry no content on their own — a thanks wrapped in
+ * these is still just a thanks ("ok thank you", "thanks a lot").
+ * Anything else left over means the player said something real
+ * alongside the thanks.
+ */
+const THANKS_FILLERS = new Set([
+  "ok",
+  "okay",
+  "yeah",
+  "yes",
+  "yup",
+  "sure",
+  "alright",
+  "great",
+  "good",
+  "fine",
+  "well",
+  "oh",
+  "ah",
+  "hmm",
+  "a",
+  "lot",
+  "so",
+  "much",
+  "very",
+]);
+
+/**
+ * True when the message is ONLY a thanks (plus fillers/punctuation).
+ * User rule (2026-10-25): thanks + other words → NO auto-reply at
+ * all — the extra words are the real message (often a question, e.g.
+ * "thank you, is it freeplay?"), and a canned "you're welcome" would
+ * leave them unanswered. The admin is still notified of every
+ * message, so a human answers instead.
+ */
+function isBareThanks(text: string): boolean {
+  let rest = text;
+  for (const p of THANKS_PATTERNS) {
+    rest = rest.replace(new RegExp(p.source, "gi"), " ");
+  }
+  rest = rest.replace(/[^\p{L}\p{N}\s]/gu, " ");
+  const words = rest.split(/\s+/).filter(Boolean);
+  return words.length === 0 || words.every((w) => THANKS_FILLERS.has(w));
+}
+
 const GREETING_PATTERNS: RegExp[] = [
   /\bassalam/,
   /\bsalam\b/,
@@ -144,7 +190,11 @@ export function matchChatIntent(
   if (loweredNames.includes(text)) return "account_request";
 
   if (matchesAny(text, CLOSING_PATTERNS)) return "closing";
-  if (matchesAny(text, THANKS_PATTERNS)) return "thanks";
+  if (matchesAny(text, THANKS_PATTERNS)) {
+    // Bare thanks → warm reply; thanks + other words → silent, so
+    // the canned reply never swallows a real question (see isBareThanks).
+    return isBareThanks(text) ? "thanks" : "silent";
+  }
   if (matchesAny(text, CASHOUT_PATTERNS)) return "cashout";
   if (matchesAny(text, DEPOSIT_PATTERNS)) return "deposit";
   if (matchesAny(text, GREETING_PATTERNS)) return "greeting";
