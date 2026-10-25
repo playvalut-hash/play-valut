@@ -148,7 +148,15 @@ export default function InboxShell({
   detail: PlayerDetailView | null;
   games: Array<{ id: string; name: string }>;
   gamesCount: number;
-  methods: Array<{ id: string; name: string; brandColor: string | null }>;
+  methods: Array<{
+    id: string;
+    name: string;
+    brandColor: string | null;
+    accountName: string;
+    handle: string;
+    note: string | null;
+    payLink: string | null;
+  }>;
   methodsCount: number;
   tagOptions: string[];
 }) {

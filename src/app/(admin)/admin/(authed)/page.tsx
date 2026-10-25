@@ -33,7 +33,17 @@ export default async function InboxPage() {
       gamesCount={games.filter((g) => g.isActive).length}
       methods={methods
         .filter((m) => m.isActive)
-        .map((m) => ({ id: m.id, name: m.name, brandColor: m.brandColor }))}
+        .map((m) => ({
+          id: m.id,
+          name: m.name,
+          brandColor: m.brandColor,
+          // Full snapshot so the SEND-bar card echo is exact — no
+          // "Loading…" handle flicker while the server round trip runs.
+          accountName: m.accountName,
+          handle: m.handle,
+          note: m.note,
+          payLink: m.payLink,
+        }))}
       methodsCount={methods.filter((m) => m.isActive).length}
       tagOptions={tagOptions}
     />

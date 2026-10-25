@@ -450,7 +450,15 @@ export default function ThreadView({
   thread: ChatMessageView[];
   games: Array<{ id: string; name: string }>;
   gamesCount: number;
-  methods: Array<{ id: string; name: string; brandColor: string | null }>;
+  methods: Array<{
+    id: string;
+    name: string;
+    brandColor: string | null;
+    accountName: string;
+    handle: string;
+    note: string | null;
+    payLink: string | null;
+  }>;
   methodsCount: number;
   onMutated?: () => Promise<void>;
   /** Optimistic sends: append a local echo instantly, drop it on failure
@@ -722,27 +730,20 @@ export default function ThreadView({
     if (sendListBusy) return;
     setSendListBusy("single");
     setGamesOpen(false); // Chips disappear immediately
-    // Optimistic: lead-in text + game card show on click.
-    const textEcho = makeEcho("text", {
-      text: `Sure! Let me set up your ${gameName} account — one moment… 🎮`,
-    });
+    // Professional single-game flow: the card IS the message — it says
+    // "How about X? Tap to get your account". The old lead-in ("Sure!
+    // Let me set up your X account — one moment…") contradicted it:
+    // it promised the admin was creating the account while the card
+    // waited for the player to tap. One clean card, no mixed message.
     const cardEcho = makeEcho("games_list", {
       listTitle: `How about ${gameName}? Tap to get your account`,
       picked: null,
     });
-    onAppendOptimistic?.(textEcho);
     onAppendOptimistic?.(cardEcho);
     try {
-      // 1. Send "Sure! Let me set up your account" message
-      await sendAdminMessage(admin.id, {
-        playerId: player.id,
-        text: `Sure! Let me set up your ${gameName} account — one moment… 🎮`,
-      });
-      // 2. Send the single game
       await sendSingleGame(admin.id, player.id, gameId);
       await changed();
     } catch {
-      onDropOptimistic?.(textEcho.id);
       onDropOptimistic?.(cardEcho.id);
     } finally {
       setSendListBusy(null);
@@ -753,20 +754,21 @@ export default function ThreadView({
     if (sendListBusy) return;
     setSendListBusy("single-method");
     setPayOpen(false); // Panel closes immediately, same as games
-    // Optimistic: lead-in text + card show on click. The card's handle
-    // lives server-side only, so the echo shows "Loading…" there until
-    // the refresh swaps in the real card.
+    // Optimistic: lead-in text + card show on click. The card echo is
+    // exact — the full method snapshot already rides in props — so no
+    // "Loading…" handle flickers while the server round trip runs.
+    const method = methods.find((m) => m.id === methodId);
     const textEcho = makeEcho("text", {
       text: `Here are the ${methodName} payment details 👇`,
     });
     const cardEcho = makeEcho("payment_card", {
       paymentCard: {
         name: methodName,
-        accountName: null,
-        brandColor: methods.find((m) => m.id === methodId)?.brandColor ?? null,
-        handle: "Loading…",
-        note: null,
-        payLink: null,
+        accountName: method?.accountName ?? null,
+        brandColor: method?.brandColor ?? null,
+        handle: method?.handle ?? "Loading…",
+        note: method?.note ?? null,
+        payLink: method?.payLink ?? null,
       },
     });
     onAppendOptimistic?.(textEcho);
