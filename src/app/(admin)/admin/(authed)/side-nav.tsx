@@ -11,6 +11,7 @@ import {
   GamepadIcon,
   NoteIcon,
   SparklesIcon,
+  TagIcon,
   TrashIcon,
   UsersIcon,
 } from "@/components/icons";
@@ -26,6 +27,7 @@ const ITEMS: NavItem[] = [
   { href: "/admin", label: "Inbox", icon: ChatIcon, exact: true },
   { href: "/admin/games", label: "Games Library", icon: GamepadIcon },
   { href: "/admin/methods", label: "Payment Methods", icon: CardIcon },
+  { href: "/admin/offers", label: "Offers", icon: TagIcon },
   { href: "/admin/branding", label: "Branding", icon: SparklesIcon },
   { href: "/admin/sheet-log", label: "Sheet Log", icon: NoteIcon },
 ];

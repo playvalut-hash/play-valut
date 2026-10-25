@@ -1046,3 +1046,43 @@ export async function touchPresence(online: boolean): Promise<void> {
       .eq("id", user.id);
   }
 }
+
+/* ── Offers ticker (migration 0026) ──────────────────────────────────────
+ * What the player layout renders: every ACTIVE offer (admin order) +
+ * the global switch. Fails soft to "no ticker" on ANY error — before
+ * migration 0026 runs, the tables don't exist and the player app must
+ * keep working exactly as before. No caching here: an offer the admin
+ * just added must show on the player's next page load. */
+export async function getTickerState(): Promise<{
+  enabled: boolean;
+  offers: Array<{ id: string; text: string }>;
+}> {
+  try {
+    const service = createServiceClient();
+    const [{ data: settings }, { data: rows, error }] = await Promise.all([
+      service
+        .from("offer_settings")
+        .select("ticker_enabled")
+        .eq("id", 1)
+        .maybeSingle(),
+      service
+        .from("offers")
+        .select("id, text, is_active, sort_order, created_at")
+        .eq("is_active", true)
+        .order("sort_order", { ascending: true })
+        .order("created_at", { ascending: true }),
+    ]);
+    if (error) return { enabled: false, offers: [] };
+    const enabled = settings
+      ? (settings as { ticker_enabled: boolean }).ticker_enabled
+      : true;
+    return {
+      enabled,
+      offers: ((rows ?? []) as Array<{ id: string; text: string }>).map(
+        (r) => ({ id: r.id, text: r.text }),
+      ),
+    };
+  } catch {
+    return { enabled: false, offers: [] };
+  }
+}

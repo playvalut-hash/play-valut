@@ -1,9 +1,10 @@
 import { createClient } from "@/lib/supabase/server";
 import { createServiceClient } from "@/lib/supabase/service";
 
-import { signOut } from "./_actions";
+import { getTickerState, signOut } from "./_actions";
 import PresenceHeartbeat from "./_presence";
 import Tabs from "./_tabs";
+import { DesktopOffersRail, MobileOffersTicker } from "./_offers-ticker";
 
 /** All pages here are auth-gated: skip prerendering. */
 export const instant = false;
@@ -67,18 +68,32 @@ export default async function PlayerLayout({
     );
   }
 
+  // Offers ticker (migration 0026): every active offer, every player.
+  // Fails soft pre-migration (no ticker, no crash). The mobile bar is
+  // 2.5rem tall, so the chat's mobile height subtracts it via the
+  // --pv-ticker-h variable (desktop rail needs no such adjustment).
+  const ticker = await getTickerState();
+  const showTicker = ticker.enabled && ticker.offers.length > 0;
+  const offerTexts = ticker.offers.map((o) => o.text);
+
   return (
     <div className="min-h-dvh bg-near-black flex justify-center">
       {/* Full-width on desktop like the admin app; the phone frame
           applies on mobile only. Navigation is a left sidebar on
           desktop (like the admin's player-list column) and the bottom
           tab bar on mobile. Main gets side padding on desktop so
-          nothing sits flush against the window edges. */}
-      <div className="relative flex min-h-dvh w-full max-w-[440px] flex-col bg-bg md:max-w-none md:flex-row">
+          nothing sits flush against the window edges. The offers
+          ticker rides on the right on desktop and on top on mobile. */}
+      <div
+        className="relative flex min-h-dvh w-full max-w-[440px] flex-col bg-bg md:max-w-none md:flex-row"
+        style={{ "--pv-ticker-h": showTicker ? "2.5rem" : "0px" } as React.CSSProperties}
+      >
         <Tabs />
+        {showTicker ? <MobileOffersTicker offers={offerTexts} /> : null}
         <main className="flex-1 pb-24 md:min-w-0 md:px-10 md:pb-0">
           {children}
         </main>
+        {showTicker ? <DesktopOffersRail offers={offerTexts} /> : null}
         <PresenceHeartbeat />
       </div>
     </div>

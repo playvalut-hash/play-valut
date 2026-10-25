@@ -3279,3 +3279,191 @@ export async function getShortcutsForChat(
     return [];
   }
 }
+
+/* ── Offers ticker (migration 0026) ──────────────────────────────────────
+ * Admin-managed offer lines every player sees: desktop right rail
+ * (bottom-to-top) + mobile top bar (right-to-left). Mutations return
+ * results (never throw) so the manager form shows the real message —
+ * thrown action errors surface in production as a minified React
+ * digest instead (see the #441 fix). Reads fail soft pre-migration. */
+
+export interface OfferRow {
+  id: string;
+  text: string;
+  is_active: boolean;
+  sort_order: number;
+  created_at: string;
+}
+
+type OfferResult =
+  | { ok: true; id?: string }
+  | { ok: false; error: string };
+
+const offerSchema = z.object({
+  text: z
+    .string()
+    .trim()
+    .min(1, "Write the offer text")
+    .max(120, "Keep the offer under 120 characters so it fits the ticker"),
+  sortOrder: z.number().int().min(0).max(999).default(0),
+  isActive: z.boolean().default(true),
+});
+
+const MIGRATION_0026_MSG =
+  "Offers need migration 0026 — please run it in the SQL Editor first.";
+
+function isMissingOffersTable(error: unknown): boolean {
+  const msg = error instanceof Error ? error.message : String(error ?? "");
+  return /offers|offer_settings/.test(msg);
+}
+
+/** All offers (active + paused) for the manager, in display order. */
+export async function listOffers(
+  adminId: string,
+): Promise<{ offers: OfferRow[]; needsMigration: boolean }> {
+  await requireAdmin(adminId);
+  try {
+    const { data, error } = await svc()
+      .from("offers")
+      .select("id, text, is_active, sort_order, created_at")
+      .order("sort_order", { ascending: true })
+      .order("created_at", { ascending: true });
+    if (error) {
+      return { offers: [], needsMigration: isMissingOffersTable(error) };
+    }
+    return { offers: (data ?? []) as OfferRow[], needsMigration: false };
+  } catch {
+    return { offers: [], needsMigration: true };
+  }
+}
+
+export async function createOffer(
+  adminId: string,
+  input: { text: string; sortOrder?: number; isActive?: boolean },
+): Promise<OfferResult> {
+  await requireAdmin(adminId);
+  const parsed = offerSchema.safeParse({
+    text: input.text,
+    sortOrder: input.sortOrder ?? 0,
+    isActive: input.isActive ?? true,
+  });
+  if (!parsed.success) {
+    return { ok: false, error: parsed.error.issues[0]?.message ?? "Invalid offer" };
+  }
+  const { data, error } = await svc()
+    .from("offers")
+    .insert({
+      text: parsed.data.text,
+      sort_order: parsed.data.sortOrder,
+      is_active: parsed.data.isActive,
+    })
+    .select("id")
+    .single();
+  if (error) {
+    return {
+      ok: false,
+      error: isMissingOffersTable(error)
+        ? MIGRATION_0026_MSG
+        : "Could not save the offer",
+    };
+  }
+  await audit(adminId, "offers.create", data?.id);
+  revalidateSection("/admin/offers");
+  return { ok: true, id: data?.id };
+}
+
+export async function updateOffer(
+  adminId: string,
+  id: string,
+  input: { text: string; sortOrder?: number; isActive?: boolean },
+): Promise<OfferResult> {
+  await requireAdmin(adminId);
+  const parsed = offerSchema.safeParse({
+    text: input.text,
+    sortOrder: input.sortOrder ?? 0,
+    isActive: input.isActive ?? true,
+  });
+  if (!parsed.success) {
+    return { ok: false, error: parsed.error.issues[0]?.message ?? "Invalid offer" };
+  }
+  const { error } = await svc()
+    .from("offers")
+    .update({
+      text: parsed.data.text,
+      sort_order: parsed.data.sortOrder,
+      is_active: parsed.data.isActive,
+    })
+    .eq("id", id);
+  if (error) {
+    return {
+      ok: false,
+      error: isMissingOffersTable(error)
+        ? MIGRATION_0026_MSG
+        : "Could not save the offer",
+    };
+  }
+  await audit(adminId, "offers.update", id);
+  revalidateSection("/admin/offers");
+  return { ok: true, id };
+}
+
+export async function deleteOffer(
+  adminId: string,
+  id: string,
+): Promise<OfferResult> {
+  await requireAdmin(adminId);
+  const { error } = await svc().from("offers").delete().eq("id", id);
+  if (error) {
+    return {
+      ok: false,
+      error: isMissingOffersTable(error)
+        ? MIGRATION_0026_MSG
+        : "Could not delete the offer",
+    };
+  }
+  await audit(adminId, "offers.delete", id);
+  revalidateSection("/admin/offers");
+  return { ok: true };
+}
+
+/** Global ticker switch (single row, id = 1). Missing row = enabled,
+ *  so the ticker works right after the migration, before anyone
+ *  touches the switch. */
+export async function getTickerEnabled(adminId: string): Promise<boolean> {
+  await requireAdmin(adminId);
+  try {
+    const { data, error } = await svc()
+      .from("offer_settings")
+      .select("ticker_enabled")
+      .eq("id", 1)
+      .maybeSingle();
+    if (error || !data) return true;
+    return (data as { ticker_enabled: boolean }).ticker_enabled;
+  } catch {
+    return true;
+  }
+}
+
+export async function setTickerEnabled(
+  adminId: string,
+  enabled: boolean,
+): Promise<OfferResult> {
+  await requireAdmin(adminId);
+  const { error } = await svc()
+    .from("offer_settings")
+    .upsert(
+      { id: 1, ticker_enabled: enabled, updated_at: new Date().toISOString() },
+      { onConflict: "id" },
+    );
+  if (error) {
+    return {
+      ok: false,
+      error: isMissingOffersTable(error)
+        ? MIGRATION_0026_MSG
+        : "Could not change the ticker switch",
+    };
+  }
+  await audit(adminId, "offers.ticker_toggle", enabled ? "on" : "off");
+  revalidateSection("/admin/offers");
+  return { ok: true };
+}

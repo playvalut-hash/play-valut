@@ -176,3 +176,43 @@ textarea {
     transform: scale(1.05);
   }
 }
+
+/* ── Offers ticker ──────────────────────────────────────────────────────
+   Pure CSS loops, no JS: the track holds the offer list TWICE and
+   slides by exactly one copy (-50%), so the loop restarts invisibly.
+   Mobile scrolls right-to-left (news ticker); desktop scrolls
+   bottom-to-top (live-comments stream). Duration comes from an inline
+   style (slower with more offers). Hover pauses either track, and
+   reduced-motion users get a still list instead of motion. */
+@keyframes pv-ticker-x {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(-50%);
+  }
+}
+@keyframes pv-ticker-y {
+  from {
+    transform: translateY(0);
+  }
+  to {
+    transform: translateY(-50%);
+  }
+}
+.pv-ticker-x {
+  animation-name: pv-ticker-x;
+  animation-timing-function: linear;
+  animation-iteration-count: infinite;
+}
+.pv-ticker-y {
+  animation-name: pv-ticker-y;
+  animation-timing-function: linear;
+  animation-iteration-count: infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .pv-ticker-x,
+  .pv-ticker-y {
+    animation: none;
+  }
+}
