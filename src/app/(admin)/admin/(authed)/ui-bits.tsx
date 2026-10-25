@@ -1,5 +1,6 @@
 "use client";
 
+import { CheckIcon } from "@/components/icons";
 import { cn } from "@/lib/utils";
 
 export function timeAgo(iso: string | null): string {
@@ -38,6 +39,32 @@ export function Avatar({ name, size = "md" }: { name: string; size?: "sm" | "md"
     >
       {initial}
     </span>
+  );
+}
+
+/** Shared approve button (v2 Phase 3, audit M10): the thread card
+ * and the panel card rendered this button twice with identical markup
+ * except the top margin — the margin stays a caller prop so both
+ * render pixel-identical to before. */
+export function ApproveButton({
+  approving,
+  onApprove,
+  className,
+}: {
+  approving: boolean;
+  onApprove: () => void;
+  className: string;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onApprove}
+      disabled={approving}
+      className={className}
+    >
+      <CheckIcon className="h-4 w-4" />
+      {approving ? "Approving…" : "Approve — Mark as Active"}
+    </button>
   );
 }
 

@@ -31,7 +31,13 @@ import {
 } from "@/components/icons";
 import { expandShortcut } from "@/lib/text-expander";
 import ScreenshotViewer from "./screenshot-viewer";
-import { Avatar, StatusChip, bubbleTime, fullDateTime } from "./ui-bits";
+import {
+  ApproveButton,
+  Avatar,
+  StatusChip,
+  bubbleTime,
+  fullDateTime,
+} from "./ui-bits";
 import { safeHref } from "@/lib/urls";
 
 /* ── Account card (fixed 400px, never stretches — PRD Change 21a) ──────── */
@@ -88,6 +94,18 @@ function AccountCard({
     }
   }
 
+  // Username copy is its own action (v2 Phase 3): the old username
+  // button reused copy(), which writes the PASSWORD to the clipboard.
+  async function copyUsername() {
+    try {
+      await navigator.clipboard.writeText(account.username);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch {
+      // clipboard unavailable
+    }
+  }
+
   async function copy() {
     let pw = password;
     if (!pw) {
@@ -123,7 +141,7 @@ function AccountCard({
             {account.username}
             <button
               type="button"
-              onClick={copy}
+              onClick={copyUsername}
               aria-label="Copy username"
               className="admin-focus rounded p-0.5 text-text-muted hover:text-gold"
             >
@@ -167,15 +185,11 @@ function AccountCard({
         For {playerName} · created {fullDateTime(msg.createdAt)}
       </p>
       {status === "creating" && (
-        <button
-          type="button"
-          onClick={approve}
-          disabled={approving}
+        <ApproveButton
+          approving={approving}
+          onApprove={approve}
           className="mt-3 flex w-full items-center justify-center gap-2 rounded-lg bg-green px-4 py-2.5 text-[13px] font-bold text-[#03231a] transition hover:brightness-110 active:scale-[0.99] disabled:opacity-50"
-        >
-          <CheckIcon className="h-4 w-4" />
-          {approving ? "Approving…" : "Approve — Mark as Active"}
-        </button>
+        />
       )}
     </div>
   );

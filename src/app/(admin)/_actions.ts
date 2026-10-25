@@ -40,13 +40,6 @@ export interface StaffPermissions {
   shortcuts_manage: boolean;
 }
 
-const NO_PERMISSIONS: StaffPermissions = {
-  player_block: false,
-  chat_clear: false,
-  player_delete: false,
-  shortcuts_manage: false,
-};
-
 const ALL_PERMISSIONS: StaffPermissions = {
   player_block: true,
   chat_clear: true,

@@ -16,7 +16,6 @@ import {
   deleteGameAccount,
   deletePlayerNote,
   editGameAccount,
-  getGames,
   markAccountActive,
   clearPlayerChat,
   deletePlayer,
@@ -29,15 +28,18 @@ import {
   CheckIcon,
   ChevronDownIcon,
   CopyIcon,
-  EditIcon,
   EyeIcon,
   EyeOffIcon,
-  PlusIcon,
   TrashIcon,
   XIcon,
 } from "@/components/icons";
 import ScreenshotViewer from "./screenshot-viewer";
-import { StatusChip, TagChip, fullDateTime, timeAgo } from "./ui-bits";
+import {
+  ApproveButton,
+  StatusChip,
+  fullDateTime,
+  timeAgo,
+} from "./ui-bits";
 
 const TAG_PRESETS = [
   "VIP",
@@ -259,15 +261,11 @@ function AccountCard({
         />
       </button>
       {displayStatus === "creating" && (
-        <button
-          type="button"
-          onClick={approve}
-          disabled={approving}
+        <ApproveButton
+          approving={approving}
+          onApprove={approve}
           className="mt-2.5 flex w-full items-center justify-center gap-2 rounded-lg bg-green px-4 py-2.5 text-[13px] font-bold text-[#03231a] transition hover:brightness-110 active:scale-[0.99] disabled:opacity-50"
-        >
-          <CheckIcon className="h-4 w-4" />
-          {approving ? "Approving…" : "Approve — Mark as Active"}
-        </button>
+        />
       )}
       {expanded && (
         <div className="mt-2.5 space-y-1.5 border-t border-surface-border pt-2.5">
