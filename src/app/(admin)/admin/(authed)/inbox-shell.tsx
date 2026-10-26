@@ -191,32 +191,6 @@ export default function InboxShell({
   useEffect(() => {
     overviewRef.current = overview;
   }, [overview]);
-  // Diagnostic (guest lifecycle): log what the client actually received
-  // for guest rows, so a missing Returning chip can be traced to the
-  // server data vs the render. Logs once on mount and whenever any
-  // guest's flag flips — console-only, no UI effect. Remove once the
-  // chip is confirmed working.
-  const guestFlagsRef = useRef("");
-  useEffect(() => {
-    const guests = overview.filter((p) => p.email === null);
-    const snap = guests
-      .map((p) => `${p.displayName}:${p.returningGuest}`)
-      .join(",");
-    if (snap === guestFlagsRef.current) return;
-    guestFlagsRef.current = snap;
-    try {
-      console.info(
-        "[inbox-overview-guests]",
-        guests.map((p) => ({
-          name: p.displayName,
-          email: p.email,
-          returningGuest: p.returningGuest,
-        })),
-      );
-    } catch {
-      // Logging must never break the inbox.
-    }
-  }, [overview]);
   // Desktop details-panel collapse (Build 50) — persisted, same pattern
   // as the sidebar rail in admin-shell.
   const [panelCollapsed, setPanelCollapsed] = useState<boolean>(() => {
