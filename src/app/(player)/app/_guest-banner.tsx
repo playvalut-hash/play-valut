@@ -35,6 +35,17 @@ export default function GuestBanner({
   const [open, setOpenState] = useState(isActivateOpen());
   const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  // Temporary diagnostic (remove after the returning-guest
+  // investigation): with ?track_debug=1 on the URL, the banner shows
+  // the tracking call's result as plain page text, so it can be read
+  // without DevTools. Normal guests (no param) never see it.
+  const [trackDebug, setTrackDebug] = useState<string | null>(null);
+  const [showTrackDebug] = useState(
+    () =>
+      typeof window !== "undefined" &&
+      new URLSearchParams(window.location.search).get("track_debug") ===
+        "1",
+  );
 
   useEffect(() => {
     let on = true;
@@ -76,6 +87,7 @@ export default function GuestBanner({
               "pv_track_debug",
               JSON.stringify(res),
             );
+            setTrackDebug(JSON.stringify(res));
           } catch {
             // Logging must never break the guest flow.
           }
@@ -157,6 +169,12 @@ export default function GuestBanner({
           Activate account
         </button>
       </div>
+
+      {showTrackDebug && trackDebug ? (
+        <div className="mb-3 rounded-lg bg-black/70 px-3 py-2 font-mono text-xs break-all text-[#d4af37]">
+          track: {trackDebug}
+        </div>
+      ) : null}
 
       {open ? (
         <div
