@@ -22,6 +22,7 @@ import {
   clearPlayerChat,
   deletePlayer,
   rejectDeposit,
+  resetPlayerPassword,
   removePlayerTag,
   setPlayerBlocked,
 } from "../../_actions";
@@ -518,6 +519,11 @@ export default function DetailsPanel({
   const [pending, setPending] = useState<null | "block" | "clear" | "delete">(null);
   const [clearMode, setClearMode] = useState<"all" | "5" | "10" | "custom">("all");
   const [clearError, setClearError] = useState<string | null>(null);
+  const [resetPassword, setResetPassword] = useState("");
+  const [resetConfirm, setResetConfirm] = useState("");
+  const [resetShow, setResetShow] = useState(false);
+  const [resetError, setResetError] = useState<string | null>(null);
+  const [resetNotice, setResetNotice] = useState<string | null>(null);
   const [customDays, setCustomDays] = useState("");
   const [selectedGame, setSelectedGame] = useState(games[0]?.id ?? "");
   const [creating, setCreating] = useState(false);
@@ -535,6 +541,36 @@ export default function DetailsPanel({
     try {
       await fn();
       if (onMutated) await onMutated();
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function doResetPassword() {
+    if (resetPassword.length < 6) {
+      setResetError("Password must be at least 6 characters");
+      return;
+    }
+    if (resetPassword !== resetConfirm) {
+      setResetError("Passwords do not match");
+      return;
+    }
+    setBusy(true);
+    setResetError(null);
+    setResetNotice(null);
+    try {
+      const res = await resetPlayerPassword(
+        admin.id,
+        detail.player.id,
+        resetPassword,
+      );
+      if (res.ok) {
+        setResetNotice("Password updated.");
+        setResetPassword("");
+        setResetConfirm("");
+      } else {
+        setResetError(res.error ?? "Could not update password");
+      }
     } finally {
       setBusy(false);
     }
@@ -989,6 +1025,78 @@ export default function DetailsPanel({
               Clear chat removes messages only. Delete removes the player, their game
               accounts, deposits and chat — it cannot be undone.
             </p>
+          </div>
+        </Collapsible>
+      )}
+
+      {/* Password reset — super admin only. Guests have no password
+          (email null), so the section hides for them. One account backs
+          the player app and the admin app, so one reset fixes both. */}
+      {admin.role === "super_admin" && detail.player.email !== null && (
+        <Collapsible title="Password reset">
+          <div className="space-y-2">
+            <p className="px-1 text-[11px] leading-relaxed text-text-muted">
+              Set a new sign-in password for this player. It takes effect
+              immediately for both the player app and the admin app.
+            </p>
+            <input
+              type={resetShow ? "text" : "password"}
+              value={resetPassword}
+              onChange={(e) => {
+                setResetPassword(e.target.value);
+                setResetError(null);
+                setResetNotice(null);
+              }}
+              placeholder="New password (min 6 characters)"
+              autoComplete="new-password"
+              className="w-full rounded-lg border border-surface-border bg-surface-input px-3 py-2 text-[13px] text-text-primary placeholder:text-text-muted"
+            />
+            <input
+              type={resetShow ? "text" : "password"}
+              value={resetConfirm}
+              onChange={(e) => {
+                setResetConfirm(e.target.value);
+                setResetError(null);
+                setResetNotice(null);
+              }}
+              placeholder="Confirm new password"
+              autoComplete="new-password"
+              className="w-full rounded-lg border border-surface-border bg-surface-input px-3 py-2 text-[13px] text-text-primary placeholder:text-text-muted"
+            />
+            <div className="flex items-center justify-between px-1">
+              <button
+                type="button"
+                onClick={() => setResetShow(!resetShow)}
+                className="text-[12px] font-bold text-text-muted hover:text-text-primary"
+              >
+                {resetShow ? "Hide passwords" : "Show passwords"}
+              </button>
+            </div>
+            <button
+              type="button"
+              disabled={
+                busy ||
+                resetPassword.length < 6 ||
+                resetPassword !== resetConfirm
+              }
+              onClick={doResetPassword}
+              className="w-full rounded-lg border border-gold/50 bg-gold/10 px-3 py-2.5 text-[13px] font-bold text-gold hover:bg-gold/20 disabled:opacity-40"
+            >
+              Reset password
+            </button>
+            {resetError && (
+              <p
+                role="alert"
+                className="rounded-lg border border-red-500/30 bg-red-500/5 px-3 py-2 text-[12px] leading-relaxed text-red-300"
+              >
+                {resetError}
+              </p>
+            )}
+            {resetNotice && (
+              <p className="rounded-lg border border-emerald-500/30 bg-emerald-500/5 px-3 py-2 text-[12px] leading-relaxed text-emerald-300">
+                {resetNotice}
+              </p>
+            )}
           </div>
         </Collapsible>
       )}

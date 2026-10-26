@@ -3325,6 +3325,52 @@ export async function setPlayerBlocked(
   });
 }
 
+/**
+ * Super-admin-only password reset for a registered player (player
+ * detail panel). Guests have no password, so the action refuses them.
+ * The same auth account backs the player app and the admin app, so one
+ * reset fixes both sign-ins. Returns {ok, error} (never throws) so the
+ * panel can show the outcome inline. The new password is hashed by
+ * Supabase Auth; it is never stored anywhere else. Audited as
+ * player.password_reset (best-effort, like every audit row).
+ */
+export async function resetPlayerPassword(
+  adminId: string,
+  playerId: string,
+  password: string,
+): Promise<{ ok: boolean; error?: string }> {
+  try {
+    await requireSuperAdmin(adminId);
+  } catch {
+    return { ok: false, error: "Not authorized" };
+  }
+  const parsed = z
+    .object({
+      playerId: z.string().uuid(),
+      password: z.string().min(6, "Password must be at least 6 characters"),
+    })
+    .safeParse({ playerId, password });
+  if (!parsed.success) {
+    return { ok: false, error: "Password must be at least 6 characters" };
+  }
+  const client = svc();
+  const { data: target } = await client
+    .from("players")
+    .select("id, email")
+    .eq("id", playerId)
+    .single();
+  if (!target) return { ok: false, error: "Player not found" };
+  if ((target as { email: string | null }).email === null) {
+    return { ok: false, error: "Guest accounts have no password to reset" };
+  }
+  const { error } = await client.auth.admin.updateUserById(playerId, {
+    password,
+  });
+  if (error) return { ok: false, error: "Could not update password" };
+  await audit(adminId, "player.password_reset", playerId);
+  return { ok: true };
+}
+
 /* ── Screenshot storage lifecycle (v2 Phase 1, audit H7) ─────────────── */
 
 /**
