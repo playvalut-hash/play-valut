@@ -78,7 +78,10 @@ export type MessageKind =
   // may see. Read paths filter the other side's kind out (plus the
   // legacy kind="text" wordings below, which predate these kinds).
   | "player_note"
-  | "admin_note";
+  | "admin_note"
+  // Guest activation card (migration 0033): body {url}, rendered as a
+  // gold card with a real "Activate account" button.
+  | "activate";
 
 /**
  * True when a thread row must NOT reach the player app: the admin's

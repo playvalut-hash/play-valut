@@ -993,6 +993,7 @@ export default function DetailsPanel({
                     screenshotCaption: null,
                     readByPlayer: false,
                     readByAdmin: true,
+                    activateUrl: null,
                   };
                   const prevAccounts = detail.accounts;
                   const placeholder: AdminAccountView = {

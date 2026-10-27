@@ -8,6 +8,7 @@ import type { AdminInfo, ChatMessageView, PlayerOverview } from "../../_actions"
 import {
   decryptAccountPassword,
   markAccountActive,
+  sendActivationCard,
   sendAdminMessage,
   adminSendChatImage,
   getShortcutsForChat,
@@ -205,6 +206,49 @@ function nextEchoId(): string {
   return `echo-${Date.now()}-${echoSeq}`;
 }
 
+/* ── Activation card (kind "activate", migration 0033) ─────────────────
+ * Admin side: a preview of what the guest sees. The button is visual
+ * only here (admins never activate) — the raw link stays selectable
+ * below so the admin can verify or copy it. The player side renders
+ * the same card with a real link button. */
+function ActivateCard({ url }: { url: string }) {
+  return (
+    <div className="w-[400px] max-w-full overflow-hidden rounded-2xl border border-gold/30 bg-surface-card shadow-[0_4px_16px_rgba(0,0,0,0.35)]">
+      <div
+        className="flex items-center gap-2.5 px-3 py-2.5"
+        style={{
+          background: "linear-gradient(135deg, #f0cd6a, #d4af37)",
+          color: "#241a02",
+        }}
+      >
+        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-white/20 text-base font-extrabold">
+          🔑
+        </span>
+        <span className="min-w-0 flex-1">
+          <span className="block text-[9px] font-bold uppercase tracking-widest opacity-80">
+            Guest activation
+          </span>
+          <span className="block truncate text-[14px] font-extrabold leading-tight">
+            Activate your account
+          </span>
+        </span>
+      </div>
+      <div className="space-y-2 px-3 py-2.5">
+        <p className="text-xs leading-relaxed text-text-secondary">
+          Keep your chat, games and deposits — tap the button, then
+          Continue with Google.
+        </p>
+        <span className="inline-flex items-center gap-1 rounded-lg bg-gold px-3 py-1.5 text-xs font-bold text-navy">
+          Activate account
+        </span>
+        <p className="break-all font-mono text-[10px] text-text-muted">
+          {url}
+        </p>
+      </div>
+    </div>
+  );
+}
+
 function MessageItem({
   admin,
   playerName,
@@ -378,6 +422,14 @@ function MessageItem({
             className="max-h-48 max-w-[240px] object-cover"
           />
         </button>
+      </div>
+    );
+  }
+
+  if (msg.kind === "activate" && msg.activateUrl) {
+    return (
+      <div className="admin-msg-in flex justify-end py-1">
+        <ActivateCard url={msg.activateUrl} />
       </div>
     );
   }
@@ -613,6 +665,7 @@ export default function ThreadView({
       screenshotCaption: null,
       readByPlayer: false,
       readByAdmin: true,
+      activateUrl: null,
       ...fields,
     };
   }
@@ -715,18 +768,18 @@ export default function ThreadView({
 
   // Guest activation link (guests have no email — that is the guest
   // marker: every registered account, email or Google, has one).
-  // The guest taps the link in their OWN session, so /app opens with
+  // Sent as a gold CARD (kind "activate"), not a text bubble: the guest
+  // taps the button in their own session, so /app opens with
   // ?activate=1 and the activate sheet opens on its own. Same
   // send/echo pattern as sendText.
   async function sendActivationLink() {
     if (sendLinkBusy) return;
     setSendLinkBusy(true);
     const url = `${window.location.origin}/app?activate=1`;
-    const text = `Activate your account to keep your chat, games and deposits: ${url} — tap the link, then Continue with Google.`;
-    const echo = makeEcho("text", { text });
+    const echo = makeEcho("activate", { activateUrl: url });
     onAppendOptimistic?.(echo);
     try {
-      await sendAdminMessage(admin.id, { playerId: player.id, text });
+      await sendActivationCard(admin.id, player.id, url);
       await changed();
     } catch {
       onDropOptimistic?.(echo.id);

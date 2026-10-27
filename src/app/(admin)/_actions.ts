@@ -108,7 +108,11 @@ export type ChatKind =
   // may see. Admin read paths filter the player side's kind out (plus
   // the legacy kind="text" wordings below, which predate these kinds).
   | "player_note"
-  | "admin_note";
+  | "admin_note"
+  // Guest activation card: the admin's activation link, rendered as a
+  // gold card (like account/payment cards) instead of a text bubble
+  // with a raw URL. Body is {url}. Migration 0033.
+  | "activate";
 
 export interface ThreadAccountCard {
   gameId: string;
@@ -150,6 +154,8 @@ export interface ChatMessageView {
   screenshotCaption: string | null;
   readByPlayer: boolean;
   readByAdmin: boolean;
+  /** Activation card link (kind "activate" only, migration 0033). */
+  activateUrl: string | null;
 }
 
 export interface AdminNoteView {
@@ -1026,6 +1032,8 @@ function messagePreview(kind: string, body: Record<string, unknown>): string {
         : "Payment methods";
     case "payment_card":
       return "Payment details";
+    case "activate":
+      return "Activation card";
     case "shot":
       return typeof body.caption === "string" && body.caption
         ? body.caption.slice(0, 90)
@@ -1640,6 +1648,10 @@ async function resolveThreadViews(
       screenshotUrl: null,
       readByPlayer: m.is_read_by_player,
       readByAdmin: m.is_read_by_admin,
+      activateUrl:
+        m.kind === "activate" && typeof body.url === "string"
+          ? body.url
+          : null,
       screenshotCaption:
         m.kind === "shot" && typeof body.caption === "string"
           ? body.caption
@@ -1914,6 +1926,44 @@ export async function sendPayList(
   });
   if (error) throw new Error("Could not send payment list");
   await audit(adminId, "chat.send_pay_list", playerId);
+}
+
+/**
+ * SEND bar: push the guest activation link as a gold card (kind
+ * "activate", body {url}) instead of a text bubble with a raw URL —
+ * the player side renders a real "Activate account" button from it.
+ * The URL comes from the admin client (window.location.origin), so it
+ * works on any domain; the server only accepts the product's own
+ * activate route (/app?activate=1), never an arbitrary link.
+ * Requires migration 0033 (kind allowlist) — pre-migration the insert
+ * fails with a check violation and the caller drops the echo.
+ */
+export async function sendActivationCard(
+  adminId: string,
+  playerId: string,
+  url: string,
+): Promise<void> {
+  await requireAdmin(adminId);
+  z.string().uuid().parse(playerId);
+  let parsed: URL;
+  try {
+    parsed = new URL(z.string().url().parse(url));
+  } catch {
+    throw new Error("Invalid activation link");
+  }
+  if (parsed.pathname !== "/app" || parsed.searchParams.get("activate") !== "1") {
+    throw new Error("Invalid activation link");
+  }
+  const { error } = await svc().from("chat_messages").insert({
+    player_id: playerId,
+    sender: "admin",
+    kind: "activate",
+    body: { url },
+    is_read_by_player: false,
+    is_read_by_admin: true,
+  });
+  if (error) throw new Error("Could not send activation card");
+  await audit(adminId, "chat.send_activation_card", playerId);
 }
 
 /** SEND bar: push ONE payment method's detail card straight to the chat —

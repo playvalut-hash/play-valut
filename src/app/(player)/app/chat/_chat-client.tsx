@@ -765,6 +765,56 @@ function renderLinkedText(text: string) {
   });
 }
 
+/* ── Activation card (kind "activate", migration 0033) ────────────────
+ * Gold card like the account/payment cards. The button is a real link
+ * to the activate URL: the guest taps it, /app opens with ?activate=1,
+ * and the activate sheet opens on its own. No raw URL is shown — the
+ * button IS the tap target. */
+function ActivateCardMessage({ message }: { message: ChatMessage }) {
+  const url = str(message.body["url"]);
+  if (!url) return null;
+  return (
+    <div className="flex flex-col items-start">
+      <p className="mb-1 pl-1 text-[10px] font-semibold tracking-wide text-gold/80">
+        Support
+      </p>
+      <div className="w-[400px] max-w-full overflow-hidden rounded-2xl border border-gold/30 bg-card-2 shadow-sm shadow-black/20">
+        <div
+          className="flex items-center gap-2.5 px-3 py-2.5"
+          style={{
+            background: "linear-gradient(135deg, #f0cd6a, #d4af37)",
+            color: "#241a02",
+          }}
+        >
+          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-white/20 text-base font-extrabold">
+            🔑
+          </span>
+          <span className="min-w-0 flex-1">
+            <span className="block text-[9px] font-bold uppercase tracking-widest opacity-80">
+              Guest activation
+            </span>
+            <span className="block truncate text-[14px] font-extrabold leading-tight">
+              Activate your account
+            </span>
+          </span>
+        </div>
+        <div className="space-y-2 px-3 py-2.5">
+          <p className="text-xs leading-relaxed text-text-secondary">
+            Keep your chat, games and deposits — tap the button, then
+            Continue with Google.
+          </p>
+          <a
+            href={url}
+            className="inline-flex items-center gap-1 rounded-lg bg-gold px-3 py-1.5 text-xs font-bold text-navy hover:opacity-90"
+          >
+            Activate account
+          </a>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function MessageView({
   message,
   onPicked,
@@ -843,6 +893,9 @@ function MessageView({
     return (
       <PaymentCardMessage message={message} onDepositSend={onDepositSend} />
     );
+  }
+  if (message.kind === "activate") {
+    return <ActivateCardMessage message={message} />;
   }
 
   // text — own messages gold/right, support messages dark/left, each
