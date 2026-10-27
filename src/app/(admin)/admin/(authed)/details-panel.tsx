@@ -200,6 +200,8 @@ function AccountCard({
   const [editing, setEditing] = useState(false);
   const [username, setUsername] = useState(account.username);
   const [newPassword, setNewPassword] = useState("");
+  const [showNewPassword, setShowNewPassword] = useState(false);
+  const [editError, setEditError] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [approving, setApproving] = useState(false);
   const [resending, setResending] = useState(false);
@@ -227,6 +229,7 @@ function AccountCard({
 
   async function saveEdit() {
     if (!username.trim()) return;
+    setEditError(null);
     onBusy(true);
     try {
       await editGameAccount(admin.id, {
@@ -236,7 +239,14 @@ function AccountCard({
       });
       setEditing(false);
       setNewPassword("");
+      setShowNewPassword(false);
       if (onMutated) await onMutated();
+    } catch (err) {
+      // A failed edit used to fail SILENTLY (no catch, no error line):
+      // the form just sat there and the admin thought nothing happened.
+      setEditError(
+        err instanceof Error ? err.message : "Could not save changes",
+      );
     } finally {
       onBusy(false);
     }
@@ -384,13 +394,32 @@ function AccountCard({
                 placeholder="Username"
                 className="w-full rounded-lg border border-surface-border bg-surface-input px-3 py-2 text-sm text-text-primary"
               />
-              <input
-                value={newPassword}
-                onChange={(e) => setNewPassword(e.target.value)}
-                placeholder="New password (optional)"
-                type="password"
-                className="w-full rounded-lg border border-surface-border bg-surface-input px-3 py-2 text-sm text-text-primary"
-              />
+              <div className="flex gap-2">
+                <input
+                  value={newPassword}
+                  onChange={(e) => setNewPassword(e.target.value)}
+                  placeholder="New password (optional)"
+                  type={showNewPassword ? "text" : "password"}
+                  className="min-w-0 flex-1 rounded-lg border border-surface-border bg-surface-input px-3 py-2 text-sm text-text-primary"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowNewPassword((v) => !v)}
+                  aria-label={showNewPassword ? "Hide password" : "Show password"}
+                  className="rounded-lg border border-surface-border px-2.5 text-text-muted hover:border-gold/50 hover:text-gold"
+                >
+                  {showNewPassword ? (
+                    <EyeOffIcon className="h-4 w-4" />
+                  ) : (
+                    <EyeIcon className="h-4 w-4" />
+                  )}
+                </button>
+              </div>
+              <p className="text-[11px] text-text-muted">
+                Minimum 6 characters. Leave blank to keep the current
+                password. Use the eye to check it before entering it in
+                the game.
+              </p>
               <div className="flex gap-2">
                 <button
                   type="button"
@@ -405,12 +434,22 @@ function AccountCard({
                     setEditing(false);
                     setUsername(account.username);
                     setNewPassword("");
+                    setShowNewPassword(false);
+                    setEditError(null);
                   }}
                   className="rounded-lg border border-surface-border px-3 py-1.5 text-xs text-text-muted"
                 >
                   Cancel
                 </button>
               </div>
+              {editError && (
+                <p
+                  role="alert"
+                  className="rounded-lg border border-red-500/30 bg-red-500/5 px-3 py-2 text-[12px] leading-relaxed text-red-300"
+                >
+                  {editError}
+                </p>
+              )}
             </div>
           )}
         </div>

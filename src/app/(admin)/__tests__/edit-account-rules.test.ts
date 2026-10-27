@@ -1,10 +1,16 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 /**
- * Audit M12: manual game-account edits must not be weaker than
- * generated accounts (12-character passwords, not 6), and a manual
- * username change must not collide with another account for the same
- * game — with a clear message, not the DB's cryptic constraint error.
+ * Audit M12 (UPDATED 2026-10-27 at the user's explicit demand for short,
+ * typable credentials): manual game-account edits take a 6-character
+ * floor, NOT the old 12 — the old "manual edits must not be weaker than
+ * generated accounts" rule is superseded. Generated passwords stay 8
+ * (lowercase + digits); a manual password is the admin's explicit
+ * per-account choice. A manual username change must still not collide
+ * with another account for the same game — with a clear message, not
+ * the DB's cryptic constraint error. Failed edits must also report a
+ * clear message (a too-short password used to fail silently in the
+ * panel, which looked like "nothing happened").
  */
 
 import { ADMIN_ROW, getUser, session } from "./mocks";
@@ -72,12 +78,12 @@ describe("editGameAccount rules (audit M12)", () => {
     reset();
   });
 
-  it("rejects a 6-character manual password (12 is the floor)", async () => {
+  it("rejects a 5-character manual password (6 is the floor)", async () => {
     await expect(
       editGameAccount("admin-1", {
         accountId: ACCOUNT,
         username: "player1",
-        password: "abc123",
+        password: "abc12",
       }),
     ).rejects.toThrow();
     expect(
@@ -85,7 +91,17 @@ describe("editGameAccount rules (audit M12)", () => {
     ).toBe(false);
   });
 
-  it("accepts a 12-character manual password", async () => {
+  it("fails a too-short password with a clear message", async () => {
+    await expect(
+      editGameAccount("admin-1", {
+        accountId: ACCOUNT,
+        username: "player1",
+        password: "abc12",
+      }),
+    ).rejects.toThrow("Password must be at least 6 characters");
+  });
+
+  it("accepts a 6-character manual password", async () => {
     queues["game_accounts"].push(
       { data: null, error: null }, // no clash
       { data: [], error: null }, // update
@@ -93,7 +109,7 @@ describe("editGameAccount rules (audit M12)", () => {
     await editGameAccount("admin-1", {
       accountId: ACCOUNT,
       username: "player1",
-      password: "abcdefghijkl",
+      password: "abc123",
     });
     expect(
       calls.some((c) => c.table === "game_accounts" && c.method === "update"),

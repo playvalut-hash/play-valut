@@ -2168,7 +2168,12 @@ export async function deletePlayerNote(
 const editAccountSchema = z.object({
   accountId: z.string().uuid(),
   username: z.string().trim().min(3).max(64),
-  password: z.string().min(8).max(128).optional(),
+  // Manual-edit floor is 6 (NOT the generated 8): an admin setting a
+  // password by hand is an explicit per-account choice, and players type
+  // these into third-party game apps. This supersedes the v2 audit M12
+  // rule ("manual edits must not be weaker than generated") at the
+  // user's explicit demand for short, typable credentials (2026-10-27).
+  password: z.string().min(6).max(128).optional(),
 });
 
 export async function editGameAccount(
@@ -2176,7 +2181,28 @@ export async function editGameAccount(
   input: z.input<typeof editAccountSchema>,
 ): Promise<void> {
   await requireAdmin(adminId);
-  const { accountId, username, password } = editAccountSchema.parse(input);
+  // Friendly validation errors: the raw zod message ("String must
+  // contain at least 6 character(s)") tells the admin nothing about
+  // WHICH field failed. A failed edit used to surface nowhere at all
+  // (the panel had no error display), so the admin saw the form just
+  // sit there — map the field to a plain message here.
+  let accountId: string;
+  let username: string;
+  let password: string | undefined;
+  try {
+    ({ accountId, username, password } = editAccountSchema.parse(input));
+  } catch (err) {
+    if (err instanceof z.ZodError) {
+      const paths = err.issues.map((i) => i.path[0]);
+      if (paths.includes("password")) {
+        throw new Error("Password must be at least 6 characters");
+      }
+      if (paths.includes("username")) {
+        throw new Error("Username must be between 3 and 64 characters");
+      }
+    }
+    throw err;
+  }
   const client = svc();
   const { data: existing } = await client
     .from("game_accounts")
