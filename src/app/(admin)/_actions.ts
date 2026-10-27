@@ -87,6 +87,12 @@ export interface PlayerOverview {
    *  0031). Only ever true for guests (email null) — the chip in the
    *  inbox row also checks email, so an activated player never shows it. */
   returningGuest: boolean;
+  /** Device visit count behind the Returning chip (migration 0031's
+   *  guest_devices.visit_count): how many times this device has shown
+   *  up as a guest, current guest included. Null when unknown (a
+   *  pre-0031 guest, or the device lookup failed) — the chip then shows
+   *  plain "Returning" with no count. */
+  returningVisits: number | null;
 }
 
 export type ChatSender = "player" | "admin" | "system";
@@ -1277,27 +1283,70 @@ async function fetchGuestLifecycleMap(
   client: ReturnType<typeof svc>,
   ids: string[],
 ): Promise<
-  Map<string, { guestLeftAt: string | null; returningGuest: boolean }>
+  Map<
+    string,
+    {
+      guestLeftAt: string | null;
+      returningGuest: boolean;
+      deviceVisits: number | null;
+    }
+  >
 > {
   const map = new Map<
     string,
-    { guestLeftAt: string | null; returningGuest: boolean }
+    {
+      guestLeftAt: string | null;
+      returningGuest: boolean;
+      deviceVisits: number | null;
+    }
   >();
   try {
     const { data, error } = await client
       .from("players")
-      .select("id, guest_left_at, returning_guest")
+      .select("id, guest_left_at, returning_guest, guest_device_key")
       .in("id", ids);
     if (error || !data) return map;
+    const keyByPlayer = new Map<string, string>();
     for (const r of data as Array<{
       id: string;
       guest_left_at: string | null;
       returning_guest: boolean | null;
+      guest_device_key: string | null;
     }>) {
       map.set(r.id, {
         guestLeftAt: r.guest_left_at,
         returningGuest: r.returning_guest ?? false,
+        deviceVisits: null,
       });
+      if (r.guest_device_key) keyByPlayer.set(r.id, r.guest_device_key);
+    }
+    // Device visit counts for the chip ("Returning ×N"). Best-effort
+    // on purpose: a failure here must not wipe the lifecycle map —
+    // the chip just falls back to plain "Returning" with no count.
+    if (keyByPlayer.size > 0) {
+      try {
+        const { data: devices, error: devError } = await client
+          .from("guest_devices")
+          .select("device_key, visit_count")
+          .in("device_key", [...keyByPlayer.values()]);
+        if (!devError && devices) {
+          const counts = new Map<string, number>();
+          for (const d of devices as Array<{
+            device_key: string;
+            visit_count: number;
+          }>) {
+            counts.set(d.device_key, d.visit_count);
+          }
+          for (const [id, entry] of map) {
+            const key = keyByPlayer.get(id);
+            if (key !== undefined && counts.has(key)) {
+              entry.deviceVisits = counts.get(key) ?? null;
+            }
+          }
+        }
+      } catch {
+        // Keep deviceVisits null — plain "Returning" chip.
+      }
     }
   } catch {
     // Pre-migration — empty map, no filtering, no chip.
@@ -1417,6 +1466,7 @@ export async function getInboxOverview(opts?: {
       lastMessageAt: last ? last.created_at : null,
       lastPreview: last ? messagePreview(last.kind, last.body) : null,
       returningGuest: lifeMap.get(p.id)?.returningGuest ?? false,
+      returningVisits: lifeMap.get(p.id)?.deviceVisits ?? null,
     };
   });
 

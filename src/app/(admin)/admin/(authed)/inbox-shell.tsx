@@ -87,6 +87,9 @@ function PlayerRow({
             {player.email === null && player.returningGuest && (
               <span className="rounded-full bg-gold/15 px-1.5 py-px text-[10px] font-semibold text-gold">
                 Returning
+                {player.returningVisits != null && player.returningVisits > 1
+                  ? ` ×${player.returningVisits}`
+                  : ""}
               </span>
             )}
             {player.tags.slice(0, 3).map((t) => (
