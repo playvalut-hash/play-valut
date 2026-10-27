@@ -2168,7 +2168,7 @@ export async function deletePlayerNote(
 const editAccountSchema = z.object({
   accountId: z.string().uuid(),
   username: z.string().trim().min(3).max(64),
-  password: z.string().min(12).max(128).optional(),
+  password: z.string().min(8).max(128).optional(),
 });
 
 export async function editGameAccount(

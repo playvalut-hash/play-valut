@@ -39,11 +39,18 @@ export function decryptPassword(payload: string): string {
   return dec.toString("utf8");
 }
 
-/** Generates a random game password (12 chars, URL-safe). */
+/**
+ * Generates a random game password (8 chars, lowercase + digits only,
+ * no ambiguous characters). Short and single-keyboard-layer on purpose:
+ * players type these into third-party game apps by hand, and the old
+ * 12-char mixed-case format was hard to type on a phone. 32^8 is still
+ * far beyond online guessing for a game account, and an admin can set a
+ * longer password per account via Edit if a game ever demands one.
+ */
 export function generateGamePassword(): string {
-  const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789";
-  const bytes = randomBytes(12);
+  const alphabet = "abcdefghijkmnpqrstuvwxyz23456789";
+  const bytes = randomBytes(8);
   let out = "";
-  for (let i = 0; i < 12; i++) out += alphabet[bytes[i] % alphabet.length];
+  for (let i = 0; i < 8; i++) out += alphabet[bytes[i] % alphabet.length];
   return out;
 }
