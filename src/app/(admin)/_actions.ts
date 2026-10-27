@@ -2375,6 +2375,61 @@ export async function markAccountActive(
 }
 
 /**
+ * Resend an ACTIVE game account's card into the player's chat (player
+ * detail panel, next to Edit/Delete). The player asked for a game they
+ * already have active — the admin gets the notification but had no way
+ * to send the details again. This sends the SAME card form as the
+ * original (kind "account", body game_id/account_id/status) — the card
+ * renders the stored credentials, so nothing is retyped and nothing is
+ * re-decrypted here. Active accounts only: a "creating" card is already
+ * in the thread awaiting approval, and resending it would only duplicate
+ * it. Any active admin may resend (same as creating an account — no
+ * special grant). Returns {ok, error} (never throws). Audited as
+ * accounts.resend.
+ */
+export async function resendGameAccountCard(
+  adminId: string,
+  accountId: string,
+): Promise<{ ok: boolean; error?: string }> {
+  try {
+    await requireAdmin(adminId);
+  } catch {
+    return { ok: false, error: "Not authorized" };
+  }
+  const parsed = z.string().uuid().safeParse(accountId);
+  if (!parsed.success) return { ok: false, error: "Account not found" };
+  const client = svc();
+  const { data: account } = await client
+    .from("game_accounts")
+    .select("id, player_id, game_id, status")
+    .eq("id", accountId)
+    .single();
+  if (!account) return { ok: false, error: "Account not found" };
+  if ((account as { status: string }).status !== "active") {
+    return { ok: false, error: "Only active accounts can be resent" };
+  }
+  const { error } = await client.from("chat_messages").insert({
+    player_id: (account as { player_id: string }).player_id,
+    sender: "system",
+    kind: "account",
+    body: {
+      game_id: (account as { game_id: string }).game_id,
+      account_id: (account as { id: string }).id,
+      status: "active",
+    },
+    is_read_by_player: false,
+    is_read_by_admin: true,
+  });
+  if (error) return { ok: false, error: "Could not send account card" };
+  await audit(
+    adminId,
+    "accounts.resend",
+    `${(account as { player_id: string }).player_id}/${(account as { game_id: string }).game_id}/${(account as { id: string }).id}`,
+  );
+  return { ok: true };
+}
+
+/**
  * Reveal a game account password (explicit show/copy action — R7).
  * The plaintext is decrypted server-side and returned only to the admin.
  */

@@ -22,6 +22,7 @@ import {
   clearPlayerChat,
   deletePlayer,
   rejectDeposit,
+  resendGameAccountCard,
   resetPlayerPassword,
   removePlayerTag,
   setPlayerBlocked,
@@ -201,6 +202,9 @@ function AccountCard({
   const [newPassword, setNewPassword] = useState("");
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [approving, setApproving] = useState(false);
+  const [resending, setResending] = useState(false);
+  const [resendNotice, setResendNotice] = useState<string | null>(null);
+  const [resendError, setResendError] = useState<string | null>(null);
   // Optimistic status: flips to "active" the moment Approve is tapped.
   const [optimisticActive, setOptimisticActive] = useState(false);
   const displayStatus = optimisticActive ? "active" : account.status;
@@ -244,6 +248,26 @@ function AccountCard({
       await deleteGameAccount(admin.id, account.id);
       if (onMutated) await onMutated();
     } finally {
+      onBusy(false);
+    }
+  }
+
+  async function doResend() {
+    if (resending) return;
+    setResending(true);
+    setResendNotice(null);
+    setResendError(null);
+    onBusy(true);
+    try {
+      const res = await resendGameAccountCard(admin.id, account.id);
+      if (res.ok) {
+        setResendNotice("Account card sent.");
+        if (onMutated) await onMutated();
+      } else {
+        setResendError(res.error ?? "Could not send account card");
+      }
+    } finally {
+      setResending(false);
       onBusy(false);
     }
   }
@@ -301,6 +325,16 @@ function AccountCard({
                 >
                   Edit
                 </button>
+                {displayStatus === "active" && (
+                  <button
+                    type="button"
+                    onClick={doResend}
+                    disabled={resending}
+                    className="rounded-lg border border-gold/50 px-3 py-1.5 text-xs font-semibold text-gold hover:bg-gold/10 disabled:opacity-40"
+                  >
+                    {resending ? "Sending…" : "Resend"}
+                  </button>
+                )}
                 {!confirmDelete ? (
                   <button
                     type="button"
@@ -328,6 +362,19 @@ function AccountCard({
                   </>
                 )}
               </div>
+              {resendNotice && (
+                <p className="rounded-lg border border-emerald-500/30 bg-emerald-500/5 px-3 py-2 text-[12px] leading-relaxed text-emerald-300">
+                  {resendNotice}
+                </p>
+              )}
+              {resendError && (
+                <p
+                  role="alert"
+                  className="rounded-lg border border-red-500/30 bg-red-500/5 px-3 py-2 text-[12px] leading-relaxed text-red-300"
+                >
+                  {resendError}
+                </p>
+              )}
             </>
           ) : (
             <div className="space-y-2">
